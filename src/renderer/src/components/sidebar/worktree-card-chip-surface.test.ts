@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+
+import { WorktreeHostContextBadge } from './WorktreeHostContextBadge'
 
 const testDir = import.meta.dirname
 
@@ -27,36 +31,40 @@ function readDeclaration(selector: string, property: string): string {
   return (value ?? '').trim()
 }
 
-const CHIP_SURFACE_SELECTORS = ['.worktree-sidebar-chip', '.dark .worktree-sidebar-chip']
-const CHIP_LABEL_SELECTORS = ['.worktree-sidebar-chip-label', '.dark .worktree-sidebar-chip-label']
+const CHIP_BACKGROUNDS = [
+  ['.worktree-sidebar-chip', 'color-mix(in srgb, var(--foreground) 8%, transparent)'],
+  ['.dark .worktree-sidebar-chip', 'color-mix(in srgb, var(--foreground) 12%, transparent)']
+] as const
 
 describe('worktree sidebar chip surface', () => {
-  // Why: an opaque fill is pre-mixed against the sidebar base, so on a selected card —
-  // itself a foreground-10% wash over that same base — the chip and the card resolve to
-  // the same color and the chip disappears. Mixing toward `transparent` composites over
-  // the chip's real parent, holding one step on every surface and appearance mode.
-  it.each(CHIP_SURFACE_SELECTORS)('fills %s with an alpha overlay', (selector) => {
-    const background = readDeclaration(selector, 'background')
-
-    expect(background).toMatch(/^color-mix\(/)
-    expect(background).toMatch(/transparent\s*\)$/)
+  it.each(CHIP_BACKGROUNDS)('keeps %s theme-relative and layer-relative', (selector, expected) => {
+    expect(readDeclaration(selector, 'background')).toBe(expected)
   })
 
-  it.each(CHIP_LABEL_SELECTORS)('tints %s against its own surface', (selector) => {
-    const color = readDeclaration(selector, 'color')
+  it('inherits the sleeping-card foreground instead of bypassing its dim', () => {
+    expect(readRuleBody('[data-worktree-sleeping-dim]')).toMatch(/--foreground:\s*color-mix\(/)
 
-    expect(color).toMatch(/^color-mix\(/)
-    expect(color).toMatch(/transparent\s*\)$/)
+    for (const [selector] of CHIP_BACKGROUNDS) {
+      const background = readDeclaration(selector, 'background')
+      expect(background).toContain('var(--foreground)')
+      expect(background).not.toContain('var(--worktree-sidebar-foreground)')
+    }
   })
 
   it('keeps the chip border out of the way instead of tinting it', () => {
     expect(readDeclaration('.worktree-sidebar-chip', 'border-color')).toBe('transparent')
   })
 
-  it('keeps the meta-row chips off base-mixed surface tokens', () => {
-    const source = readFileSync(resolve(testDir, 'worktree-card-meta-row.tsx'), 'utf8')
+  it('applies the shared surface to host and repository chips', () => {
+    const hostMarkup = renderToStaticMarkup(
+      createElement(WorktreeHostContextBadge, { label: 'Remote Mac' })
+    )
+    const metaRowSource = readFileSync(resolve(testDir, 'worktree-card-meta-row.tsx'), 'utf8')
 
-    expect(source).not.toMatch(/\bbg-accent\b/)
-    expect(source).not.toMatch(/\bborder-border\b/)
+    expect(hostMarkup).toMatch(/class="[^"]*\bworktree-sidebar-chip\b/)
+    expect(hostMarkup).toMatch(/class="[^"]*\btext-muted-foreground\b/)
+    expect(metaRowSource.match(/worktree-sidebar-chip(?=[\s"'])/g)).toHaveLength(1)
+    expect(metaRowSource).not.toMatch(/\bbg-accent\b/)
+    expect(metaRowSource).not.toMatch(/\bborder-border\b/)
   })
 })

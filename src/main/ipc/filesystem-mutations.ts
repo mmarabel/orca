@@ -24,7 +24,7 @@ import {
 } from './filesystem-runtime-upload-staging'
 import { streamExternalFileToRuntime } from './runtime-upload-file-stream'
 import { abortWhenRendererGone } from './renderer-lifetime-abort'
-import { callRuntimeEnvironment } from './runtime-environment-transport-routing'
+import { sweepAbandonedRuntimeUploadTempPath } from './runtime-upload-temp-sweep'
 import type { RuntimeUploadFileStreamRequest } from '../../shared/runtime-upload-staging-contract'
 
 /**
@@ -232,7 +232,7 @@ export function registerFilesystemMutationHandlers(store: Store): void {
         if (lifetime.signal.aborted) {
           // Why: the renderer owns temp cleanup, and it is gone — so the
           // abandoned temp path is only collectable from here.
-          await deleteRuntimeUploadTempPath(userDataPath, args)
+          await sweepAbandonedRuntimeUploadTempPath(userDataPath, args)
         }
         throw error
       } finally {
@@ -300,32 +300,4 @@ export function registerFilesystemMutationHandlers(store: Store): void {
       return { resolvedPaths, skipped, failed }
     }
   )
-}
-
-/** Best-effort sweep of an abandoned upload temp path; failure is not actionable. */
-async function deleteRuntimeUploadTempPath(
-  userDataPath: string,
-  args: RuntimeUploadFileStreamRequest
-): Promise<void> {
-  try {
-    await callRuntimeEnvironment(
-      userDataPath,
-      args.environmentId,
-      'files.delete',
-      {
-        worktree: args.worktree,
-        relativePath: args.relativePath,
-        recursive: false,
-        expectedSshTargetId: args.expectedSshTargetId,
-        expectedSshConnectionGeneration: args.expectedSshConnectionGeneration,
-        expectedExecutionHostId: args.expectedExecutionHostId
-      },
-      15_000,
-      args.expectedEnvironmentPairingRevision,
-      undefined,
-      { expectedEnvironmentRuntimeId: args.expectedEnvironmentRuntimeId }
-    )
-  } catch {
-    // The runtime may be the reason the upload failed; nothing to escalate.
-  }
 }

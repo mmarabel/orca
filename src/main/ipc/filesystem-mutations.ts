@@ -26,6 +26,7 @@ import { streamExternalFileToRuntime } from './runtime-upload-file-stream'
 import { abortWhenRendererGone } from './renderer-lifetime-abort'
 import { sweepAbandonedRuntimeUploadTempPath } from './runtime-upload-temp-sweep'
 import type { RuntimeUploadFileStreamRequest } from '../../shared/runtime-upload-staging-contract'
+import { resolveEnvironment } from '../../shared/runtime-environment-store'
 
 /**
  * IPC handlers for file/folder creation and renaming.
@@ -222,17 +223,27 @@ export function registerFilesystemMutationHandlers(store: Store): void {
     'fs:uploadExternalFileToRuntime',
     async (event, args: RuntimeUploadFileStreamRequest): Promise<{ byteLength: number }> => {
       const userDataPath = app.getPath('userData')
+      // Why: the streamer's manual-disconnect check keys on the environment id,
+      // and the renderer may pass any selector the store resolves.
+      const request = {
+        ...args,
+        environmentId: resolveEnvironment(userDataPath, args.environmentId).id
+      }
       // Why: the renderer's own loop died with its window. Now that the bytes
       // move in main, a reload or close has to stop the transfer explicitly,
       // or a multi-GB upload outlives the window that asked for it.
       const lifetime = abortWhenRendererGone(event.sender)
       try {
-        return await streamExternalFileToRuntime({ ...args, userDataPath, signal: lifetime.signal })
+        return await streamExternalFileToRuntime({
+          ...request,
+          userDataPath,
+          signal: lifetime.signal
+        })
       } catch (error) {
         if (lifetime.signal.aborted) {
           // Why: the renderer owns temp cleanup, and it is gone — so the
           // abandoned temp path is only collectable from here.
-          await sweepAbandonedRuntimeUploadTempPath(userDataPath, args)
+          await sweepAbandonedRuntimeUploadTempPath(userDataPath, request)
         }
         throw error
       } finally {

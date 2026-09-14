@@ -45,6 +45,11 @@ vi.mock('./runtime-import-limits', async (importOriginal) => ({
 
 const { RUNTIME_UPLOAD_SLICE_BYTES, streamExternalFileToRuntime } =
   await import('./runtime-upload-file-stream')
+const {
+  clearRuntimeEnvironmentManualDisconnect,
+  markRuntimeEnvironmentManuallyDisconnected,
+  RUNTIME_MANUALLY_DISCONNECTED_MESSAGE
+} = await import('./runtime-environment-manual-disconnect')
 
 let workDir: string
 
@@ -397,4 +402,37 @@ describe('streamExternalFileToRuntime', () => {
       expect(chunkCalls()).toHaveLength(0)
     }
   )
+})
+
+describe('manual disconnect during a transfer', () => {
+  afterEach(() => {
+    clearRuntimeEnvironmentManualDisconnect('env-1')
+  })
+
+  it('stops at the next slice once the environment is manually disconnected', async () => {
+    const filePath = join(workDir, 'disconnect.bin')
+    await writeFile(filePath, Buffer.alloc(RUNTIME_UPLOAD_SLICE_BYTES * 3, 7))
+    callRuntimeEnvironment.mockImplementation(async (_u, _e, method) => {
+      if (method === 'files.writeBase64Chunk' && chunkCalls().length === 1) {
+        markRuntimeEnvironmentManuallyDisconnected('env-1')
+      }
+      return { id: 'x', ok: true, result: {}, _meta: {} }
+    })
+
+    await expect(streamExternalFileToRuntime(await baseArgs(filePath))).rejects.toThrow(
+      RUNTIME_MANUALLY_DISCONNECTED_MESSAGE
+    )
+    expect(chunkCalls()).toHaveLength(1)
+  })
+
+  it('refuses the first slice when the environment is already disconnected', async () => {
+    const filePath = join(workDir, 'disconnected.bin')
+    await writeFile(filePath, Buffer.alloc(16, 1))
+    markRuntimeEnvironmentManuallyDisconnected('env-1')
+
+    await expect(streamExternalFileToRuntime(await baseArgs(filePath))).rejects.toThrow(
+      RUNTIME_MANUALLY_DISCONNECTED_MESSAGE
+    )
+    expect(chunkCalls()).toHaveLength(0)
+  })
 })

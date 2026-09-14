@@ -1,6 +1,6 @@
 import type { WebContents } from 'electron'
 
-export type RendererLifetimeSender = Pick<WebContents, 'once' | 'on' | 'removeListener'>
+export type RendererLifetimeSender = Pick<WebContents, 'once' | 'removeListener'>
 
 export const RENDERER_GONE_MESSAGE = 'The window that started this upload went away'
 
@@ -20,19 +20,15 @@ export function abortWhenRendererGone(sender: RendererLifetimeSender): {
 } {
   const controller = new AbortController()
   const abort = (): void => controller.abort(new Error(RENDERER_GONE_MESSAGE))
-  // Why: a same-document navigation is a route change inside the live app, not
-  // a teardown; aborting on it would kill uploads on ordinary in-app navigation.
-  const abortOnNavigation = (details: { isMainFrame: boolean; isSameDocument: boolean }): void => {
-    if (details.isSameDocument || !details.isMainFrame) {
-      return
-    }
-    abort()
-  }
   let disposed = false
 
   sender.once('destroyed', abort)
   sender.once('render-process-gone', abort)
-  sender.on('did-start-navigation', abortOnNavigation)
+  // Why: did-start-navigation also fires for navigations that will-navigate then
+  // blocks — an external link, a stray file drop — and the renderer survives
+  // those. did-navigate fires only once a new document has replaced the caller,
+  // and never for same-document route changes inside the live app.
+  sender.once('did-navigate', abort)
 
   return {
     signal: controller.signal,
@@ -43,7 +39,7 @@ export function abortWhenRendererGone(sender: RendererLifetimeSender): {
       disposed = true
       sender.removeListener('destroyed', abort)
       sender.removeListener('render-process-gone', abort)
-      sender.removeListener('did-start-navigation', abortOnNavigation)
+      sender.removeListener('did-navigate', abort)
     }
   }
 }

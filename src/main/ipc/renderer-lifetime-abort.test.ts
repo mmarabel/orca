@@ -32,16 +32,48 @@ describe('abortWhenRendererGone', () => {
     expect(signal.aborted).toBe(true)
   })
 
-  it('aborts on a reload but not on in-app route changes', () => {
+  it('aborts once a reload has replaced the document, not on in-app route changes', () => {
     const sender = fakeSender()
     const { signal } = abortWhenRendererGone(sender)
 
-    sender.emit('did-start-navigation', { isMainFrame: true, isSameDocument: true })
-    sender.emit('did-start-navigation', { isMainFrame: false, isSameDocument: false })
+    sender.emit('did-start-navigation', {
+      isMainFrame: true,
+      isSameDocument: true,
+      url: 'file:///app#x'
+    })
+    sender.emit('did-navigate-in-page', 'file:///app#x')
     expect(signal.aborted).toBe(false)
 
-    sender.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+    sender.emit('did-start-navigation', {
+      isMainFrame: true,
+      isSameDocument: false,
+      url: 'file:///app'
+    })
+    sender.emit('did-navigate', 'file:///app', 200, 'OK')
     expect(signal.aborted).toBe(true)
+  })
+
+  it('ignores a main-frame navigation that starts but is blocked before it commits', () => {
+    // Why: Electron emits did-start-navigation before will-navigate gets to
+    // preventDefault() an external link or a stray file drop; the renderer
+    // document survives those, so the upload must too.
+    const sender = fakeSender()
+    const { signal } = abortWhenRendererGone(sender)
+
+    sender.emit('did-start-navigation', {
+      isMainFrame: true,
+      isSameDocument: false,
+      url: 'https://example.invalid/'
+    })
+    sender.emit('will-navigate', { defaultPrevented: true }, 'https://example.invalid/')
+    sender.emit('did-start-navigation', {
+      isMainFrame: true,
+      isSameDocument: false,
+      url: 'file:///Users/me/dropped.png'
+    })
+    sender.emit('will-navigate', { defaultPrevented: true }, 'file:///Users/me/dropped.png')
+
+    expect(signal.aborted).toBe(false)
   })
 
   it('leaves no listeners on a long-lived renderer once disposed', () => {
@@ -54,6 +86,6 @@ describe('abortWhenRendererGone', () => {
 
     expect(sender.listenerCount('destroyed')).toBe(0)
     expect(sender.listenerCount('render-process-gone')).toBe(0)
-    expect(sender.listenerCount('did-start-navigation')).toBe(0)
+    expect(sender.listenerCount('did-navigate')).toBe(0)
   })
 })

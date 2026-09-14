@@ -7,6 +7,10 @@ import type {
 } from '../../shared/runtime-upload-staging-contract'
 import { authorizeExternalPath } from './filesystem-auth'
 import { formatByteCeiling, REMOTE_IMPORT_MAX_FILE_BYTES } from './runtime-import-limits'
+import {
+  isRuntimeEnvironmentManuallyDisconnected,
+  RUNTIME_MANUALLY_DISCONNECTED_MESSAGE
+} from './runtime-environment-manual-disconnect'
 import { callRuntimeEnvironment } from './runtime-environment-transport-routing'
 
 // Why: base64 turns 3 bytes into 4 chars, so a 384 KiB slice lands on the wire
@@ -16,6 +20,8 @@ export const RUNTIME_UPLOAD_SLICE_BYTES = 384 * 1024
 const RUNTIME_UPLOAD_CHUNK_TIMEOUT_MS = 30_000
 
 export type RuntimeUploadFileStreamArgs = RuntimeUploadFileStreamRequest & {
+  /** Resolved environment id, not a selector: the manual-disconnect check keys on it. */
+  environmentId: string
   userDataPath: string
   /** Aborts the transfer; the caller's lifetime is what raises it today. */
   signal?: AbortSignal
@@ -146,6 +152,12 @@ async function sendChunk(
   contentBase64: string,
   append: boolean
 ): Promise<void> {
+  // Why: the renderer's per-chunk calls went through an IPC handler that refuses
+  // a manually disconnected environment. The loop lives in main now, so it makes
+  // the same check, or a disconnect mid-upload keeps pushing bytes to that host.
+  if (isRuntimeEnvironmentManuallyDisconnected(args.environmentId)) {
+    throw new Error(RUNTIME_MANUALLY_DISCONNECTED_MESSAGE)
+  }
   const response = await callRuntimeEnvironment(
     args.userDataPath,
     args.environmentId,

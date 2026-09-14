@@ -18,7 +18,10 @@ import type {
   StagedExternalImportSource
 } from './filesystem-import-result-types'
 import { importOneSource } from './filesystem-import-local'
-import { stageOneSourceForRuntimeUpload } from './filesystem-runtime-upload-staging'
+import {
+  stagedRuntimeUploadByteLength,
+  stageOneSourceForRuntimeUpload
+} from './filesystem-runtime-upload-staging'
 import { streamExternalFileToRuntime } from './runtime-upload-file-stream'
 import type { RuntimeUploadFileStreamRequest } from '../../shared/runtime-upload-staging-contract'
 
@@ -198,8 +201,13 @@ export function registerFilesystemMutationHandlers(store: Store): void {
       args: { sourcePaths: string[] }
     ): Promise<{ sources: StagedExternalImportSource[] }> => {
       const sources: StagedExternalImportSource[] = []
+      // Why: one budget for the whole drop — per-source counters would let five
+      // 2 GB files through a ceiling meant to cap the drop.
+      let totalBytes = 0
       for (const sourcePath of args.sourcePaths) {
-        sources.push(await stageOneSourceForRuntimeUpload(sourcePath))
+        const source = await stageOneSourceForRuntimeUpload(sourcePath, totalBytes)
+        totalBytes += stagedRuntimeUploadByteLength(source)
+        sources.push(source)
       }
       return { sources }
     }

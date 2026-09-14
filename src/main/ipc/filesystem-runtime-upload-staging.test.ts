@@ -15,7 +15,8 @@ vi.mock('./runtime-import-limits', async (importOriginal) => ({
   REMOTE_IMPORT_MAX_TOTAL_BYTES: 16 * 1024
 }))
 
-const { stageOneSourceForRuntimeUpload } = await import('./filesystem-runtime-upload-staging')
+const { stagedRuntimeUploadByteLength, stageOneSourceForRuntimeUpload } =
+  await import('./filesystem-runtime-upload-staging')
 
 let workDir: string
 
@@ -82,6 +83,39 @@ describe('stageOneSourceForRuntimeUpload', () => {
     expect(staged).toMatchObject({ status: 'failed' })
     expect(staged.status === 'failed' && staged.reason).toContain('6 KB')
     expect(staged.status === 'failed' && staged.reason).toContain('4 KB')
+  })
+
+  it('counts earlier sources in the drop against the total ceiling', async () => {
+    const filePath = join(workDir, 'second.bin')
+    await writeFile(filePath, Buffer.alloc(3 * 1024))
+
+    // Alone it fits; after 14 KB of earlier sources the 16 KB drop ceiling is gone.
+    await expect(stageOneSourceForRuntimeUpload(filePath, 0)).resolves.toMatchObject({
+      status: 'staged'
+    })
+    const overBudget = await stageOneSourceForRuntimeUpload(filePath, 14 * 1024)
+    expect(overBudget).toMatchObject({ status: 'failed' })
+    expect(overBudget.status === 'failed' && overBudget.reason).toContain(
+      'total remote import limit'
+    )
+  })
+
+  it('reports the bytes a source contributes to the drop budget', async () => {
+    const rootPath = join(workDir, 'tree')
+    await mkdir(join(rootPath, 'nested'), { recursive: true })
+    await writeFile(join(rootPath, 'a.txt'), 'aa')
+    await writeFile(join(rootPath, 'nested', 'b.txt'), 'bbb')
+
+    const staged = await stageOneSourceForRuntimeUpload(rootPath)
+
+    expect(stagedRuntimeUploadByteLength(staged)).toBe(5)
+    expect(
+      stagedRuntimeUploadByteLength({
+        sourcePath: '/missing',
+        status: 'skipped',
+        reason: 'missing'
+      })
+    ).toBe(0)
   })
 
   // symlink() needs privileges or Developer Mode on Windows.

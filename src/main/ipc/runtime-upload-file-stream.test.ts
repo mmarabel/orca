@@ -224,6 +224,19 @@ describe('streamExternalFileToRuntime', () => {
     expect(chunkCalls()).toEqual([expect.objectContaining({ append: false, contentBase64: '' })])
   })
 
+  it('refuses to finish a zero-byte upload whose source gained content mid-write', async () => {
+    const filePath = join(workDir, 'grows.txt')
+    await writeFile(filePath, '')
+    const args = await baseArgs(filePath)
+
+    callRuntimeEnvironment.mockImplementation(async () => {
+      await writeFile(filePath, 'content arrived during the empty write')
+      return { id: 'x', ok: true, result: {}, _meta: {} }
+    })
+
+    await expect(streamExternalFileToRuntime(args)).rejects.toThrow('File changed during upload')
+  })
+
   it('carries the pairing revision and runtime id on every chunk', async () => {
     const filePath = join(workDir, 'guarded.bin')
     await writeFile(filePath, Buffer.alloc(RUNTIME_UPLOAD_SLICE_BYTES + 10))

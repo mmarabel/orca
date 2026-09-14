@@ -15,8 +15,24 @@ import type {
 
 class RuntimeUploadSymlinkError extends Error {}
 
+/** Bytes this source contributes to the drop budget; 0 unless it staged. */
+export function stagedRuntimeUploadByteLength(source: StagedExternalImportSource): number {
+  if (source.status !== 'staged') {
+    return 0
+  }
+  return source.entries.reduce(
+    (total, entry) => (entry.kind === 'file' ? total + entry.byteLength : total),
+    0
+  )
+}
+
+/**
+ * @param totalBytesBefore Bytes already staged by earlier sources in the same drop,
+ *   so the total ceiling covers the whole drop rather than each source alone.
+ */
 export async function stageOneSourceForRuntimeUpload(
-  sourcePath: string
+  sourcePath: string,
+  totalBytesBefore = 0
 ): Promise<StagedExternalImportSource> {
   const resolvedSource = resolve(sourcePath)
 
@@ -54,8 +70,8 @@ export async function stageOneSourceForRuntimeUpload(
   }
   try {
     const entries = sourceStat.isDirectory()
-      ? await stageDirectoryEntries(resolvedSource)
-      : [(await stageFileEntry(resolvedSource, '')).entry]
+      ? await stageDirectoryEntries(resolvedSource, totalBytesBefore)
+      : [(await stageFileEntry(resolvedSource, '', { totalBytesBefore })).entry]
     return {
       sourcePath,
       status: 'staged',
@@ -75,9 +91,12 @@ export async function stageOneSourceForRuntimeUpload(
   }
 }
 
-async function stageDirectoryEntries(rootPath: string): Promise<StagedExternalImportEntry[]> {
+async function stageDirectoryEntries(
+  rootPath: string,
+  totalBytesBefore: number
+): Promise<StagedExternalImportEntry[]> {
   const entries: StagedExternalImportEntry[] = [{ relativePath: '', kind: 'directory' }]
-  let totalBytes = 0
+  let totalBytes = totalBytesBefore
   const rootRealPath = await realpath(rootPath)
 
   async function visit(dirPath: string): Promise<void> {
@@ -128,7 +147,7 @@ async function stageDirectoryEntries(rootPath: string): Promise<StagedExternalIm
 async function stageFileEntry(
   filePath: string,
   relativePath: string,
-  options?: { rootRealPath?: string; totalBytesBefore?: number }
+  options: { rootRealPath?: string; totalBytesBefore: number }
 ): Promise<{ entry: StagedExternalImportEntry; byteLength: number }> {
   const statResult = await lstat(filePath)
   const displayPath = normalizeRelativeUploadPath(relativePath)
@@ -138,14 +157,14 @@ async function stageFileEntry(
   if (!statResult.isFile()) {
     throw new Error(`Unsupported file type in '${displayPath}'`)
   }
-  if (options?.rootRealPath) {
+  if (options.rootRealPath) {
     await assertRealPathInsideRoot(options.rootRealPath, filePath, displayPath)
   }
-  const initialTotalBytes =
-    options?.totalBytesBefore === undefined
-      ? statResult.size
-      : options.totalBytesBefore + statResult.size
-  assertRemoteUploadBudget(relativePath, statResult.size, initialTotalBytes)
+  assertRemoteUploadBudget(
+    relativePath,
+    statResult.size,
+    options.totalBytesBefore + statResult.size
+  )
   const fileHandle = await open(filePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
   try {
     const openedStat = await fileHandle.stat()
@@ -159,11 +178,11 @@ async function stageFileEntry(
     ) {
       throw new Error(`File changed during upload staging: '${displayPath}'`)
     }
-    const totalBytes =
-      options?.totalBytesBefore === undefined
-        ? openedStat.size
-        : options.totalBytesBefore + openedStat.size
-    assertRemoteUploadBudget(relativePath, openedStat.size, totalBytes)
+    assertRemoteUploadBudget(
+      relativePath,
+      openedStat.size,
+      options.totalBytesBefore + openedStat.size
+    )
     // Why: bytes are read slice-by-slice at upload time, so staging records the
     // identity the streamer re-checks rather than the body itself. Size alone
     // would let a same-size replacement slip through between the two calls.

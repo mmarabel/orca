@@ -70,27 +70,27 @@ export async function streamExternalFileToRuntime(
           `${formatByteCeiling(REMOTE_IMPORT_MAX_FILE_BYTES)} per-file remote import limit`
       )
     }
-    // Why: a zero-byte source produces no slices, but the destination still has
-    // to exist before commitUpload renames it into place.
     if (totalBytes === 0) {
+      // Why: a zero-byte source produces no slices, but the destination still
+      // has to exist before commitUpload renames it into place.
       await sendChunk(args, '', false)
-      return { byteLength: 0 }
-    }
-
-    const buffer = Buffer.allocUnsafe(Math.min(RUNTIME_UPLOAD_SLICE_BYTES, totalBytes))
-    let offset = 0
-    while (offset < totalBytes) {
-      const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, offset)
-      if (bytesRead === 0) {
-        throw new Error(`File truncated during upload: '${displayPath}'`)
+    } else {
+      const buffer = Buffer.allocUnsafe(Math.min(RUNTIME_UPLOAD_SLICE_BYTES, totalBytes))
+      let offset = 0
+      while (offset < totalBytes) {
+        const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, offset)
+        if (bytesRead === 0) {
+          throw new Error(`File truncated during upload: '${displayPath}'`)
+        }
+        await sendChunk(args, buffer.subarray(0, bytesRead).toString('base64'), offset > 0)
+        offset += bytesRead
       }
-      await sendChunk(args, buffer.subarray(0, bytesRead).toString('base64'), offset > 0)
-      offset += bytesRead
     }
 
     // Why: the destination is a temp path the caller commits, so a source
-    // rewritten mid-read is caught before anything lands at the final path.
-    // mtime catches an in-place edit that kept the size.
+    // rewritten mid-transfer is caught before anything lands at the final path.
+    // mtime catches an in-place edit that kept the size. An empty source runs
+    // this too: its chunk is still a round trip the source can change during.
     const afterReadStat = await handle.stat()
     if (afterReadStat.mtimeMs !== openedStat.mtimeMs || !isSameFile(afterReadStat, openedStat)) {
       throw new Error(`File changed during upload: '${displayPath}'`)

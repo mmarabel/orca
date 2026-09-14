@@ -7,7 +7,14 @@ import type * as RuntimeImportLimits from './runtime-import-limits'
 
 type RuntimeImportLimitsModule = typeof RuntimeImportLimits
 
-type ChunkCall = { relativePath: string; contentBase64: string; append: boolean }
+type ChunkCall = {
+  relativePath: string
+  contentBase64: string
+  append: boolean
+  expectedSshTargetId?: string
+  expectedSshConnectionGeneration?: number
+  expectedExecutionHostId?: string
+}
 type RuntimeCallOptions = { expectedEnvironmentRuntimeId?: string; signal?: AbortSignal }
 
 const callRuntimeEnvironment =
@@ -333,7 +340,50 @@ describe('streamExternalFileToRuntime', () => {
   })
 
   it.skipIf(process.platform === 'win32')(
-    'refuses a directory entry whose real path escapes the dropped root',
+    'refuses a regular file reached through a symlinked directory inside the root',
+    async () => {
+      // Why: the symlink guard only lstats the entry itself, which sees a plain
+      // file here — realpath containment is the only thing that catches this.
+      const outsideDir = join(workDir, 'outside')
+      await mkdir(outsideDir)
+      await writeFile(join(outsideDir, 'secret.txt'), 'secret')
+      const rootPath = join(workDir, 'root')
+      await mkdir(rootPath)
+      await symlink(outsideDir, join(rootPath, 'sub'))
+
+      await expect(
+        streamExternalFileToRuntime(unstagedArgs(rootPath, 'sub/secret.txt'))
+      ).rejects.toThrow('Path escaped upload root during upload')
+      expect(chunkCalls()).toHaveLength(0)
+    }
+  )
+
+  it('forwards the host ownership expectations into every chunk', async () => {
+    const filePath = join(workDir, 'owned.bin')
+    await writeFile(filePath, Buffer.alloc(RUNTIME_UPLOAD_SLICE_BYTES + 10))
+
+    await streamExternalFileToRuntime({
+      ...(await baseArgs(filePath)),
+      expectedSshTargetId: 'ssh-1',
+      expectedSshConnectionGeneration: 5,
+      expectedExecutionHostId: 'ssh:ssh-1'
+    })
+
+    const calls = callRuntimeEnvironment.mock.calls
+      .filter(([, , method]) => method === 'files.writeBase64Chunk')
+      .map(([, , , params]) => params)
+    expect(calls).toHaveLength(2)
+    for (const params of calls) {
+      expect(params).toMatchObject({
+        expectedSshTargetId: 'ssh-1',
+        expectedSshConnectionGeneration: 5,
+        expectedExecutionHostId: 'ssh:ssh-1'
+      })
+    }
+  })
+
+  it.skipIf(process.platform === 'win32')(
+    'refuses a symlinked directory entry before it reaches the containment check',
     async () => {
       const outsidePath = join(workDir, 'outside.txt')
       await writeFile(outsidePath, 'outside')

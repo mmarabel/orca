@@ -8,7 +8,7 @@ import type * as RuntimeImportLimits from './runtime-import-limits'
 type RuntimeImportLimitsModule = typeof RuntimeImportLimits
 
 type ChunkCall = { relativePath: string; contentBase64: string; append: boolean }
-type RuntimeCallOptions = { expectedEnvironmentRuntimeId?: string }
+type RuntimeCallOptions = { expectedEnvironmentRuntimeId?: string; signal?: AbortSignal }
 
 const callRuntimeEnvironment =
   vi.fn<
@@ -125,7 +125,7 @@ describe('streamExternalFileToRuntime', () => {
 
     await expect(
       streamExternalFileToRuntime({ ...(await baseArgs(filePath)), expected: staged })
-    ).rejects.toThrow('File changed since it was staged')
+    ).rejects.toThrow("File changed since it was staged: 'grown.bin'")
     expect(chunkCalls()).toHaveLength(0)
   })
 
@@ -190,12 +190,13 @@ describe('streamExternalFileToRuntime', () => {
     })
   })
 
-  it('refuses a file over the ceiling', async () => {
-    const filePath = join(workDir, 'huge.bin')
+  it('refuses a file over the ceiling and names the source, not the temp path', async () => {
+    const filePath = join(workDir, 'clip.mp4')
     await writeFile(filePath, Buffer.alloc(3 * 1024 * 1024))
 
+    // Why: relativePath here is '.upload.tmp', a path the user never chose.
     await expect(streamExternalFileToRuntime(await baseArgs(filePath))).rejects.toThrow(
-      'over the 2 MB per-file remote import limit'
+      "'clip.mp4' is 3 MB, over the 2 MB per-file remote import limit"
     )
     expect(chunkCalls()).toHaveLength(0)
   })
@@ -257,6 +258,51 @@ describe('streamExternalFileToRuntime', () => {
       { revision: 41, runtimeId: 'runtime-7' },
       { revision: 41, runtimeId: 'runtime-7' }
     ])
+  })
+
+  it('stops mid-transfer when the caller aborts instead of streaming the rest', async () => {
+    const filePath = join(workDir, 'abandoned.bin')
+    await writeFile(filePath, Buffer.alloc(RUNTIME_UPLOAD_SLICE_BYTES * 4))
+    const controller = new AbortController()
+
+    callRuntimeEnvironment.mockImplementation(async () => {
+      controller.abort(new Error('window closed'))
+      return { id: 'x', ok: true, result: {}, _meta: {} }
+    })
+
+    await expect(
+      streamExternalFileToRuntime({ ...(await baseArgs(filePath)), signal: controller.signal })
+    ).rejects.toThrow('window closed')
+    // One slice went out before the abort; the other three never do.
+    expect(chunkCalls()).toHaveLength(1)
+  })
+
+  it('refuses to start once the caller has already aborted', async () => {
+    const filePath = join(workDir, 'never.bin')
+    await writeFile(filePath, Buffer.alloc(1024))
+    const controller = new AbortController()
+    controller.abort(new Error('window closed'))
+
+    await expect(
+      streamExternalFileToRuntime({ ...(await baseArgs(filePath)), signal: controller.signal })
+    ).rejects.toThrow('window closed')
+    expect(chunkCalls()).toHaveLength(0)
+  })
+
+  it('passes the abort signal to every chunk so an in-flight request is cancelled', async () => {
+    const filePath = join(workDir, 'signalled.bin')
+    await writeFile(filePath, Buffer.alloc(RUNTIME_UPLOAD_SLICE_BYTES + 10))
+    const controller = new AbortController()
+
+    await streamExternalFileToRuntime({
+      ...(await baseArgs(filePath)),
+      signal: controller.signal
+    })
+
+    const signals = callRuntimeEnvironment.mock.calls
+      .filter(([, , method]) => method === 'files.writeBase64Chunk')
+      .map(([, , , , , , , options]) => options?.signal)
+    expect(signals).toEqual([controller.signal, controller.signal])
   })
 
   it('stops at the failing chunk instead of sending the rest of the file', async () => {

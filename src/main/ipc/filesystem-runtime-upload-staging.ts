@@ -151,35 +151,34 @@ async function stageFileEntry(
 ): Promise<{ entry: StagedExternalImportEntry; byteLength: number }> {
   const statResult = await lstat(filePath)
   const displayPath = normalizeRelativeUploadPath(relativePath)
+  // Why: a dropped file's relative path is '', so errors would name nothing.
+  // The entry keeps '' — only the message falls back to the file's own name.
+  const displayName = displayPath || basename(filePath)
   if (statResult.isSymbolicLink()) {
-    throw new RuntimeUploadSymlinkError(`Symlink not allowed in '${displayPath}'`)
+    throw new RuntimeUploadSymlinkError(`Symlink not allowed in '${displayName}'`)
   }
   if (!statResult.isFile()) {
-    throw new Error(`Unsupported file type in '${displayPath}'`)
+    throw new Error(`Unsupported file type in '${displayName}'`)
   }
   if (options.rootRealPath) {
-    await assertRealPathInsideRoot(options.rootRealPath, filePath, displayPath)
+    await assertRealPathInsideRoot(options.rootRealPath, filePath, displayName)
   }
-  assertRemoteUploadBudget(
-    relativePath,
-    statResult.size,
-    options.totalBytesBefore + statResult.size
-  )
+  assertRemoteUploadBudget(displayName, statResult.size, options.totalBytesBefore + statResult.size)
   const fileHandle = await open(filePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
   try {
     const openedStat = await fileHandle.stat()
     if (!openedStat.isFile()) {
-      throw new Error(`Unsupported file type in '${displayPath}'`)
+      throw new Error(`Unsupported file type in '${displayName}'`)
     }
     if (
       openedStat.size !== statResult.size ||
       (statResult.ino !== 0 && openedStat.ino !== 0 && openedStat.ino !== statResult.ino) ||
       (statResult.dev !== 0 && openedStat.dev !== 0 && openedStat.dev !== statResult.dev)
     ) {
-      throw new Error(`File changed during upload staging: '${displayPath}'`)
+      throw new Error(`File changed during upload staging: '${displayName}'`)
     }
     assertRemoteUploadBudget(
-      relativePath,
+      displayName,
       openedStat.size,
       options.totalBytesBefore + openedStat.size
     )
@@ -219,13 +218,13 @@ async function assertRealPathInsideRoot(
 }
 
 function assertRemoteUploadBudget(
-  relativePath: string,
+  displayName: string,
   fileBytes: number,
   totalBytes: number
 ): void {
   if (fileBytes > REMOTE_IMPORT_MAX_FILE_BYTES) {
     throw new Error(
-      `'${relativePath}' is ${formatByteCeiling(fileBytes)}, over the ` +
+      `'${displayName}' is ${formatByteCeiling(fileBytes)}, over the ` +
         `${formatByteCeiling(REMOTE_IMPORT_MAX_FILE_BYTES)} per-file remote import limit`
     )
   }

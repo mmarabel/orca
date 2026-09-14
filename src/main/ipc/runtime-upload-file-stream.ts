@@ -1,6 +1,6 @@
 import { constants, type Stats } from 'node:fs'
 import { lstat, open, realpath } from 'node:fs/promises'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type {
   RuntimeUploadFileStreamRequest,
   StagedRuntimeUploadFileIdentity
@@ -17,6 +17,8 @@ const RUNTIME_UPLOAD_CHUNK_TIMEOUT_MS = 30_000
 
 export type RuntimeUploadFileStreamArgs = RuntimeUploadFileStreamRequest & {
   userDataPath: string
+  /** Aborts the transfer; the caller's lifetime is what raises it today. */
+  signal?: AbortSignal
 }
 
 /**
@@ -34,7 +36,9 @@ export async function streamExternalFileToRuntime(
   // Why: parity with staging — an OS drop authorizes the paths it hands over.
   authorizeExternalPath(sourcePath)
 
-  const displayPath = args.entryRelativePath || args.relativePath
+  // Why: relativePath is the hidden .orca-upload-<nonce> temp destination, so a
+  // dropped file names its source instead of a path the user never chose.
+  const displayPath = args.entryRelativePath || basename(args.sourceRootPath)
   const lstatResult = await lstat(sourcePath)
   if (lstatResult.isSymbolicLink()) {
     throw new Error(`Symlink not allowed in '${displayPath}'`)
@@ -46,6 +50,8 @@ export async function streamExternalFileToRuntime(
     await assertEntryInsideRoot(args.sourceRootPath, sourcePath, displayPath)
   }
   assertMatchesStagedIdentity(lstatResult, args.expected, displayPath)
+
+  args.signal?.throwIfAborted()
 
   const handle = await open(sourcePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
   try {
@@ -78,6 +84,9 @@ export async function streamExternalFileToRuntime(
       const buffer = Buffer.allocUnsafe(Math.min(RUNTIME_UPLOAD_SLICE_BYTES, totalBytes))
       let offset = 0
       while (offset < totalBytes) {
+        // Why: checked per slice, so an abort stops the transfer at the next
+        // boundary instead of after the whole file has moved.
+        args.signal?.throwIfAborted()
         const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, offset)
         if (bytesRead === 0) {
           throw new Error(`File truncated during upload: '${displayPath}'`)
@@ -155,9 +164,12 @@ async function sendChunk(
     // appending the rest of the file on a different host.
     args.expectedEnvironmentPairingRevision,
     undefined,
-    // Why: a replacement runtime keeps the pairing but invalidates its
-    // predecessor's capability proof, so the identity rides every chunk too.
-    { expectedEnvironmentRuntimeId: args.expectedEnvironmentRuntimeId }
+    {
+      // Why: a replacement runtime keeps the pairing but invalidates its
+      // predecessor's capability proof, so the identity rides every chunk too.
+      expectedEnvironmentRuntimeId: args.expectedEnvironmentRuntimeId,
+      signal: args.signal
+    }
   )
   if (response.ok !== true) {
     throw new Error(response.error.message || response.error.code)

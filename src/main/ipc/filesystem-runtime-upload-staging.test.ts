@@ -74,15 +74,28 @@ describe('stageOneSourceForRuntimeUpload', () => {
     })
   })
 
-  it('names the limit and the actual size when a file is over the ceiling', async () => {
-    const filePath = join(workDir, 'huge.bin')
+  it('names the file, the actual size and the limit when a file is over the ceiling', async () => {
+    const filePath = join(workDir, 'clip.mp4')
     await writeFile(filePath, Buffer.alloc(6 * 1024))
 
     const staged = await stageOneSourceForRuntimeUpload(filePath)
 
     expect(staged).toMatchObject({ status: 'failed' })
-    expect(staged.status === 'failed' && staged.reason).toContain('6 KB')
-    expect(staged.status === 'failed' && staged.reason).toContain('4 KB')
+    // Why: a dropped file's relative path is '', so this is the regression that
+    // would otherwise report "'' is 6 KB, over the 4 KB ... limit".
+    expect(staged.status === 'failed' && staged.reason).toBe(
+      "'clip.mp4' is 6 KB, over the 4 KB per-file remote import limit"
+    )
+  })
+
+  it('names the offending entry by its path inside a dropped directory', async () => {
+    const rootPath = join(workDir, 'media')
+    await mkdir(join(rootPath, 'clips'), { recursive: true })
+    await writeFile(join(rootPath, 'clips', 'big.mp4'), Buffer.alloc(6 * 1024))
+
+    const staged = await stageOneSourceForRuntimeUpload(rootPath)
+
+    expect(staged.status === 'failed' && staged.reason).toContain("'clips/big.mp4'")
   })
 
   it('counts earlier sources in the drop against the total ceiling', async () => {

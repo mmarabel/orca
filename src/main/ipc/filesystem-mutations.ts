@@ -23,6 +23,8 @@ import {
   stageOneSourceForRuntimeUpload
 } from './filesystem-runtime-upload-staging'
 import { streamExternalFileToRuntime } from './runtime-upload-file-stream'
+import { abortWhenRendererGone } from './renderer-lifetime-abort'
+import { callRuntimeEnvironment } from './runtime-environment-transport-routing'
 import type { RuntimeUploadFileStreamRequest } from '../../shared/runtime-upload-staging-contract'
 
 /**
@@ -218,8 +220,25 @@ export function registerFilesystemMutationHandlers(store: Store): void {
   // and never sees file contents.
   ipcMain.handle(
     'fs:uploadExternalFileToRuntime',
-    async (_event, args: RuntimeUploadFileStreamRequest): Promise<{ byteLength: number }> =>
-      streamExternalFileToRuntime({ ...args, userDataPath: app.getPath('userData') })
+    async (event, args: RuntimeUploadFileStreamRequest): Promise<{ byteLength: number }> => {
+      const userDataPath = app.getPath('userData')
+      // Why: the renderer's own loop died with its window. Now that the bytes
+      // move in main, a reload or close has to stop the transfer explicitly,
+      // or a multi-GB upload outlives the window that asked for it.
+      const lifetime = abortWhenRendererGone(event.sender)
+      try {
+        return await streamExternalFileToRuntime({ ...args, userDataPath, signal: lifetime.signal })
+      } catch (error) {
+        if (lifetime.signal.aborted) {
+          // Why: the renderer owns temp cleanup, and it is gone — so the
+          // abandoned temp path is only collectable from here.
+          await deleteRuntimeUploadTempPath(userDataPath, args)
+        }
+        throw error
+      } finally {
+        lifetime.dispose()
+      }
+    }
   )
 
   // Why: terminal drag-and-drop resolver. Local worktrees pass paths through
@@ -281,4 +300,32 @@ export function registerFilesystemMutationHandlers(store: Store): void {
       return { resolvedPaths, skipped, failed }
     }
   )
+}
+
+/** Best-effort sweep of an abandoned upload temp path; failure is not actionable. */
+async function deleteRuntimeUploadTempPath(
+  userDataPath: string,
+  args: RuntimeUploadFileStreamRequest
+): Promise<void> {
+  try {
+    await callRuntimeEnvironment(
+      userDataPath,
+      args.environmentId,
+      'files.delete',
+      {
+        worktree: args.worktree,
+        relativePath: args.relativePath,
+        recursive: false,
+        expectedSshTargetId: args.expectedSshTargetId,
+        expectedSshConnectionGeneration: args.expectedSshConnectionGeneration,
+        expectedExecutionHostId: args.expectedExecutionHostId
+      },
+      15_000,
+      args.expectedEnvironmentPairingRevision,
+      undefined,
+      { expectedEnvironmentRuntimeId: args.expectedEnvironmentRuntimeId }
+    )
+  } catch {
+    // The runtime may be the reason the upload failed; nothing to escalate.
+  }
 }

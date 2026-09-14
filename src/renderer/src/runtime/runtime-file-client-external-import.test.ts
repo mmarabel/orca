@@ -320,7 +320,10 @@ describe('runtime file client', () => {
       .mockResolvedValueOnce(okResponse('create-destination-dir'))
       .mockResolvedValueOnce(notFoundResponse('stat-miss'))
       .mockResolvedValueOnce(okResponse('delete-temp'))
-    fsUploadExternalFileToRuntime.mockRejectedValue(new Error('disk full'))
+    // Electron wraps a main-process throw; the reason must not leak that.
+    fsUploadExternalFileToRuntime.mockRejectedValue(
+      new Error("Error invoking remote method 'fs:uploadExternalFileToRuntime': Error: disk full")
+    )
 
     await expect(
       importExternalPathsToRuntime(

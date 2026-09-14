@@ -1,3 +1,4 @@
+import { extractIpcErrorMessage } from '@/lib/ipc-error'
 import { joinPath, normalizeRelativePath } from '@/lib/path'
 import type { StagedRuntimeUploadFileIdentity } from '../../../shared/runtime-upload-staging-contract'
 import type { RuntimeFileOperationArgs } from './runtime-file-client-types'
@@ -36,19 +37,25 @@ export async function uploadRuntimeFileWithoutClobber(
     session.assertCurrent()
     // Why: main owns the file handle and the runtime socket, so it streams the
     // body in slices; the renderer never holds the whole file.
-    await window.api.fs.uploadExternalFileToRuntime({
-      environmentId: session.target.environmentId,
-      sourceRootPath: source.sourceRootPath,
-      entryRelativePath: source.entryRelativePath,
-      expected: source.expected,
-      worktree: toRuntimeWorktreeSelector(worktreeId),
-      relativePath: tempRelativePath,
-      expectedSshTargetId,
-      expectedSshConnectionGeneration,
-      expectedExecutionHostId,
-      expectedEnvironmentPairingRevision: session.expectedEnvironmentPairingRevision,
-      expectedEnvironmentRuntimeId: session.expectedEnvironmentRuntimeId
-    })
+    try {
+      await window.api.fs.uploadExternalFileToRuntime({
+        environmentId: session.target.environmentId,
+        sourceRootPath: source.sourceRootPath,
+        entryRelativePath: source.entryRelativePath,
+        expected: source.expected,
+        worktree: toRuntimeWorktreeSelector(worktreeId),
+        relativePath: tempRelativePath,
+        expectedSshTargetId,
+        expectedSshConnectionGeneration,
+        expectedExecutionHostId,
+        expectedEnvironmentPairingRevision: session.expectedEnvironmentPairingRevision,
+        expectedEnvironmentRuntimeId: session.expectedEnvironmentRuntimeId
+      })
+    } catch (error) {
+      // Why: this surfaces in the import result as-is, and Electron wraps a
+      // main-process throw in "Error invoking remote method '…'".
+      throw new Error(extractIpcErrorMessage(error, 'Upload failed'))
+    }
     await callRuntimeFileImportMutation(
       session,
       'files.commitUpload',

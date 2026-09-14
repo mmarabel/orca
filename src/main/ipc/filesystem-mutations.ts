@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
 import { constants } from 'node:fs'
 import { copyFile, mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
@@ -19,6 +19,8 @@ import type {
 } from './filesystem-import-result-types'
 import { importOneSource } from './filesystem-import-local'
 import { stageOneSourceForRuntimeUpload } from './filesystem-runtime-upload-staging'
+import { streamExternalFileToRuntime } from './runtime-upload-file-stream'
+import type { RuntimeUploadFileStreamRequest } from '../../shared/runtime-upload-staging-contract'
 
 /**
  * IPC handlers for file/folder creation and renaming.
@@ -201,6 +203,15 @@ export function registerFilesystemMutationHandlers(store: Store): void {
       }
       return { sources }
     }
+  )
+
+  // Why: the file handle and the runtime socket both live in main, so the byte
+  // pump runs here. The renderer keeps deconflict/commit/rollback orchestration
+  // and never sees file contents.
+  ipcMain.handle(
+    'fs:uploadExternalFileToRuntime',
+    async (_event, args: RuntimeUploadFileStreamRequest): Promise<{ byteLength: number }> =>
+      streamExternalFileToRuntime({ ...args, userDataPath: app.getPath('userData') })
   )
 
   // Why: terminal drag-and-drop resolver. Local worktrees pass paths through

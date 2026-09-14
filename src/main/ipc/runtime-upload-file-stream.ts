@@ -122,6 +122,7 @@ function assertMatchesStagedIdentity(
   }
 }
 
+/** Same inode on the same device, where the filesystem reports them. */
 function isSameFile(a: Stats, b: Stats): boolean {
   return (
     a.size === b.size &&
@@ -130,6 +131,7 @@ function isSameFile(a: Stats, b: Stats): boolean {
   )
 }
 
+/** Append one base64 slice, carrying the host guards that must hold per chunk. */
 async function sendChunk(
   args: RuntimeUploadFileStreamArgs,
   contentBase64: string,

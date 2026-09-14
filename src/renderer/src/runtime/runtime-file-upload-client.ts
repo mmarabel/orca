@@ -21,6 +21,7 @@ export type RuntimeUploadSource = {
   expected: StagedRuntimeUploadFileIdentity
 }
 
+/** Stream one staged file to a temp path, then commit it; the temp path is always cleaned up. */
 export async function uploadRuntimeFileWithoutClobber(
   session: RuntimeFileImportSession,
   worktreeId: string,
@@ -78,6 +79,7 @@ export async function uploadRuntimeFileWithoutClobber(
   }
 }
 
+/** Hidden sibling of the destination, so a failed upload never leaves a plausible-looking file. */
 function makeRuntimeUploadTempPath(relativePath: string): string {
   const normalized = normalizeRelativePath(relativePath)
   const slashIndex = normalized.lastIndexOf('/')

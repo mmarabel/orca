@@ -215,6 +215,51 @@ describe('CloudRelayTransport', () => {
     expect(connections).toBe(1)
   })
 
+  it('refuses a generation change while a connection is claimed', async () => {
+    const server = new WebSocketServer({ host: '127.0.0.1', port: 0, perMessageDeflate: false })
+    servers.push(server)
+    await new Promise<void>((resolve) => server.once('listening', resolve))
+    const address = server.address()
+    if (typeof address === 'string' || address === null) {
+      throw new Error('expected TCP relay test server')
+    }
+    const proxy = await startConnectProxy(address.port)
+    let releaseProxy = (): void => {}
+    const heldProxy = new Promise<string>((resolve) => {
+      releaseProxy = () => resolve(`PROXY 127.0.0.1:${proxy.port}`)
+    })
+    setDefaultProxySessionResolver(() => ({
+      resolveProxy: () => heldProxy,
+      setProxy: async () => {}
+    }))
+    const transport = new CloudRelayTransport({
+      cellUrl: 'http://relay-cell.example',
+      relayHostId: 'AbCdEf0123_-xyZ9',
+      generation: 7,
+      onConnectionClosed: vi.fn()
+    })
+    transports.push(transport)
+    transport.onMessage(vi.fn())
+    transport.onConnectionClose(vi.fn())
+    await transport.start()
+
+    const opening = transport.openConnection({
+      connId: 'conn-1',
+      connTicket: 'ticket-1',
+      kind: 'invite',
+      relayDeviceId: 'device-1',
+      attachDeadlineMs: 5_000
+    })
+    // The auth frame sends whichever generation is current when the socket opens, so a
+    // transition now would authenticate the ticket against the wrong one.
+    expect(() => transport.setGeneration(8)).toThrow('invalid_relay_generation_transition')
+
+    releaseProxy()
+    await opening
+
+    expect(proxy.targets).toEqual(['relay-cell.example:80'])
+  })
+
   it('drops a socket whose proxy resolution outlived stop() and a restart', async () => {
     const server = new WebSocketServer({ host: '127.0.0.1', port: 0, perMessageDeflate: false })
     servers.push(server)

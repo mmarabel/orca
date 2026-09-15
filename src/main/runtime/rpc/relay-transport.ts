@@ -95,6 +95,9 @@ export class CloudRelayTransport implements RpcTransport, MobileSocketTransport 
     }
     if (
       this.socketsByConnectionId.size > 0 ||
+      // A claimed connection is one whose socket is still opening: its auth frame will carry
+      // whatever generation this promise lands on, so the transition has to wait for it too.
+      this.claimedConnectionIds.size > 0 ||
       !Number.isSafeInteger(generation) ||
       generation <= 0
     ) {

@@ -89,8 +89,8 @@ export function loadKnownUsageWorktreesByRepo(
   // the default Orca scope drops every row (#20477).
   for (const workspace of folderWorkspaces) {
     // Why: the scanners only read this host's transcripts, so resolve ownership the way the rest of
-    // the app does (`executionHostId` is SSH ownership's other spelling) and fail closed on an
-    // ambiguous scope rather than indexing a remote path as local.
+    // the app does instead of reading `connectionId` raw. A repo in scope can name its SSH host only
+    // through `executionHostId`, and `ambiguous` must fail closed rather than index a remote path.
     if (resolveFolderWorkspaceHost(folderWorkspaceHostState, workspace.id).kind !== 'local') {
       continue
     }

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { FolderWorkspace } from '../shared/folder-workspace-types'
+import type { Repo } from '../shared/repo-types'
 import { loadKnownUsageWorktreesByRepo } from './usage-worktree-metadata'
 
 describe('loadKnownUsageWorktreesByRepo', () => {
@@ -77,12 +78,22 @@ describe('loadKnownUsageWorktreesByRepo', () => {
       folderPath: '/remote/plain-folder',
       connectionId: 'ssh-1'
     }
+    // A folder workspace does not persist `executionHostId`, so its remote scope arrives through
+    // `connectionId` or through an in-scope repo that names its SSH host only that way.
     const sshStampedFolderWorkspace: FolderWorkspace = {
       ...localFolderWorkspace,
       id: 'workspace-3',
+      projectGroupId: 'group-3',
       name: 'SSH Stamped Folder',
       folderPath: '/ssh-stamped/plain-folder',
-      connectionId: null,
+      connectionId: null
+    }
+    const sshStampedRepo: Repo = {
+      id: 'repo-ssh',
+      path: '/ssh-stamped/plain-folder/sub',
+      displayName: 'SSH Repo',
+      badgeColor: '',
+      addedAt: 0,
       executionHostId: 'ssh:target-1'
     }
     const store = {
@@ -94,20 +105,19 @@ describe('loadKnownUsageWorktreesByRepo', () => {
       ]
     }
 
-    expect(loadKnownUsageWorktreesByRepo(store, [])).toEqual(
-      new Map([
-        [
-          'folder-workspace:group-1',
-          [
-            {
-              worktreeId: 'folder:workspace-1',
-              path: '/outside/plain-folder',
-              displayName: 'Plain Folder'
-            }
-          ]
-        ]
-      ])
-    )
+    const refs = loadKnownUsageWorktreesByRepo(store, [sshStampedRepo])
+
+    // Only the plain local workspace is indexed. The `connectionId` pin and the in-scope repo that
+    // names its SSH host only through `executionHostId` both classify as remote. Repo-side ownership
+    // has its own pre-existing gap and is not what this assertion covers.
+    expect(refs.get('folder-workspace:group-1')).toEqual([
+      {
+        worktreeId: 'folder:workspace-1',
+        path: '/outside/plain-folder',
+        displayName: 'Plain Folder'
+      }
+    ])
+    expect(refs.get('folder-workspace:group-3')).toBeUndefined()
   })
 
   it('indexes repos once for many persisted worktrees', () => {

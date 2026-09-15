@@ -264,6 +264,8 @@ function mergeSystemCodexConfigIntoRuntime(runtimeConfig: string, systemConfig: 
   )
   // Why: a runtime-only MCP server must survive the mirror, but one the system
   // config also defines stays canonical — appending both would duplicate the table.
+  // Deliberately one-directional: a server removed from ~/.codex leaves the
+  // managed home only once Codex stops holding it there too.
   const systemMcpServerNames = new Set(
     getTomlSections(systemConfig)
       .map((section) => getMcpServerTomlSectionName(section.header))

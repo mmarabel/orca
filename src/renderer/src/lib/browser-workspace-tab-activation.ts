@@ -1,4 +1,5 @@
 import { useAppStore } from '@/store'
+import { requestBrowserFocus } from '@/components/browser-pane/host-guest/browser-focus'
 import type { Tab } from '../../../shared/tab-types'
 import type { ExecutionHostId } from '../../../shared/execution-host'
 import {
@@ -58,4 +59,20 @@ export function activateBrowserWorkspaceTab(params: BrowserWorkspaceTabTarget): 
     state.setActiveBrowserPage(params.workspaceId, params.pageId)
   }
   return true
+}
+
+/**
+ * Hands a browser workspace tab's visible page the keyboard. Terminal activation focuses xterm
+ * directly, but browser panes (local, client-hosted and streamed) only take focus from the queued
+ * focus request, so every activation route has to ask for it.
+ */
+export function requestBrowserWorkspaceTabPageFocus(worktreeId: string, workspaceId: string): void {
+  const pageId =
+    (useAppStore.getState().browserTabsByWorktree?.[worktreeId] ?? []).find(
+      (tab) => tab.id === workspaceId
+    )?.activePageId ?? null
+  if (!pageId) {
+    return
+  }
+  requestBrowserFocus({ pageId, target: 'webview' })
 }

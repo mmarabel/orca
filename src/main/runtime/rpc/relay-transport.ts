@@ -119,11 +119,12 @@ export class CloudRelayTransport implements RpcTransport, MobileSocketTransport 
 
   // Why: the app's configured proxy covers the cell's data sockets too. An injected factory
   // owns its own transport and stays synchronous, so callers see it attach listeners as
-  // before. Returns null when stop() landed while the proxy was resolving: a socket created
-  // after stop() snapshotted its set would never be terminated by it.
-  private async openSocket(url: string): Promise<WebSocket> {
+  // before. The claim is what proves this open still belongs to the current lifecycle: stop()
+  // drops every claim, so an open whose proxy resolution outlived it — even across a later
+  // start() — must not register a socket the new lifecycle never asked for.
+  private async openSocket(url: string, claimedConnId: string): Promise<WebSocket> {
     const agent = await outboundProxySocketAgent(url)
-    if (this.stopped) {
+    if (!this.claimedConnectionIds.has(claimedConnId)) {
       throw new Error('relay_transport_stopped')
     }
     return new WebSocket(url, {
@@ -162,7 +163,7 @@ export class CloudRelayTransport implements RpcTransport, MobileSocketTransport 
     const url = `${this.cellWebSocketOrigin}/v1/host/data/${encodeURIComponent(connection.connId)}`
     const socket = this.injectedSocketFactory
       ? this.injectedSocketFactory(url)
-      : await this.openSocket(url)
+      : await this.openSocket(url, connection.connId)
     const metadata: MobileSocketTransportMetadata = {
       transport: 'relay',
       relayHostId: this.relayHostId,

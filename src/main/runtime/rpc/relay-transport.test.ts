@@ -215,6 +215,47 @@ describe('CloudRelayTransport', () => {
     expect(connections).toBe(1)
   })
 
+  it('drops a socket whose proxy resolution outlived stop() and a restart', async () => {
+    const server = new WebSocketServer({ host: '127.0.0.1', port: 0, perMessageDeflate: false })
+    servers.push(server)
+    await new Promise<void>((resolve) => server.once('listening', resolve))
+    const accepted = vi.fn()
+    server.on('connection', accepted)
+    let releaseProxy = (): void => {}
+    const heldProxy = new Promise<string>((resolve) => {
+      releaseProxy = () => resolve('DIRECT')
+    })
+    setDefaultProxySessionResolver(() => ({
+      resolveProxy: () => heldProxy,
+      setProxy: async () => {}
+    }))
+    const transport = new CloudRelayTransport({
+      cellUrl: 'http://relay-cell.example',
+      relayHostId: 'AbCdEf0123_-xyZ9',
+      generation: 7,
+      onConnectionClosed: vi.fn()
+    })
+    transports.push(transport)
+    transport.onMessage(vi.fn())
+    transport.onConnectionClose(vi.fn())
+    await transport.start()
+
+    const opening = transport.openConnection({
+      connId: 'conn-1',
+      connTicket: 'ticket-1',
+      kind: 'invite',
+      relayDeviceId: 'device-1',
+      attachDeadlineMs: 5_000
+    })
+    await transport.stop()
+    // The new lifecycle must not adopt a socket the previous one started opening.
+    await transport.start()
+    releaseProxy()
+
+    await expect(opening).rejects.toThrow('relay_transport_stopped')
+    expect(accepted).not.toHaveBeenCalled()
+  })
+
   it('drops a socket whose proxy resolution outlived stop()', async () => {
     const server = new WebSocketServer({ host: '127.0.0.1', port: 0, perMessageDeflate: false })
     servers.push(server)

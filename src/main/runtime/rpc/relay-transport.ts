@@ -49,6 +49,7 @@ export class CloudRelayTransport implements RpcTransport, MobileSocketTransport 
   private generation: number
   private readonly injectedSocketFactory: ((url: string) => WebSocket) | null
   private readonly onConnectionClosed: ((connectionId: string) => void) | undefined
+  private readonly claimedConnectionIds = new Set<string>()
   private readonly socketsByConnectionId = new Map<string, WebSocket>()
   private readonly metadataBySocket = new Map<WebSocket, MobileSocketTransportMetadata>()
   private readonly clientIds = new Map<WebSocket, string>()
@@ -120,10 +121,10 @@ export class CloudRelayTransport implements RpcTransport, MobileSocketTransport 
   // owns its own transport and stays synchronous, so callers see it attach listeners as
   // before. Returns null when stop() landed while the proxy was resolving: a socket created
   // after stop() snapshotted its set would never be terminated by it.
-  private async openSocket(url: string): Promise<WebSocket | null> {
+  private async openSocket(url: string): Promise<WebSocket> {
     const agent = await outboundProxySocketAgent(url)
     if (this.stopped) {
-      return null
+      throw new Error('relay_transport_stopped')
     }
     return new WebSocket(url, {
       perMessageDeflate: false,
@@ -138,6 +139,8 @@ export class CloudRelayTransport implements RpcTransport, MobileSocketTransport 
 
   async stop(): Promise<void> {
     this.stopped = true
+    // An open still resolving its proxy never reaches finalize; its claim must not outlive stop().
+    this.claimedConnectionIds.clear()
     const sockets = [...this.metadataBySocket.keys()]
     await forEachWithConcurrency(sockets, RELAY_SOCKET_CLOSE_WAIT_CONCURRENCY, (socket) =>
       this.terminateWithinCloseDeadline(socket)
@@ -148,16 +151,18 @@ export class CloudRelayTransport implements RpcTransport, MobileSocketTransport 
     if (this.stopped) {
       throw new Error('relay_transport_stopped')
     }
-    if (this.socketsByConnectionId.has(connection.connId)) {
+    if (this.claimedConnectionIds.has(connection.connId)) {
       return
     }
+    // Why: the claim spans the await below, because the socket map only gains an entry once the
+    // handshake is wired. A rebind replaying pending connections would otherwise open a second
+    // socket for a connId whose first open is still resolving its proxy, and the later
+    // registration would overwrite the first socket's mapping mid-open.
+    this.claimedConnectionIds.add(connection.connId)
     const url = `${this.cellWebSocketOrigin}/v1/host/data/${encodeURIComponent(connection.connId)}`
     const socket = this.injectedSocketFactory
       ? this.injectedSocketFactory(url)
       : await this.openSocket(url)
-    if (!socket) {
-      throw new Error('relay_transport_stopped')
-    }
     const metadata: MobileSocketTransportMetadata = {
       transport: 'relay',
       relayHostId: this.relayHostId,
@@ -186,6 +191,7 @@ export class CloudRelayTransport implements RpcTransport, MobileSocketTransport 
           return
         }
         finalized = true
+        this.claimedConnectionIds.delete(connection.connId)
         clearTimeout(deadline)
         this.finalizeConnection(connection.connId, socket)
       }

@@ -23,22 +23,27 @@ import { ensureElectronProxyFromEnvironment } from './proxy-settings'
  */
 
 export type MainHttpClient = {
-  fetch(url: string, init?: RequestInit): Promise<Response>
+  fetch(input: RequestInfo, init?: RequestInit): Promise<Response>
   /** The Chromium session whose proxy state applies, or null on a host without one. */
   proxySession(): Session | null
+}
+
+/** The proxy policy is picked per target URL; a Request carries its own. */
+function proxyTargetUrl(input: RequestInfo | URL): string {
+  return typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
 }
 
 // The proxy the app is configured to use still applies here: without Chromium there is
 // no session to carry it, so the resolved proxy becomes undici's per-request dispatcher.
 const nodeHttpClient: MainHttpClient = {
-  fetch: async (url, init) => {
-    const dispatcher = await outboundProxyFetchDispatcher(url)
+  fetch: async (input, init) => {
+    const dispatcher = await outboundProxyFetchDispatcher(proxyTargetUrl(input))
     // undici reads the dispatcher per request, which is how the resolved proxy reaches a
     // host with no Chromium session. The Response still goes straight back to the caller.
     const proxiedInit: RequestInit & { dispatcher?: Dispatcher } = dispatcher
       ? { ...init, dispatcher }
       : { ...init }
-    return globalThis.fetch(url, proxiedInit)
+    return globalThis.fetch(input, proxiedInit)
   },
   proxySession: () => null
 }
@@ -58,20 +63,20 @@ export function getMainHttpClient(): MainHttpClient {
  * configured policy to the Chromium session first (a no-op on a host without one),
  * then send through the installed client — Electron's net.fetch on the desktop.
  *
- * Typed as the global fetch so it can stand in wherever a fetch is injected. A Request
- * input is sent as its URL: the client port is string-based, and no caller here passes
- * a Request whose own method or body would be lost.
+ * Typed as the global fetch so it can stand in wherever a fetch is injected. The input
+ * is forwarded with a Request intact (it keeps its own method, headers and body); only
+ * the target URL, taken from it, selects the proxy. A bare URL is handed on as a string,
+ * which loses nothing.
  *
  * A failed apply is not fatal to the request: it is attempted either way, and its own
  * transport error is what the caller reports.
  */
 export const fetchWithConfiguredProxy: typeof globalThis.fetch = async (input, init) => {
-  const url = input instanceof Request ? input.url : input instanceof URL ? input.toString() : input
   const httpClient = getMainHttpClient()
   const proxySession = httpClient.proxySession()
   await ensureElectronProxyFromEnvironment({
     ...(proxySession ? { proxySession } : {}),
-    probeUrl: url
+    probeUrl: proxyTargetUrl(input)
   }).catch(() => {})
-  return await httpClient.fetch(url, init)
+  return await httpClient.fetch(input instanceof URL ? input.toString() : input, init)
 }

@@ -167,6 +167,54 @@ describe('CloudRelayTransport', () => {
     expect(path).toBe('/v1/host/data/conn-1')
   })
 
+  it('opens one socket when the same connection is opened twice while the proxy resolves', async () => {
+    const server = new WebSocketServer({ host: '127.0.0.1', port: 0, perMessageDeflate: false })
+    servers.push(server)
+    await new Promise<void>((resolve) => server.once('listening', resolve))
+    const address = server.address()
+    if (typeof address === 'string' || address === null) {
+      throw new Error('expected TCP relay test server')
+    }
+    let connections = 0
+    server.on('connection', () => {
+      connections += 1
+    })
+    const proxy = await startConnectProxy(address.port)
+    let releaseProxy = (): void => {}
+    const heldProxy = new Promise<string>((resolve) => {
+      releaseProxy = () => resolve(`PROXY 127.0.0.1:${proxy.port}`)
+    })
+    setDefaultProxySessionResolver(() => ({
+      resolveProxy: () => heldProxy,
+      setProxy: async () => {}
+    }))
+    const transport = new CloudRelayTransport({
+      cellUrl: 'http://relay-cell.example',
+      relayHostId: 'AbCdEf0123_-xyZ9',
+      generation: 7,
+      onConnectionClosed: vi.fn()
+    })
+    transports.push(transport)
+    transport.onMessage(vi.fn())
+    transport.onConnectionClose(vi.fn())
+    await transport.start()
+    const connection = {
+      connId: 'conn-1',
+      connTicket: 'ticket-1',
+      kind: 'invite' as const,
+      relayDeviceId: 'device-1',
+      attachDeadlineMs: 5_000
+    }
+
+    const first = transport.openConnection(connection)
+    const second = transport.openConnection(connection)
+    releaseProxy()
+    await Promise.all([first, second])
+
+    // A second socket would overwrite the first one's mapping mid-open and leak its cleanup.
+    expect(connections).toBe(1)
+  })
+
   it('drops a socket whose proxy resolution outlived stop()', async () => {
     const server = new WebSocketServer({ host: '127.0.0.1', port: 0, perMessageDeflate: false })
     servers.push(server)

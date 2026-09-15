@@ -1,7 +1,10 @@
 import type { Agent } from 'node:http'
 import { HttpsProxyAgent } from 'https-proxy-agent'
 import { ProxyAgent, type Dispatcher } from 'undici'
-import { getProxyUrlFromEnvironment } from '../../shared/network-proxy'
+import {
+  getProxyBypassRulesFromEnvironment,
+  getProxyUrlFromEnvironment
+} from '../../shared/network-proxy'
 import { defaultProxySession, type ProxySession } from './electron-default-proxy-session'
 import { getElectronProxyCredentialsForSession } from './electron-proxy-credentials'
 
@@ -32,7 +35,8 @@ function normalizedHostname(url: URL | string): string {
 
 function isLoopbackHost(url: URL): boolean {
   const host = normalizedHostname(url)
-  return host === '127.0.0.1' || host === 'localhost' || host === '::1'
+  // Chromium's implicit bypass covers the whole 127.0.0.0/8 range, not just .0.1.
+  return host === 'localhost' || host === '::1' || host.startsWith('127.')
 }
 
 /** Chromium's proxy resolver is asked about the http(s) sibling of a ws(s) target. */
@@ -46,14 +50,49 @@ function proxyProbeUrl(targetUrl: string): string {
   return url.toString()
 }
 
+/**
+ * Chromium returns an ordered failover list. Only the first directive can be honoured
+ * faithfully: the later ones are fallbacks for a failed attempt this layer cannot observe,
+ * so a route that starts with `DIRECT` — or with a directive it cannot tunnel — stays
+ * direct instead of being promoted to a proxy the app only meant as a fallback.
+ */
 function proxyUrlFromRules(rules: string): string | null {
+  const first = /^\s*(\S+)\s+(\S+)\s*$/.exec((rules.split(';')[0] ?? '').trim())
+  if (!first || first[1]!.toUpperCase() !== 'PROXY') {
+    return null
+  }
+  return `http://${first[2]}`
+}
+
+/**
+ * Node's `NO_PROXY` convention: `*`, a host, or a domain suffix, each optionally with a
+ * port. Entries this cannot express (`<local>`, `<-loopback>`, CIDR blocks) are ignored,
+ * which keeps the proxy in play rather than bypassing it by accident.
+ */
+function isEnvBypassed(env: Record<string, string | undefined>, url: URL): boolean {
+  const rules = getProxyBypassRulesFromEnvironment(env)
+  if (!rules) {
+    return false
+  }
+  const host = normalizedHostname(url)
+  const port = url.port || (url.protocol === 'https:' ? '443' : '80')
   for (const rule of rules.split(';')) {
-    const match = /^(PROXY|HTTPS|SOCKS|SOCKS4|SOCKS5|QUIC)\s+(\S+)$/i.exec(rule.trim())
-    if (match && match[1]!.toUpperCase() === 'PROXY') {
-      return `http://${match[2]}`
+    const entry = /^\[([^\]]+)\](?::(\d+))?$/.exec(rule) ?? /^([^:]+)(?::(\d+))?$/.exec(rule)
+    if (!entry) {
+      continue
+    }
+    if (entry[2] && entry[2] !== port) {
+      continue
+    }
+    const ruleHost = entry[1]!.toLowerCase()
+    // A leading dot names the same suffix as a bare host: `.corp.example` and
+    // `corp.example` both cover the domain and everything under it.
+    const suffix = ruleHost.startsWith('.') ? ruleHost.slice(1) : ruleHost
+    if (ruleHost === '*' || host === suffix || host.endsWith(`.${suffix}`)) {
+      return true
     }
   }
-  return null
+  return false
 }
 
 /**
@@ -89,24 +128,29 @@ function withProxyCredentials(
 }
 
 export async function resolveOutboundProxyUrl(targetUrl: string): Promise<string | null> {
-  const probeUrl = proxyProbeUrl(targetUrl)
+  const probe = new URL(proxyProbeUrl(targetUrl))
   // Chromium implicitly bypasses loopback unless the list asks otherwise; local
   // relay cells and dev servers must keep working with a proxy configured.
-  if (isLoopbackHost(new URL(probeUrl))) {
+  if (isLoopbackHost(probe)) {
     return null
   }
   const proxySession = defaultProxySession()
   if (proxySession) {
     const credentials = getElectronProxyCredentialsForSession(proxySession)
-    const resolved = proxyUrlFromRules(await proxySession.resolveProxy(probeUrl))
+    const resolved = proxyUrlFromRules(await proxySession.resolveProxy(probe.toString()))
     return resolved === null ? null : withProxyCredentials(resolved, proxySession, credentials)
   }
   // Why the raw env value rather than the resolved policy: `resolveProxyPolicyWithoutSession`
   // hands back rules with the userinfo stripped, because Chromium answers an auth challenge
   // instead, and there is no session credential store to read on this path — the credentials
-  // have to travel in the URL or an authenticated proxy rejects the request.
+  // have to travel in the URL or an authenticated proxy rejects the request. A proxy URL the
+  // user wrote with credentials is also sent the way Chromium would send it: as
+  // `Proxy-Authorization` to that proxy, which is plaintext when the proxy itself is http.
   const envProxy = getProxyUrlFromEnvironment(process.env)
-  return envProxy.ok && envProxy.value ? envProxy.value : null
+  if (!envProxy.ok || !envProxy.value || isEnvBypassed(process.env, probe)) {
+    return null
+  }
+  return envProxy.value
 }
 
 const socketAgentsByProxyUrl = new Map<string, Agent>()

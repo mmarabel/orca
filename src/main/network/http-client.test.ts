@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createServer as createHttpServer, type Server } from 'node:http'
 import { connect as connectSocket } from 'node:net'
 import { setDefaultProxySessionResolver } from './electron-default-proxy-session'
-import { getMainHttpClient, setMainHttpClient } from './http-client'
+import { fetchWithConfiguredProxy, getMainHttpClient, setMainHttpClient } from './http-client'
 
 /** A CONNECT proxy that records its targets and tunnels every tunnel to the test origin. */
 function startConnectProxy(
@@ -102,5 +102,29 @@ describe('main HTTP client proxy fallback', () => {
     const response = await getMainHttpClient().fetch(`http://127.0.0.1:${origin.port}/any`)
 
     await expect(response.text()).resolves.toBe('no session')
+  })
+
+  it('forwards a Request input and probes its URL for the proxy', async () => {
+    const resolveProxy = vi.fn(async () => 'DIRECT')
+    setDefaultProxySessionResolver(() => ({ resolveProxy, setProxy: async () => {} }))
+    const recorded: RequestInfo[] = []
+    setMainHttpClient({
+      fetch: async (input) => {
+        recorded.push(input)
+        return Response.json({ forwarded: true })
+      },
+      proxySession: () => null
+    })
+
+    const request = new Request('https://relay.example/v1/assign', {
+      method: 'POST',
+      body: 'payload'
+    })
+    const response = await fetchWithConfiguredProxy(request)
+
+    // The request keeps its own method and body; only its URL chooses the proxy.
+    expect(recorded).toEqual([request])
+    expect(resolveProxy).toHaveBeenCalledWith('https://relay.example/v1/assign')
+    await expect(response.json()).resolves.toEqual({ forwarded: true })
   })
 })

@@ -108,4 +108,29 @@ describe('main-process outbound proxy', () => {
       agentProxyUrl(await outboundProxySocketAgent('wss://relay.example/v1/host/control'))
     ).toBe('http://nina:s3cret@proxy.env.example:3128')
   })
+
+  it('honours the environment bypass list on the host without a Chromium session', async () => {
+    setDefaultProxySessionResolver(null)
+    vi.stubEnv('HTTPS_PROXY', 'http://proxy.env.example:3128')
+
+    vi.stubEnv('NO_PROXY', 'onorca.dev, .internal.example')
+    expect(
+      await resolveOutboundProxyUrl('https://login.onorca.dev/v1/desktop/auth/session')
+    ).toBeNull()
+    expect(await resolveOutboundProxyUrl('https://relay.internal.example/v1/assign')).toBeNull()
+
+    vi.stubEnv('NO_PROXY', 'other.example')
+    expect(await resolveOutboundProxyUrl('https://login.onorca.dev/v1/desktop/auth/session')).toBe(
+      'http://proxy.env.example:3128'
+    )
+
+    vi.stubEnv('NO_PROXY', '*')
+    expect(await resolveOutboundProxyUrl('https://relay.example/v1/assign')).toBeNull()
+
+    // A bypass entry that names another port does not cover this target.
+    vi.stubEnv('NO_PROXY', 'relay.example:8080')
+    expect(await resolveOutboundProxyUrl('https://relay.example/v1/assign')).toBe(
+      'http://proxy.env.example:3128'
+    )
+  })
 })

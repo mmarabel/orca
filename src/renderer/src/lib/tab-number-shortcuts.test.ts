@@ -177,7 +177,9 @@ describe('activateTabNumberShortcut browser focus', () => {
           })
         ]
       },
-      browserTabsByWorktree: { 'wt-1': [{ id: 'browser-1', activePageId: 'page-1' }] },
+      browserTabsByWorktree: {
+        'wt-1': [{ id: 'browser-1', activePageId: 'page-1', url: 'https://example.com' }]
+      },
       activateTab: vi.fn(),
       focusGroup: vi.fn(),
       setActiveBrowserTab: vi.fn(),

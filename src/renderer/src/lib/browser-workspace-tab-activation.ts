@@ -1,5 +1,6 @@
 import { useAppStore } from '@/store'
 import { requestBrowserFocus } from '@/components/browser-pane/host-guest/browser-focus'
+import { isBlankBrowserUrl } from './browser-palette-search'
 import type { Tab } from '../../../shared/tab-types'
 import type { ExecutionHostId } from '../../../shared/execution-host'
 import {
@@ -67,12 +68,17 @@ export function activateBrowserWorkspaceTab(params: BrowserWorkspaceTabTarget): 
  * focus request, so every activation route has to ask for it.
  */
 export function requestBrowserWorkspaceTabPageFocus(worktreeId: string, workspaceId: string): void {
-  const pageId =
-    (useAppStore.getState().browserTabsByWorktree?.[worktreeId] ?? []).find(
-      (tab) => tab.id === workspaceId
-    )?.activePageId ?? null
+  const workspace = (useAppStore.getState().browserTabsByWorktree?.[worktreeId] ?? []).find(
+    (tab) => tab.id === workspaceId
+  )
+  const pageId = workspace?.activePageId ?? null
   if (!pageId) {
     return
   }
-  requestBrowserFocus({ pageId, target: 'webview' })
+  // Why: a blank page has nothing to receive keys, so re-activating one belongs in its address bar
+  // like the palette path (isBlankBrowserUrl, New Tab) rather than the empty guest.
+  requestBrowserFocus({
+    pageId,
+    target: isBlankBrowserUrl(workspace?.url ?? '') ? 'address-bar' : 'webview'
+  })
 }

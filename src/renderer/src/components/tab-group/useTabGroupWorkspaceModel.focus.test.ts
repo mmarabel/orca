@@ -276,6 +276,60 @@ describe('useTabGroupWorkspaceModel terminal activation focus', () => {
     })
   })
 
+  it('leaves a blank browser tab in its address bar when it is re-activated', async () => {
+    storeBox.state = {
+      ...storeBox.state,
+      browserTabsByWorktree: {
+        'wt-1': [
+          {
+            id: 'browser-workspace-1',
+            worktreeId: 'wt-1',
+            activePageId: 'browser-page-1',
+            pageIds: ['browser-page-1'],
+            url: 'about:blank'
+          }
+        ]
+      },
+      groupsByWorktree: {
+        'wt-1': [
+          {
+            id: 'group-1',
+            worktreeId: 'wt-1',
+            activeTabId: 'browser-unified-1',
+            tabOrder: ['browser-unified-1']
+          }
+        ]
+      },
+      tabsByWorktree: { 'wt-1': [] },
+      unifiedTabsByWorktree: {
+        'wt-1': [
+          {
+            id: 'browser-unified-1',
+            entityId: 'browser-workspace-1',
+            groupId: 'group-1',
+            worktreeId: 'wt-1',
+            contentType: 'browser',
+            label: 'New Browser Tab',
+            customLabel: null,
+            color: null,
+            sortOrder: 0,
+            createdAt: 1
+          }
+        ]
+      }
+    }
+    const { useTabGroupWorkspaceModel } = await import('./useTabGroupWorkspaceModel')
+    const model = useTabGroupWorkspaceModel({ groupId: 'group-1', worktreeId: 'wt-1' })
+
+    model.commands.activateBrowser('browser-workspace-1')
+
+    // Why: the empty guest cannot receive a URL, so a blank tab's activation belongs in the bar.
+    expect(mocks.requestBrowserFocus).toHaveBeenCalledWith({
+      pageId: 'browser-page-1',
+      target: 'address-bar'
+    })
+  })
+
   it('closes the durable native owner from the real structured tab close action', async () => {
     const agentTab = {
       id: 'structured-agent-session-codex-session-1',

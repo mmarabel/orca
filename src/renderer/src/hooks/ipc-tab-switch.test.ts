@@ -41,7 +41,7 @@ type MockStore = {
   activeFileId: string
   activeBrowserTabId: string
   activeGroupIdByWorktree: Record<string, string>
-  browserTabsByWorktree: Record<string, { id: string; activePageId: string | null }[]>
+  browserTabsByWorktree: Record<string, { id: string; activePageId: string | null; url: string }[]>
   groupsByWorktree: Record<string, MockGroup[]>
   tabsByWorktree: Record<string, { id: string }[]>
   unifiedTabsByWorktree: Record<
@@ -342,8 +342,8 @@ describe('handleSwitchTab', () => {
     store.activeBrowserTabId = 'browser-1'
     store.browserTabsByWorktree = {
       'wt-1': [
-        { id: 'browser-1', activePageId: 'page-1' },
-        { id: 'browser-2', activePageId: 'page-2' }
+        { id: 'browser-1', activePageId: 'page-1', url: 'https://example.com' },
+        { id: 'browser-2', activePageId: 'page-2', url: 'https://example.com/next' }
       ]
     }
     getStateMock.mockReturnValue(store)

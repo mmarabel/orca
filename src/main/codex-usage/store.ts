@@ -82,7 +82,7 @@ export class CodexUsageStore extends UsageProviderStoreLifecycle<
   CodexUsagePersistedState,
   'hasAnyCodexData'
 > {
-  constructor(store: Pick<Store, 'getRepos' | 'getAllWorktreeMeta'>) {
+  constructor(store: Pick<Store, 'getRepos' | 'getAllWorktreeMeta' | 'getFolderWorkspaces'>) {
     super(store, {
       logTag: '[codex-usage]',
       resolveCacheFile: getCodexUsageFile,

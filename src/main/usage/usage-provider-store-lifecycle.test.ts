@@ -103,7 +103,8 @@ class TestUsageStore extends UsageProviderStoreLifecycle<
     super(
       {
         getRepos: () => [],
-        getAllWorktreeMeta: () => ({})
+        getAllWorktreeMeta: () => ({}),
+        getFolderWorkspaces: () => []
       },
       {
         logTag: '[test-usage]',

@@ -18,7 +18,8 @@ export function createEmptyScanResult() {
 export function createStoreWithState(state: Partial<CodexUsagePersistedState>): CodexUsageStore {
   const store = new CodexUsageStore({
     getRepos: () => [],
-    getAllWorktreeMeta: () => ({})
+    getAllWorktreeMeta: () => ({}),
+    getFolderWorkspaces: () => []
   })
 
   ;(store as unknown as { state: CodexUsagePersistedState }).state = {

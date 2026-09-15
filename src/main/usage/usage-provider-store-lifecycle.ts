@@ -58,7 +58,7 @@ export abstract class UsageProviderStoreLifecycle<
   private readonly writer: UsageCacheSnapshotWriter
 
   constructor(
-    private readonly store: Pick<Store, 'getRepos' | 'getAllWorktreeMeta'>,
+    private readonly store: Pick<Store, 'getRepos' | 'getAllWorktreeMeta' | 'getFolderWorkspaces'>,
     private readonly config: UsageProviderStoreLifecycleConfig<SourceKey, State, DataPresenceKey>
   ) {
     this.writer = new UsageCacheSnapshotWriter(config.logTag, config.resolveCacheFile)
@@ -139,7 +139,7 @@ export abstract class UsageProviderStoreLifecycle<
         const worktreesByRepo = loadKnownUsageWorktreesByRepo(this.store, repos)
         const worktreeFingerprint = getUsageWorktreeFingerprint(worktreesByRepo)
         const result = await this.config.scan(
-          createWorktreeRefs(repos, worktreesByRepo),
+          createWorktreeRefs(worktreesByRepo),
           this.state.worktreeFingerprint === worktreeFingerprint
             ? this.state[this.config.sourceKey]
             : this.config.createDefaultState()[this.config.sourceKey]

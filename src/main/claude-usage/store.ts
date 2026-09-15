@@ -77,7 +77,7 @@ export class ClaudeUsageStore extends UsageProviderStoreLifecycle<
   ClaudeUsagePersistedState,
   'hasAnyClaudeData'
 > {
-  constructor(store: Pick<Store, 'getRepos' | 'getAllWorktreeMeta'>) {
+  constructor(store: Pick<Store, 'getRepos' | 'getAllWorktreeMeta' | 'getFolderWorkspaces'>) {
     super(store, {
       logTag: '[claude-usage]',
       resolveCacheFile: getClaudeUsageFile,

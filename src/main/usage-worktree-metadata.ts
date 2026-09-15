@@ -1,4 +1,6 @@
 import { basename } from 'node:path'
+import type { FolderWorkspace } from '../shared/folder-workspace-types'
+import { folderWorkspaceToWorktree } from '../shared/folder-workspace-worktree'
 import type { Repo } from '../shared/repo-types'
 import { splitWorktreeId, splitWorktreeIdForFilesystem } from '../shared/worktree/id'
 import { isFolderRepo } from '../shared/repo-kind'
@@ -15,7 +17,8 @@ function getDefaultUsageWorktreeLabel(pathValue: string): string {
 }
 
 export function loadKnownUsageWorktreesByRepo(
-  store: Pick<Store, 'getAllWorktreeMeta'>,
+  // Optional so partial store doubles stay valid; every real Store provides it.
+  store: Pick<Store, 'getAllWorktreeMeta'> & { getFolderWorkspaces?: () => FolderWorkspace[] },
   repos: Repo[]
 ): Map<string, UsageWorktreeRef[]> {
   const localRepos = repos.filter((repo) => !repo.connectionId)
@@ -67,6 +70,28 @@ export function loadKnownUsageWorktreesByRepo(
       path: worktreePath,
       displayName: meta.displayName || getDefaultUsageWorktreeLabel(worktreePath)
     })
+  }
+
+  // Why: folder workspaces host real agent sessions but are neither repos nor
+  // worktree metadata. Without a ref their cwd falls back to `cwd:<path>` and
+  // the default Orca scope drops every row (#20477).
+  for (const workspace of store.getFolderWorkspaces?.() ?? []) {
+    // Why: local transcripts are all the scanners can read, matching the repo filter.
+    if (workspace.connectionId) {
+      continue
+    }
+    const worktree = folderWorkspaceToWorktree(workspace)
+    const ref: UsageWorktreeRef = {
+      worktreeId: worktree.id,
+      path: worktree.path,
+      displayName: worktree.displayName || getDefaultUsageWorktreeLabel(worktree.path)
+    }
+    const refs = worktreesByRepo.get(worktree.repoId)
+    if (refs) {
+      refs.push(ref)
+    } else {
+      worktreesByRepo.set(worktree.repoId, [ref])
+    }
   }
 
   return worktreesByRepo

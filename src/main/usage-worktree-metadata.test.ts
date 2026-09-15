@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { FolderWorkspace } from '../shared/folder-workspace-types'
 import { loadKnownUsageWorktreesByRepo } from './usage-worktree-metadata'
 
 describe('loadKnownUsageWorktreesByRepo', () => {
@@ -50,6 +51,51 @@ describe('loadKnownUsageWorktreesByRepo', () => {
       ])
     )
     expect(store.getAllWorktreeMeta).toHaveBeenCalledTimes(1)
+  })
+
+  it('indexes local folder workspaces so their sessions can be attributed', () => {
+    const localFolderWorkspace: FolderWorkspace = {
+      id: 'workspace-1',
+      projectGroupId: 'group-1',
+      name: 'Plain Folder',
+      folderPath: '/outside/plain-folder',
+      connectionId: null,
+      linkedTask: null,
+      comment: '',
+      isArchived: false,
+      isUnread: false,
+      isPinned: false,
+      sortOrder: 0,
+      lastActivityAt: 0,
+      createdAt: 0,
+      updatedAt: 0
+    }
+    const remoteFolderWorkspace: FolderWorkspace = {
+      ...localFolderWorkspace,
+      id: 'workspace-2',
+      name: 'Remote Folder',
+      folderPath: '/remote/plain-folder',
+      connectionId: 'ssh-1'
+    }
+    const store = {
+      getAllWorktreeMeta: () => ({}),
+      getFolderWorkspaces: () => [localFolderWorkspace, remoteFolderWorkspace]
+    }
+
+    expect(loadKnownUsageWorktreesByRepo(store, [])).toEqual(
+      new Map([
+        [
+          'folder-workspace:group-1',
+          [
+            {
+              worktreeId: 'folder:workspace-1',
+              path: '/outside/plain-folder',
+              displayName: 'Plain Folder'
+            }
+          ]
+        ]
+      ])
+    )
   })
 
   it('indexes repos once for many persisted worktrees', () => {

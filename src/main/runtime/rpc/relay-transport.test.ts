@@ -215,6 +215,57 @@ describe('CloudRelayTransport', () => {
     expect(connections).toBe(1)
   })
 
+  it('keeps a stale open from taking the socket of a newer attempt for the same connId', async () => {
+    const server = new WebSocketServer({ host: '127.0.0.1', port: 0, perMessageDeflate: false })
+    servers.push(server)
+    await new Promise<void>((resolve) => server.once('listening', resolve))
+    const address = server.address()
+    if (typeof address === 'string' || address === null) {
+      throw new Error('expected TCP relay test server')
+    }
+    let connections = 0
+    server.on('connection', () => {
+      connections += 1
+    })
+    const proxy = await startConnectProxy(address.port)
+    let releaseProxy = (): void => {}
+    const heldProxy = new Promise<string>((resolve) => {
+      releaseProxy = () => resolve(`PROXY 127.0.0.1:${proxy.port}`)
+    })
+    setDefaultProxySessionResolver(() => ({
+      resolveProxy: () => heldProxy,
+      setProxy: async () => {}
+    }))
+    const transport = new CloudRelayTransport({
+      cellUrl: 'http://relay-cell.example',
+      relayHostId: 'AbCdEf0123_-xyZ9',
+      generation: 7,
+      onConnectionClosed: vi.fn()
+    })
+    transports.push(transport)
+    transport.onMessage(vi.fn())
+    transport.onConnectionClose(vi.fn())
+    await transport.start()
+    const connection = {
+      connId: 'conn-1',
+      connTicket: 'ticket-1',
+      kind: 'invite' as const,
+      relayDeviceId: 'device-1',
+      attachDeadlineMs: 5_000
+    }
+
+    const stale = transport.openConnection(connection)
+    await transport.stop()
+    await transport.start()
+    const fresh = transport.openConnection(connection)
+    releaseProxy()
+
+    await expect(stale).rejects.toThrow('relay_transport_stopped')
+    await fresh
+    // The stale continuation used to find the newer attempt's claim and register too.
+    expect(connections).toBe(1)
+  })
+
   it('refuses a generation change while a connection is claimed', async () => {
     const server = new WebSocketServer({ host: '127.0.0.1', port: 0, perMessageDeflate: false })
     servers.push(server)

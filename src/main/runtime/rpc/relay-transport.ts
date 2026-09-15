@@ -49,7 +49,7 @@ export class CloudRelayTransport implements RpcTransport, MobileSocketTransport 
   private generation: number
   private readonly injectedSocketFactory: ((url: string) => WebSocket) | null
   private readonly onConnectionClosed: ((connectionId: string) => void) | undefined
-  private readonly claimedConnectionIds = new Set<string>()
+  private readonly claimedConnectionIds = new Map<string, symbol>()
   private readonly socketsByConnectionId = new Map<string, WebSocket>()
   private readonly metadataBySocket = new Map<WebSocket, MobileSocketTransportMetadata>()
   private readonly clientIds = new Map<WebSocket, string>()
@@ -125,9 +125,11 @@ export class CloudRelayTransport implements RpcTransport, MobileSocketTransport 
   // before. The claim is what proves this open still belongs to the current lifecycle: stop()
   // drops every claim, so an open whose proxy resolution outlived it — even across a later
   // start() — must not register a socket the new lifecycle never asked for.
-  private async openSocket(url: string, claimedConnId: string): Promise<WebSocket> {
+  private async openSocket(url: string, claimedConnId: string, claim: symbol): Promise<WebSocket> {
     const agent = await outboundProxySocketAgent(url)
-    if (!this.claimedConnectionIds.has(claimedConnId)) {
+    // A matching claim means this attempt is still the one that owns the connId: stop() drops
+    // every claim, and a later attempt for the same connId replaces it.
+    if (this.claimedConnectionIds.get(claimedConnId) !== claim) {
       throw new Error('relay_transport_stopped')
     }
     return new WebSocket(url, {
@@ -162,11 +164,12 @@ export class CloudRelayTransport implements RpcTransport, MobileSocketTransport 
     // handshake is wired. A rebind replaying pending connections would otherwise open a second
     // socket for a connId whose first open is still resolving its proxy, and the later
     // registration would overwrite the first socket's mapping mid-open.
-    this.claimedConnectionIds.add(connection.connId)
+    const claim = Symbol('relay-connection-claim')
+    this.claimedConnectionIds.set(connection.connId, claim)
     const url = `${this.cellWebSocketOrigin}/v1/host/data/${encodeURIComponent(connection.connId)}`
     const socket = this.injectedSocketFactory
       ? this.injectedSocketFactory(url)
-      : await this.openSocket(url, connection.connId)
+      : await this.openSocket(url, connection.connId, claim)
     const metadata: MobileSocketTransportMetadata = {
       transport: 'relay',
       relayHostId: this.relayHostId,
@@ -195,7 +198,9 @@ export class CloudRelayTransport implements RpcTransport, MobileSocketTransport 
           return
         }
         finalized = true
-        this.claimedConnectionIds.delete(connection.connId)
+        if (this.claimedConnectionIds.get(connection.connId) === claim) {
+          this.claimedConnectionIds.delete(connection.connId)
+        }
         clearTimeout(deadline)
         this.finalizeConnection(connection.connId, socket)
       }

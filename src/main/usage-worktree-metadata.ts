@@ -1,6 +1,8 @@
 import { basename } from 'node:path'
+import { resolveFolderWorkspaceHost } from '../shared/folder-workspace-execution-host'
 import type { FolderWorkspace } from '../shared/folder-workspace-types'
 import { folderWorkspaceToWorktree } from '../shared/folder-workspace-worktree'
+import type { ProjectGroup } from '../shared/project-group-types'
 import type { Repo } from '../shared/repo-types'
 import { splitWorktreeId, splitWorktreeIdForFilesystem } from '../shared/worktree/id'
 import { isFolderRepo } from '../shared/repo-kind'
@@ -17,8 +19,11 @@ function getDefaultUsageWorktreeLabel(pathValue: string): string {
 }
 
 export function loadKnownUsageWorktreesByRepo(
-  // Optional so partial store doubles stay valid; every real Store provides it.
-  store: Pick<Store, 'getAllWorktreeMeta'> & { getFolderWorkspaces?: () => FolderWorkspace[] },
+  // Optional so partial store doubles stay valid; every real Store provides both.
+  store: Pick<Store, 'getAllWorktreeMeta'> & {
+    getFolderWorkspaces?: () => FolderWorkspace[]
+    getProjectGroups?: () => ProjectGroup[]
+  },
   repos: Repo[]
 ): Map<string, UsageWorktreeRef[]> {
   const localRepos = repos.filter((repo) => !repo.connectionId)
@@ -72,12 +77,21 @@ export function loadKnownUsageWorktreesByRepo(
     })
   }
 
+  const folderWorkspaces = store.getFolderWorkspaces?.() ?? []
+  const folderWorkspaceHostState = {
+    folderWorkspaces,
+    projectGroups: store.getProjectGroups?.() ?? [],
+    repos
+  }
+
   // Why: folder workspaces host real agent sessions but are neither repos nor
   // worktree metadata. Without a ref their cwd falls back to `cwd:<path>` and
   // the default Orca scope drops every row (#20477).
-  for (const workspace of store.getFolderWorkspaces?.() ?? []) {
-    // Why: local transcripts are all the scanners can read, matching the repo filter.
-    if (workspace.connectionId) {
+  for (const workspace of folderWorkspaces) {
+    // Why: the scanners only read this host's transcripts, so resolve ownership the way the rest of
+    // the app does (`executionHostId` is SSH ownership's other spelling) and fail closed on an
+    // ambiguous scope rather than indexing a remote path as local.
+    if (resolveFolderWorkspaceHost(folderWorkspaceHostState, workspace.id).kind !== 'local') {
       continue
     }
     const worktree = folderWorkspaceToWorktree(workspace)
@@ -86,6 +100,9 @@ export function loadKnownUsageWorktreesByRepo(
       path: worktree.path,
       displayName: worktree.displayName || getDefaultUsageWorktreeLabel(worktree.path)
     }
+    // A folder workspace sharing a directory with a repo adds a second ref for that path. Both ids
+    // are non-null, so nothing drops from the Orca scope; which one labels the row is the provider's
+    // exact-path precedence.
     const refs = worktreesByRepo.get(worktree.repoId)
     if (refs) {
       refs.push(ref)

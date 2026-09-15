@@ -17,7 +17,8 @@ function createStoreWithState(state: CodexUsagePersistedState): CodexUsageStore 
   const store = new CodexUsageStore({
     getRepos: () => [],
     getAllWorktreeMeta: () => ({}),
-    getFolderWorkspaces: () => []
+    getFolderWorkspaces: () => [],
+    getProjectGroups: () => []
   })
 
   ;(store as unknown as { state: CodexUsagePersistedState }).state = state

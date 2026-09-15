@@ -54,7 +54,8 @@ function createStoreWithState(state: Partial<OpenCodeUsagePersistedState>): Open
   const store = new OpenCodeUsageStore({
     getRepos: () => [],
     getAllWorktreeMeta: () => ({}),
-    getFolderWorkspaces: () => []
+    getFolderWorkspaces: () => [],
+    getProjectGroups: () => []
   })
 
   ;(store as unknown as { state: OpenCodeUsagePersistedState }).state = {

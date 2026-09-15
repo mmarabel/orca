@@ -77,9 +77,21 @@ describe('loadKnownUsageWorktreesByRepo', () => {
       folderPath: '/remote/plain-folder',
       connectionId: 'ssh-1'
     }
+    const sshStampedFolderWorkspace: FolderWorkspace = {
+      ...localFolderWorkspace,
+      id: 'workspace-3',
+      name: 'SSH Stamped Folder',
+      folderPath: '/ssh-stamped/plain-folder',
+      connectionId: null,
+      executionHostId: 'ssh:target-1'
+    }
     const store = {
       getAllWorktreeMeta: () => ({}),
-      getFolderWorkspaces: () => [localFolderWorkspace, remoteFolderWorkspace]
+      getFolderWorkspaces: () => [
+        localFolderWorkspace,
+        remoteFolderWorkspace,
+        sshStampedFolderWorkspace
+      ]
     }
 
     expect(loadKnownUsageWorktreesByRepo(store, [])).toEqual(

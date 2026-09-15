@@ -58,7 +58,10 @@ export abstract class UsageProviderStoreLifecycle<
   private readonly writer: UsageCacheSnapshotWriter
 
   constructor(
-    private readonly store: Pick<Store, 'getRepos' | 'getAllWorktreeMeta' | 'getFolderWorkspaces'>,
+    private readonly store: Pick<
+      Store,
+      'getRepos' | 'getAllWorktreeMeta' | 'getFolderWorkspaces' | 'getProjectGroups'
+    >,
     private readonly config: UsageProviderStoreLifecycleConfig<SourceKey, State, DataPresenceKey>
   ) {
     this.writer = new UsageCacheSnapshotWriter(config.logTag, config.resolveCacheFile)

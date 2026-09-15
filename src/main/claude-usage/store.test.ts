@@ -29,7 +29,8 @@ function createBackingStore(): ConstructorParameters<typeof ClaudeUsageStore>[0]
   return {
     getRepos: () => [],
     getAllWorktreeMeta: () => ({}),
-    getFolderWorkspaces: () => []
+    getFolderWorkspaces: () => [],
+    getProjectGroups: () => []
   }
 }
 

@@ -96,12 +96,16 @@ describe('main-process outbound proxy', () => {
     expect(agentProxyUrl(agent)).toBe('http://nina:p%40ss%20word@proxy.corp.example:8080')
   })
 
-  it('falls back to the proxy environment on a host without a Chromium session', async () => {
+  it('falls back to the proxy environment, credentials included, on a host without a Chromium session', async () => {
     setDefaultProxySessionResolver(null)
-    vi.stubEnv('HTTPS_PROXY', 'http://proxy.env.example:3128')
+    vi.stubEnv('HTTPS_PROXY', 'http://nina:s3cret@proxy.env.example:3128')
 
     expect(await resolveOutboundProxyUrl('https://login.onorca.dev/v1/desktop/auth/session')).toBe(
-      'http://proxy.env.example:3128'
+      'http://nina:s3cret@proxy.env.example:3128'
     )
+    // A credential-less URL would make an authenticated proxy answer 407.
+    expect(
+      agentProxyUrl(await outboundProxySocketAgent('wss://relay.example/v1/host/control'))
+    ).toBe('http://nina:s3cret@proxy.env.example:3128')
   })
 })

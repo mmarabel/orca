@@ -117,9 +117,14 @@ export class CloudRelayTransport implements RpcTransport, MobileSocketTransport 
   }
 
   // Why: the app's configured proxy covers the cell's data sockets too. An injected factory
-  // owns its own transport and stays synchronous, so callers see it attach listeners as before.
-  private async openSocket(url: string): Promise<WebSocket> {
+  // owns its own transport and stays synchronous, so callers see it attach listeners as
+  // before. Returns null when stop() landed while the proxy was resolving: a socket created
+  // after stop() snapshotted its set would never be terminated by it.
+  private async openSocket(url: string): Promise<WebSocket | null> {
     const agent = await outboundProxySocketAgent(url)
+    if (this.stopped) {
+      return null
+    }
     return new WebSocket(url, {
       perMessageDeflate: false,
       maxPayload: MAX_RELAY_MESSAGE_BYTES,
@@ -150,6 +155,9 @@ export class CloudRelayTransport implements RpcTransport, MobileSocketTransport 
     const socket = this.injectedSocketFactory
       ? this.injectedSocketFactory(url)
       : await this.openSocket(url)
+    if (!socket) {
+      throw new Error('relay_transport_stopped')
+    }
     const metadata: MobileSocketTransportMetadata = {
       transport: 'relay',
       relayHostId: this.relayHostId,

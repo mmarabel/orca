@@ -1,9 +1,9 @@
 import type { Agent } from 'node:http'
 import { HttpsProxyAgent } from 'https-proxy-agent'
 import { ProxyAgent, type Dispatcher } from 'undici'
+import { getProxyUrlFromEnvironment } from '../../shared/network-proxy'
 import { defaultProxySession, type ProxySession } from './electron-default-proxy-session'
 import { getElectronProxyCredentialsForSession } from './electron-proxy-credentials'
-import { resolveProxyPolicyWithoutSession } from './proxy-policy-resolution'
 
 /**
  * The proxy that main-process Node-side connections — WebSocket sockets and the
@@ -11,9 +11,10 @@ import { resolveProxyPolicyWithoutSession } from './proxy-policy-resolution'
  *
  * Chromium owns the policy: app Settings, then proxy env vars, then the system
  * proxy, including the bypass list. `session.resolveProxy` is therefore the only
- * authority the desktop consults; the env policy is used solely on a host with no
- * Chromium session (a Node host has no other source and no bypass matcher, so it
- * applies the env proxy to every non-loopback target).
+ * authority the desktop consults; a host with no Chromium session has no other source
+ * (`main/startup/main-process-preflight.ts` installs both together), so there the proxy
+ * env vars are read directly, credentials included, without a bypass matcher — every
+ * non-loopback target goes through them.
  *
  * Only a plain HTTP proxy can be tunnelled here: HTTPS-proxy and SOCKS rules from
  * the resolver are deliberately left direct, matching what those transports did
@@ -100,8 +101,12 @@ export async function resolveOutboundProxyUrl(targetUrl: string): Promise<string
     const resolved = proxyUrlFromRules(await proxySession.resolveProxy(probeUrl))
     return resolved === null ? null : withProxyCredentials(resolved, proxySession, credentials)
   }
-  const policy = resolveProxyPolicyWithoutSession({}, process.env)
-  return policy.source === 'env' ? policy.proxyRules : null
+  // Why the raw env value rather than the resolved policy: `resolveProxyPolicyWithoutSession`
+  // hands back rules with the userinfo stripped, because Chromium answers an auth challenge
+  // instead, and there is no session credential store to read on this path — the credentials
+  // have to travel in the URL or an authenticated proxy rejects the request.
+  const envProxy = getProxyUrlFromEnvironment(process.env)
+  return envProxy.ok && envProxy.value ? envProxy.value : null
 }
 
 const socketAgentsByProxyUrl = new Map<string, Agent>()

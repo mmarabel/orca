@@ -266,6 +266,53 @@ describe('CloudRelayTransport', () => {
     expect(connections).toBe(1)
   })
 
+  it('releases the claim when the dial fails', async () => {
+    const server = new WebSocketServer({ host: '127.0.0.1', port: 0, perMessageDeflate: false })
+    servers.push(server)
+    await new Promise<void>((resolve) => server.once('listening', resolve))
+    const address = server.address()
+    if (typeof address === 'string' || address === null) {
+      throw new Error('expected TCP relay test server')
+    }
+    const proxy = await startConnectProxy(address.port)
+    const accepted = new Promise<void>((resolve) => server.once('connection', () => resolve()))
+    let failing = true
+    setDefaultProxySessionResolver(() => ({
+      resolveProxy: async () => {
+        if (failing) {
+          throw new Error('proxy lookup failed')
+        }
+        return `PROXY 127.0.0.1:${proxy.port}`
+      },
+      setProxy: async () => {}
+    }))
+    const transport = new CloudRelayTransport({
+      cellUrl: 'http://relay-cell.example',
+      relayHostId: 'AbCdEf0123_-xyZ9',
+      generation: 7,
+      onConnectionClosed: vi.fn()
+    })
+    transports.push(transport)
+    transport.onMessage(vi.fn())
+    transport.onConnectionClose(vi.fn())
+    await transport.start()
+    const connection = {
+      connId: 'conn-1',
+      connTicket: 'ticket-1',
+      kind: 'invite' as const,
+      relayDeviceId: 'device-1',
+      attachDeadlineMs: 5_000
+    }
+
+    await expect(transport.openConnection(connection)).rejects.toThrow('proxy lookup failed')
+
+    // A claim left behind would make every later open of this connId return without dialling.
+    failing = false
+    await transport.openConnection(connection)
+    await accepted
+    expect(proxy.targets).toEqual(['relay-cell.example:80'])
+  })
+
   it('refuses a generation change while a connection is claimed', async () => {
     const server = new WebSocketServer({ host: '127.0.0.1', port: 0, perMessageDeflate: false })
     servers.push(server)

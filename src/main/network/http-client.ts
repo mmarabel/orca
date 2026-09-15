@@ -1,4 +1,7 @@
 import type { Session } from 'electron'
+import type { Dispatcher } from 'undici'
+import { outboundProxyFetchDispatcher } from './outbound-proxy'
+import { ensureElectronProxyFromEnvironment } from './proxy-settings'
 
 /**
  * Outbound HTTP for main-process integrations.
@@ -25,8 +28,18 @@ export type MainHttpClient = {
   proxySession(): Session | null
 }
 
+// The proxy the app is configured to use still applies here: without Chromium there is
+// no session to carry it, so the resolved proxy becomes undici's per-request dispatcher.
 const nodeHttpClient: MainHttpClient = {
-  fetch: (url, init) => globalThis.fetch(url, init),
+  fetch: async (url, init) => {
+    const dispatcher = await outboundProxyFetchDispatcher(url)
+    // undici reads the dispatcher per request, which is how the resolved proxy reaches a
+    // host with no Chromium session. The Response still goes straight back to the caller.
+    const proxiedInit: RequestInit & { dispatcher?: Dispatcher } = dispatcher
+      ? { ...init, dispatcher }
+      : { ...init }
+    return globalThis.fetch(url, proxiedInit)
+  },
   proxySession: () => null
 }
 
@@ -38,4 +51,27 @@ export function setMainHttpClient(client: MainHttpClient | null): void {
 
 export function getMainHttpClient(): MainHttpClient {
   return current
+}
+
+/**
+ * Fetch for main-process integrations that must honor the app-wide proxy: apply the
+ * configured policy to the Chromium session first (a no-op on a host without one),
+ * then send through the installed client — Electron's net.fetch on the desktop.
+ *
+ * Typed as the global fetch so it can stand in wherever a fetch is injected. A Request
+ * input is sent as its URL: the client port is string-based, and no caller here passes
+ * a Request whose own method or body would be lost.
+ *
+ * A failed apply is not fatal to the request: it is attempted either way, and its own
+ * transport error is what the caller reports.
+ */
+export const fetchWithConfiguredProxy: typeof globalThis.fetch = async (input, init) => {
+  const url = input instanceof Request ? input.url : input instanceof URL ? input.toString() : input
+  const httpClient = getMainHttpClient()
+  const proxySession = httpClient.proxySession()
+  await ensureElectronProxyFromEnvironment({
+    ...(proxySession ? { proxySession } : {}),
+    probeUrl: url
+  }).catch(() => {})
+  return await httpClient.fetch(url, init)
 }

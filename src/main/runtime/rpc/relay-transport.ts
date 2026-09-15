@@ -1,5 +1,6 @@
 import WebSocket, { type RawData } from 'ws'
 import { forEachWithConcurrency } from '../../../shared/map-with-concurrency'
+import { outboundProxySocketAgent } from '../../network/outbound-proxy'
 import type { RpcTransport } from './transport'
 import type { MobileSocketTransport, MobileSocketTransportMetadata } from './mobile-socket-wiring'
 
@@ -46,7 +47,7 @@ export class CloudRelayTransport implements RpcTransport, MobileSocketTransport 
   private readonly cellWebSocketOrigin: string
   private readonly relayHostId: string
   private generation: number
-  private readonly createSocket: (url: string) => WebSocket
+  private readonly injectedSocketFactory: ((url: string) => WebSocket) | null
   private readonly onConnectionClosed: ((connectionId: string) => void) | undefined
   private readonly socketsByConnectionId = new Map<string, WebSocket>()
   private readonly metadataBySocket = new Map<WebSocket, MobileSocketTransportMetadata>()
@@ -62,10 +63,7 @@ export class CloudRelayTransport implements RpcTransport, MobileSocketTransport 
     this.relayHostId = options.relayHostId
     this.generation = options.generation
     this.onConnectionClosed = options.onConnectionClosed
-    this.createSocket =
-      options.createSocket ??
-      ((url) =>
-        new WebSocket(url, { perMessageDeflate: false, maxPayload: MAX_RELAY_MESSAGE_BYTES }))
+    this.injectedSocketFactory = options.createSocket ?? null
   }
 
   onMessage(handler: Parameters<MobileSocketTransport['onMessage']>[0]): void {
@@ -118,6 +116,17 @@ export class CloudRelayTransport implements RpcTransport, MobileSocketTransport 
     return sockets.length
   }
 
+  // Why: the app's configured proxy covers the cell's data sockets too. An injected factory
+  // owns its own transport and stays synchronous, so callers see it attach listeners as before.
+  private async openSocket(url: string): Promise<WebSocket> {
+    const agent = await outboundProxySocketAgent(url)
+    return new WebSocket(url, {
+      perMessageDeflate: false,
+      maxPayload: MAX_RELAY_MESSAGE_BYTES,
+      ...(agent ? { agent } : {})
+    })
+  }
+
   async start(): Promise<void> {
     this.stopped = false
   }
@@ -138,7 +147,9 @@ export class CloudRelayTransport implements RpcTransport, MobileSocketTransport 
       return
     }
     const url = `${this.cellWebSocketOrigin}/v1/host/data/${encodeURIComponent(connection.connId)}`
-    const socket = this.createSocket(url)
+    const socket = this.injectedSocketFactory
+      ? this.injectedSocketFactory(url)
+      : await this.openSocket(url)
     const metadata: MobileSocketTransportMetadata = {
       transport: 'relay',
       relayHostId: this.relayHostId,

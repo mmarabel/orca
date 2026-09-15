@@ -1,5 +1,6 @@
 import type { RelayControlOriginOptions } from './relay-control-origin-options'
 import { CloudRelayTransport } from '../rpc/relay-transport'
+import { outboundProxySocketAgent } from '../../network/outbound-proxy'
 import { RelayControlClient } from './relay-control-client'
 import { RELAY_HOST_ATTACH_DEADLINE_MS } from './relay-control-protocol'
 import type {
@@ -203,7 +204,11 @@ export class RelayControlOrigin {
           this.options.onClose(this, code)
         }
       },
-      createSocket: this.options.createControlSocket
+      createSocket: this.options.createControlSocket,
+      // An injected factory owns its own transport, proxy included.
+      socketAgent: this.options.createControlSocket
+        ? undefined
+        : await outboundProxySocketAgent(this.cellUrl)
     })
     this.controls.add(control)
     try {

@@ -56,6 +56,20 @@ describe('TerminalKittyShortcutInputSettlement', () => {
     expect(send).toHaveBeenCalledExactlyOnceWith('\x1b[13;2u')
   })
 
+  it('delivers queued input through the replacement transport sender', () => {
+    const settlement = new TerminalKittyShortcutInputSettlement()
+    const oldSend = vi.fn()
+    const replacementSend = vi.fn()
+    let currentSend = oldSend
+
+    settlement.dispatch(SHIFT_ENTER, 0, (data) => currentSend(data))
+    currentSend = replacementSend
+    settlement.settle(1)
+
+    expect(oldSend).not.toHaveBeenCalled()
+    expect(replacementSend).toHaveBeenCalledExactlyOnceWith('\x1b[13;2u')
+  })
+
   it('drops deferred input when the pane is disposed', () => {
     const settlement = new TerminalKittyShortcutInputSettlement()
     const send = vi.fn()

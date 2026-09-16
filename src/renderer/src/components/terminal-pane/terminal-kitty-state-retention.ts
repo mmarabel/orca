@@ -8,8 +8,12 @@ export function retainTerminalKittyState(
   ptyId: string | null | undefined,
   tracker: TerminalKittyKeyboardModeTracker
 ): void {
+  if (!ptyId) {
+    return
+  }
   const flags = tracker.snapshotFlags
-  if (!ptyId || flags === undefined) {
+  if (flags === undefined) {
+    retainedFlagsByPtyId.delete(ptyId)
     return
   }
   retainedFlagsByPtyId.delete(ptyId)

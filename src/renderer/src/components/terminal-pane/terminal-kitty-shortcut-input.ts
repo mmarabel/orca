@@ -11,7 +11,6 @@ type PendingKittyShortcutInput = {
 }
 
 export class TerminalKittyShortcutInputSettlement {
-  private flags = 0
   private settled = false
   private disposed = false
   private pending: PendingKittyShortcutInput[] = []
@@ -22,12 +21,16 @@ export class TerminalKittyShortcutInputSettlement {
     }
   }
 
-  dispatch(input: TerminalKittyShortcutInput, send: (data: string) => void): boolean {
+  dispatch(
+    input: TerminalKittyShortcutInput,
+    currentFlags: number,
+    send: (data: string) => void
+  ): boolean {
     if (this.disposed) {
       return false
     }
     if (this.settled) {
-      send(this.resolve(input, this.flags))
+      send(this.resolve(input, currentFlags))
       return true
     }
     if (this.pending.length < MAX_PENDING_KITTY_SHORTCUT_INPUTS) {
@@ -40,7 +43,6 @@ export class TerminalKittyShortcutInputSettlement {
     if (this.disposed) {
       return
     }
-    this.flags = flags
     this.settled = true
     const pending = this.pending
     this.pending = []

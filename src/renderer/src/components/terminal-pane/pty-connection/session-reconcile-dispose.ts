@@ -171,7 +171,11 @@ export function installSessionReconcileDispose(session: ConnectPanePtySession): 
       session.markInteractiveRedrawInput()
     },
     dispatchKittyShortcutInput(input, send) {
-      return session.kittyShortcutInputSettlement.dispatch(input, send)
+      return session.kittyShortcutInputSettlement.dispatch(
+        input,
+        session.kittyKeyboardModes.flags,
+        send
+      )
     },
     reconcileIfSessionDead: session.reconcileIfSessionDead,
     reconcileIfSessionMissing: session.reconcileIfSessionMissing,

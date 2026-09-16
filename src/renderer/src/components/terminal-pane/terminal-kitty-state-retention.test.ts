@@ -34,7 +34,7 @@ describe('terminal kitty state retention', () => {
     remounted.resetForSnapshot()
     const settlement = new TerminalKittyShortcutInputSettlement()
     const sent: string[] = []
-    settlement.dispatch({ kitty: '\x1b[13;2u', legacy: '\x1b\r' }, (data) => sent.push(data))
+    settlement.dispatch({ kitty: '\x1b[13;2u', legacy: '\x1b\r' }, 0, (data) => sent.push(data))
 
     restoreRetainedTerminalKittyState('pty-1', remounted)
     settlement.settle(remounted.flags)

@@ -11,7 +11,7 @@ describe('TerminalKittyShortcutInputSettlement', () => {
     const settlement = new TerminalKittyShortcutInputSettlement()
     const send = vi.fn()
 
-    expect(settlement.dispatch(SHIFT_ENTER, send)).toBe(true)
+    expect(settlement.dispatch(SHIFT_ENTER, 0, send)).toBe(true)
     expect(send).not.toHaveBeenCalled()
 
     settlement.settle(1)
@@ -23,7 +23,7 @@ describe('TerminalKittyShortcutInputSettlement', () => {
     const settlement = new TerminalKittyShortcutInputSettlement()
     const send = vi.fn()
 
-    settlement.dispatch(SHIFT_ENTER, send)
+    settlement.dispatch(SHIFT_ENTER, 0, send)
     settlement.settle(0)
 
     expect(send).toHaveBeenCalledExactlyOnceWith('\x1b\r')
@@ -34,9 +34,9 @@ describe('TerminalKittyShortcutInputSettlement', () => {
     const send = vi.fn()
     settlement.settle(1)
 
-    settlement.dispatch(SHIFT_ENTER, send)
+    settlement.dispatch(SHIFT_ENTER, 1, send)
     settlement.begin()
-    settlement.dispatch(SHIFT_ENTER, send)
+    settlement.dispatch(SHIFT_ENTER, 1, send)
 
     expect(send).toHaveBeenCalledTimes(1)
     expect(send).toHaveBeenLastCalledWith('\x1b[13;2u')
@@ -46,16 +46,26 @@ describe('TerminalKittyShortcutInputSettlement', () => {
     expect(send).toHaveBeenNthCalledWith(2, '\x1b\r')
   })
 
+  it('uses current proven Kitty state after the attach has settled', () => {
+    const settlement = new TerminalKittyShortcutInputSettlement()
+    const send = vi.fn()
+    settlement.settle(0)
+
+    settlement.dispatch(SHIFT_ENTER, 1, send)
+
+    expect(send).toHaveBeenCalledExactlyOnceWith('\x1b[13;2u')
+  })
+
   it('drops deferred input when the pane is disposed', () => {
     const settlement = new TerminalKittyShortcutInputSettlement()
     const send = vi.fn()
 
-    settlement.dispatch(SHIFT_ENTER, send)
+    settlement.dispatch(SHIFT_ENTER, 0, send)
     settlement.dispose()
     settlement.settle(1)
 
     expect(send).not.toHaveBeenCalled()
-    expect(settlement.dispatch(SHIFT_ENTER, send)).toBe(false)
+    expect(settlement.dispatch(SHIFT_ENTER, 1, send)).toBe(false)
   })
 
   it('bounds deferred input while a reattach is stalled', () => {
@@ -63,7 +73,7 @@ describe('TerminalKittyShortcutInputSettlement', () => {
     const send = vi.fn()
 
     for (let index = 0; index < 64; index += 1) {
-      expect(settlement.dispatch(SHIFT_ENTER, send)).toBe(true)
+      expect(settlement.dispatch(SHIFT_ENTER, 0, send)).toBe(true)
     }
     settlement.settle(1)
 

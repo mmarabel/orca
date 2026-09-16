@@ -42,6 +42,21 @@ describe('terminal kitty state retention', () => {
     expect(sent).toEqual(['\x1b[13;2u'])
   })
 
+  it('clears retained flags when a later snapshot has no proven baseline', () => {
+    const mounted = new TerminalKittyKeyboardModeTracker()
+    mounted.reset()
+    mounted.scan('\x1b[>1u')
+    retainTerminalKittyState('pty-1', mounted)
+
+    mounted.resetForSnapshot()
+    retainTerminalKittyState('pty-1', mounted)
+
+    const remounted = new TerminalKittyKeyboardModeTracker()
+    remounted.resetForSnapshot()
+    restoreRetainedTerminalKittyState('pty-1', remounted)
+    expect(remounted.snapshotFlags).toBeUndefined()
+  })
+
   it('does not carry state into a fresh or exited PTY', () => {
     const mounted = new TerminalKittyKeyboardModeTracker()
     mounted.reset()

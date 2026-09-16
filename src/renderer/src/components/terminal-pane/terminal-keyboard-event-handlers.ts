@@ -225,15 +225,18 @@ export function createTerminalKeyboardEventHandlers(context: EventContext) {
         return
       }
       const sendResolvedInput = createCapturedInputSender(pane, action.data)
-      const capturedBinding = panePtyBindingsRef.current.get(pane.id) as
-        | TerminalCapturedInputBinding
-        | undefined
+      const sendCurrentResolvedInput = (data: string): void => {
+        createCapturedInputSender(pane, data)()
+      }
       const sendShortcutInput = (): void => {
+        const currentBinding = panePtyBindingsRef.current.get(pane.id) as
+          | TerminalCapturedInputBinding
+          | undefined
         if (
           action.kittyKeyboardInput &&
-          capturedBinding?.dispatchKittyShortcutInput?.(
+          currentBinding?.dispatchKittyShortcutInput?.(
             action.kittyKeyboardInput,
-            sendResolvedInput
+            sendCurrentResolvedInput
           ) === true
         ) {
           return

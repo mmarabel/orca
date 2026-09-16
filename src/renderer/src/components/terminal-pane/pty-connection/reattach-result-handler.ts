@@ -134,7 +134,6 @@ export function bindHandleReattachResult(sessionBag: ConnectPanePtySession): voi
       if (staleSessionId) {
         session.deps.clearTabPtyId(session.deps.tabId, staleSessionId)
       }
-      settleShortcutInput()
       session.startFreshColdRestoreAgentResume(coldRestoreStartup, {
         forceBlankRestoredViewport: true
       })
@@ -158,7 +157,6 @@ export function bindHandleReattachResult(sessionBag: ConnectPanePtySession): voi
         session.deps.clearTabPtyId(session.deps.tabId, staleSessionId)
       }
       // Why: SSH sleep/reconnect can invalidate the relay PTY while the tab stays mounted; replace the dead lease in-place, not a stale overlay.
-      settleShortcutInput()
       session.startFreshColdRestoreAgentResume(coldRestoreStartup, {
         forceBlankRestoredViewport: true
       })
@@ -201,7 +199,6 @@ export function bindHandleReattachResult(sessionBag: ConnectPanePtySession): voi
       } else {
         session.syncPanePtyLayoutBinding(null)
       }
-      settleShortcutInput()
       session.startFreshColdRestoreAgentResume(coldRestoreStartup, {
         forceBlankRestoredViewport: true
       })

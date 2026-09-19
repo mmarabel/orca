@@ -339,6 +339,7 @@ export function RepositoryPane({
             repo={repo}
             updateRepo={updateSelectedRepo}
             defaultProjectIcon={settings?.defaultProjectIcon ?? null}
+            defaultProjectIconColor={settings?.defaultProjectIconColor}
           />
         </SearchableSetting>
 

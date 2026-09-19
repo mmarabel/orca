@@ -90,6 +90,23 @@ describe('RepositoryIconPicker with a global default project icon', () => {
     expect(container.querySelector('img')).toBeNull()
   })
 
+  it('previews the default in the color the sidebar draws it in', async () => {
+    act(() => {
+      root.render(
+        <RepositoryIconPicker
+          repo={makeRepo()}
+          updateRepo={vi.fn()}
+          defaultProjectIcon={{ type: 'lucide', name: 'Folder' }}
+          defaultProjectIconColor="#e11d48"
+        />
+      )
+    })
+    await flushEffects()
+
+    // Not the repo's own #2563eb badge color: the global default owns its tint.
+    expect(container.querySelector('svg')?.getAttribute('style')).toContain('#e11d48')
+  })
+
   it('still refreshes the avatar when no default is set', async () => {
     apiMocks.repoUpstream.mockResolvedValue(null)
     apiMocks.repoSlug.mockResolvedValue({ owner: 'stablyai', repo: 'orca' })

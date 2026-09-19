@@ -146,6 +146,8 @@ export function normalizeLoadedGlobalSettings(
       ...parsed.settings?.voice
     },
     defaultProjectIcon,
-    ...(defaultProjectIconColor ? { defaultProjectIconColor } : {})
+    // Why not a conditional spread: the raw parsed value is already in this object, so an
+    // unusable stored color has to be overwritten rather than merely not re-added.
+    defaultProjectIconColor: defaultProjectIconColor ?? undefined
   }
 }

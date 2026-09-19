@@ -27,12 +27,15 @@ import { translate } from '@/i18n/i18n'
 export function RepositoryIconPicker({
   repo,
   updateRepo,
-  defaultProjectIcon = null
+  defaultProjectIcon = null,
+  defaultProjectIconColor
 }: {
   repo: Repo
   updateRepo: (repoId: string, updates: Partial<Repo>) => void
   /** Global fallback icon; when set it stands in for this project's absent or auto-detected avatar. */
   defaultProjectIcon?: RepoIcon | null
+  /** Tint for that fallback, so this preview matches what the sidebar draws. */
+  defaultProjectIconColor?: string
 }): React.JSX.Element {
   const [loadingGitHub, setLoadingGitHub] = useState(false)
   const [resetting, setResetting] = useState(false)
@@ -54,7 +57,8 @@ export function RepositoryIconPicker({
 
   const showsGlobalDefault = defaultProjectIcon !== null && usesDefaultProjectIcon(repo.repoIcon)
   const iconDisplay = resolveProjectIconDisplay(repo.repoIcon, selectedBadgeColor, {
-    defaultProjectIcon
+    defaultProjectIcon,
+    defaultProjectIconColor
   })
 
   const currentIconLabel = useMemo(() => {

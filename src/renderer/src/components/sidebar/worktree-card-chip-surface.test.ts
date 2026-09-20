@@ -37,10 +37,10 @@ const CHIP_BACKGROUNDS = [
 ] as const
 const CHIP_LABEL_FOREGROUND_PERCENT = 70
 const CHIP_LABEL_COLOR = `color-mix(in srgb, var(--foreground) ${CHIP_LABEL_FOREGROUND_PERCENT}%, transparent)`
-// Selected-card chip values from #15971's default-light and Match-terminal-dark cases.
+// Selected-card values from #15971's default-light and Match-terminal-dark cases.
 const CHIP_LABEL_CONTRAST_CASES = [
-  ['default light', 10, 209],
-  ['Match-terminal dark', 250, 70]
+  ['default light', '.worktree-sidebar-chip', 10, 226],
+  ['Match-terminal dark', '.dark .worktree-sidebar-chip', 250, 45]
 ] as const
 
 function linearizeSrgb(channel: number): number {
@@ -77,9 +77,16 @@ describe('worktree sidebar chip surface', () => {
 
   it.each(CHIP_LABEL_CONTRAST_CASES)(
     'keeps the label contrast above AA in %s',
-    (_, foreground, chip) => {
-      const share = CHIP_LABEL_FOREGROUND_PERCENT / 100
-      const label = foreground * share + chip * (1 - share)
+    (_, chipSelector, foreground, selectedCard) => {
+      const chipFill = readDeclaration(chipSelector, 'background')
+      const chipForegroundPercent = chipFill.match(/var\(--foreground\) (?<percent>\d+)%/)?.groups
+        ?.percent
+      expect(chipForegroundPercent).toBeTypeOf('string')
+
+      const chipShare = Number(chipForegroundPercent) / 100
+      const chip = foreground * chipShare + selectedCard * (1 - chipShare)
+      const labelShare = CHIP_LABEL_FOREGROUND_PERCENT / 100
+      const label = foreground * labelShare + chip * (1 - labelShare)
 
       expect(grayscaleContrast(label, chip)).toBeGreaterThanOrEqual(4.5)
     }

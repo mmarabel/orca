@@ -1,8 +1,10 @@
+import { classifyRemotePairingHostname } from '../../../shared/remote-pairing-address'
 import type { PortForwardEntry, EnrichedDetectedPort } from '../../../shared/ssh-types'
 import type { WorkspacePort } from '../../../shared/workspace-ports'
 
 const HTTPS_PORTS = new Set([443, 8443])
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0', '::'])
+const WILDCARD_BIND_HOSTS = new Set(['0.0.0.0', '::', '*'])
 
 // Why: the scanner reports numeric addresses (127.0.0.1, 0.0.0.0, ::1, ::)
 // while UI actions should use an address a browser can reliably open.
@@ -34,6 +36,66 @@ export function browserUrlForPort(port: WorkspacePort): string {
   }
   const protocol = port.protocol === 'https' ? 'https' : 'http'
   return `${protocol}://${hostForLocalAction(port.connectHost)}:${port.port}`
+}
+
+/** A wildcard bind accepts connections on every interface, so another machine can
+ *  reach the listener. A loopback bind never leaves its own host at any address. */
+export function isWildcardBindHost(bindHost: string): boolean {
+  return WILDCARD_BIND_HOSTS.has(bindHost.trim())
+}
+
+// Why: the address this client already uses to reach the runtime is reachable by
+// definition, whatever carries it — LAN, VPN, tailnet, public. Deriving the host from
+// the live connection keeps this transport-agnostic instead of probing for a provider.
+function reachableHostnameForEndpoint(endpoint: string | null | undefined): string | null {
+  if (!endpoint) {
+    return null
+  }
+  try {
+    // Why: URL returns IPv6 hostnames already bracketed, and assigning a *bare* IPv6
+    // back to `hostname` silently leaves the original host in place. Passing this
+    // value through untouched is what keeps both the substituted and synthesized
+    // shapes correct, so do not strip or re-add brackets here.
+    const { hostname } = new URL(endpoint)
+    if (!hostname) {
+      return null
+    }
+    // An SSH-tunnelled pairing terminates on this client's own loopback, so its address
+    // says nothing about how to reach the runtime's dev servers.
+    return classifyRemotePairingHostname(hostname) === 'loopback' ? null : hostname
+  } catch {
+    return null
+  }
+}
+
+/** URL for a remote workspace's port that the client machine can open in any browser,
+ *  or null when no such URL exists — a loopback-bound listener, a relay-only or
+ *  SSH-tunnelled connection. Null means "do not offer this", never "try anyway". */
+export function clientReachableBrowserUrlForPort(
+  port: WorkspacePort,
+  runtimeEndpoint: string | null | undefined
+): string | null {
+  if (!isWildcardBindHost(port.bindHost)) {
+    return null
+  }
+  const hostname = reachableHostnameForEndpoint(runtimeEndpoint)
+  if (!hostname) {
+    return null
+  }
+  const advertisedUrl = port.kind === 'workspace' ? port.advertisedUrl : undefined
+  if (advertisedUrl) {
+    try {
+      // Why: the advertised origin carries the scheme the dev server actually speaks;
+      // only its host is wrong for this machine. Its port already matches this listener.
+      const url = new URL(advertisedUrl)
+      url.hostname = hostname
+      return url.toString()
+    } catch {
+      // Fall through to the OS-derived shape.
+    }
+  }
+  const protocol = port.protocol === 'https' ? 'https' : 'http'
+  return `${protocol}://${hostname}:${port.port}`
 }
 
 /** Extract a custom DNS hostname from an advertised URL for reuse with a

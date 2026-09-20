@@ -59,11 +59,6 @@ function buildCandidateFromStart(
   }
   const translatedStart = cachedStart ?? translateLineWithColumns(startLine)
   translatedLines.set(startY, translatedStart)
-  const schemeColumn = translatedStart.columns[schemeIndex]
-  if (schemeColumn === undefined) {
-    return null
-  }
-
   const frameIndex = findFrameIndexBefore(translatedStart.text, schemeIndex)
   if (frameIndex === -1) {
     return null
@@ -95,6 +90,10 @@ function buildCandidateFromStart(
     const fragmentStart =
       rowY === startY ? schemeIndex : findFramedFragmentStart(translated, frameColumn, framedPrefix)
     if (fragmentStart === -1) {
+      break
+    }
+    const fragmentStartColumn = translated.columns[fragmentStart]
+    if (fragmentStartColumn === undefined) {
       break
     }
 
@@ -132,7 +131,6 @@ function buildCandidateFromStart(
     })
     text += fragment
 
-    const fragmentStartColumn = translated.columns[fragmentStart]!
     const contentWidth = currentRightFrameColumn - fragmentStartColumn
     const fragmentWidth = translated.columns[fragmentEnd]! - fragmentStartColumn
     const fillsRow = contentWidth > 0 && fragmentWidth / contentWidth >= MIN_HARD_WRAP_FILL_RATIO

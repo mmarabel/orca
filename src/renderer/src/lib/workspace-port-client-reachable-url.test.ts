@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { PublicKnownRuntimeEnvironment } from '../../../shared/runtime-environments'
 import type { WorkspacePort } from '../../../shared/workspace-ports'
-import { resolveClientReachableUrlForPort } from './workspace-port-client-reachable-url'
+import {
+  clientReachableAddress,
+  resolveClientReachableUrlForPort
+} from './workspace-port-client-reachable-url'
 
 const PORT: WorkspacePort = {
   kind: 'workspace',
@@ -132,5 +135,21 @@ describe('resolveClientReachableUrlForPort', () => {
         { kind: 'environment', environmentId: 'env-1' }
       )
     ).toBe('http://100.64.1.20:5173')
+  })
+})
+
+describe('clientReachableAddress', () => {
+  it('reduces a reachable URL to the host:port a row displays', () => {
+    expect(clientReachableAddress('http://100.64.1.20:5173')).toBe('100.64.1.20:5173')
+    expect(clientReachableAddress('https://100.64.1.20:5173/app')).toBe('100.64.1.20:5173')
+  })
+
+  it('keeps IPv6 hosts bracketed so the row stays copy-pasteable', () => {
+    expect(clientReachableAddress('http://[2001:db8::1]:5173')).toBe('[2001:db8::1]:5173')
+  })
+
+  it('returns null for nothing to show, so callers keep the OS-derived address', () => {
+    expect(clientReachableAddress(null)).toBeNull()
+    expect(clientReachableAddress('not a url')).toBeNull()
   })
 })

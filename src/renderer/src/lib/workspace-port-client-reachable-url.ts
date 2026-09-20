@@ -1,6 +1,9 @@
+import { useMemo } from 'react'
 import type { PublicKnownRuntimeEnvironment } from '../../../shared/runtime-environments'
 import type { WorkspacePort } from '../../../shared/workspace-ports'
 import type { RuntimeClientTarget } from '@/runtime/runtime-client-target'
+import { useWorktreeRuntimeTarget } from '@/runtime/use-worktree-runtime-target'
+import { useAppStore } from '@/store'
 import { clientReachableBrowserUrlForPort } from './workspace-port-urls'
 
 // Why: the endpoint list already reaches the renderer with tokens redacted, so the
@@ -43,4 +46,31 @@ export function resolveClientReachableUrlForPort(
     return null
   }
   return clientReachableBrowserUrlForPort(port, preferredEndpointForEnvironment(environment))
+}
+
+/** Reactive form for rows that display the address, so what is shown, copied and
+ *  opened cannot drift apart. Null keeps the caller on the OS-derived address. */
+export function useClientReachableUrlForPort(port: WorkspacePort): string | null {
+  const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
+  // Why: container and external ports carry no owner, so they inherit the active
+  // workspace's host — the same fallback openWorkspacePortInBrowser applies.
+  const worktreeId = port.kind === 'workspace' ? port.owner.worktreeId : activeWorktreeId
+  const target = useWorktreeRuntimeTarget(worktreeId)
+  const runtimeEnvironments = useAppStore((s) => s.runtimeEnvironments)
+  return useMemo(
+    () => resolveClientReachableUrlForPort({ runtimeEnvironments }, port, target),
+    [runtimeEnvironments, port, target]
+  )
+}
+
+/** The `host:port` shown on a row, preferring an address this machine can reach. */
+export function clientReachableAddress(reachableUrl: string | null): string | null {
+  if (!reachableUrl) {
+    return null
+  }
+  try {
+    return new URL(reachableUrl).host || null
+  } catch {
+    return null
+  }
 }

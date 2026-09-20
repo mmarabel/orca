@@ -1271,6 +1271,10 @@ html.native-shell .app-layout {
   background: color-mix(in srgb, var(--foreground) 8%, transparent);
 }
 
+.worktree-sidebar-chip-label {
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
 .dark .worktree-sidebar-chip {
   background: color-mix(in srgb, var(--foreground) 12%, transparent);
 }

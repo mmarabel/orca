@@ -35,6 +35,26 @@ const CHIP_BACKGROUNDS = [
   ['.worktree-sidebar-chip', 'color-mix(in srgb, var(--foreground) 8%, transparent)'],
   ['.dark .worktree-sidebar-chip', 'color-mix(in srgb, var(--foreground) 12%, transparent)']
 ] as const
+const CHIP_LABEL_FOREGROUND_PERCENT = 70
+const CHIP_LABEL_COLOR = `color-mix(in srgb, var(--foreground) ${CHIP_LABEL_FOREGROUND_PERCENT}%, transparent)`
+// Selected-card chip values from #15971's default-light and Match-terminal-dark cases.
+const CHIP_LABEL_CONTRAST_CASES = [
+  ['default light', 10, 209],
+  ['Match-terminal dark', 250, 70]
+] as const
+
+function linearizeSrgb(channel: number): number {
+  const normalized = channel / 255
+  return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4
+}
+
+function grayscaleContrast(first: number, second: number): number {
+  const firstLuminance = linearizeSrgb(first)
+  const secondLuminance = linearizeSrgb(second)
+  const lighter = Math.max(firstLuminance, secondLuminance)
+  const darker = Math.min(firstLuminance, secondLuminance)
+  return (lighter + 0.05) / (darker + 0.05)
+}
 
 describe('worktree sidebar chip surface', () => {
   it.each(CHIP_BACKGROUNDS)('keeps %s theme-relative and layer-relative', (selector, expected) => {
@@ -51,6 +71,20 @@ describe('worktree sidebar chip surface', () => {
     }
   })
 
+  it('keeps the host label layer-relative to its chip surface', () => {
+    expect(readDeclaration('.worktree-sidebar-chip-label', 'color')).toBe(CHIP_LABEL_COLOR)
+  })
+
+  it.each(CHIP_LABEL_CONTRAST_CASES)(
+    'keeps the label contrast above AA in %s',
+    (_, foreground, chip) => {
+      const share = CHIP_LABEL_FOREGROUND_PERCENT / 100
+      const label = foreground * share + chip * (1 - share)
+
+      expect(grayscaleContrast(label, chip)).toBeGreaterThanOrEqual(4.5)
+    }
+  )
+
   it('keeps the chip border out of the way instead of tinting it', () => {
     expect(readDeclaration('.worktree-sidebar-chip', 'border-color')).toBe('transparent')
   })
@@ -62,7 +96,8 @@ describe('worktree sidebar chip surface', () => {
     const metaRowSource = readFileSync(resolve(testDir, 'worktree-card-meta-row.tsx'), 'utf8')
 
     expect(hostMarkup).toMatch(/class="[^"]*\bworktree-sidebar-chip\b/)
-    expect(hostMarkup).toMatch(/class="[^"]*\btext-muted-foreground\b/)
+    expect(hostMarkup).toMatch(/class="[^"]*\bworktree-sidebar-chip-label\b/)
+    expect(hostMarkup).not.toMatch(/class="[^"]*\btext-muted-foreground\b/)
     expect(metaRowSource.match(/worktree-sidebar-chip(?=[\s"'])/g)).toHaveLength(1)
     expect(metaRowSource).not.toMatch(/\bbg-accent\b/)
     expect(metaRowSource).not.toMatch(/\bborder-border\b/)

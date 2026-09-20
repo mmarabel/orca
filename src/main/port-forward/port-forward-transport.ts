@@ -38,6 +38,8 @@ export class PortForwardTransport {
   private subscription: RemoteRuntimeSubscription | null = null
   private tunnelValue: BrowserNetworkTunnelClient | null = null
   private startPromise: Promise<BrowserNetworkTunnelClient> | null = null
+  /** Settles an attach that is still waiting for readiness when the transport closes. */
+  private rejectPendingReady: ((error: Error) => void) | null = null
   private closed = false
 
   constructor(options: PortForwardTransportOptions) {
@@ -64,6 +66,7 @@ export class PortForwardTransport {
       rejectReady = reject
     })
     void ready.catch(() => undefined)
+    this.rejectPendingReady = rejectReady
 
     let readyTimeout: ReturnType<typeof setTimeout> | null = null
     try {
@@ -153,6 +156,7 @@ export class PortForwardTransport {
       if (readyTimeout) {
         clearTimeout(readyTimeout)
       }
+      this.rejectPendingReady = null
     }
   }
 
@@ -179,12 +183,16 @@ export class PortForwardTransport {
     if (this.closed) {
       // close() tears the tunnel client down, and its onClosed lands straight back here.
       // Without this an intentional teardown would report itself as a lost tunnel, and a
-      // real loss would report itself twice.
+      // real loss would report itself twice. Settling the attach stays unconditional,
+      // since a rejected promise ignores a second rejection.
+      rejectReady(error)
       return
     }
     const wasReady = this.tunnelValue !== null
-    this.close()
+    // Rejected before close() so the caller sees this failure rather than the generic
+    // teardown error close() settles a pending attach with.
     rejectReady(error)
+    this.close()
     if (wasReady) {
       this.options.onLost?.(error)
     }
@@ -195,6 +203,9 @@ export class PortForwardTransport {
       return
     }
     this.closed = true
+    // An attach still waiting on readiness has no other settler once closed short-circuits
+    // fail(), and start() would stay pending for the life of the process.
+    this.rejectPendingReady?.(new Error('port_forward_transport_closed'))
     try {
       this.tunnelValue?.close(new Error('port_forward_transport_closed'))
     } finally {

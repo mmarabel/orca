@@ -22,10 +22,9 @@ afterEach(() => {
   subscribeRemoteRuntimeRequestMock.mockReset()
 })
 
-/** Attaches a transport whose subscription is under this test's control. */
-async function attach(onLost: (error: Error) => void) {
+/** Resolves a subscription the test controls, without announcing readiness. */
+function stubSubscription(closeSubscription = vi.fn()) {
   let callbacks: RemoteRuntimeSubscriptionCallbacks | undefined
-  const closeSubscription = vi.fn()
   subscribeRemoteRuntimeRequestMock.mockImplementation(
     (
       _pairing: PairingOffer,
@@ -43,11 +42,22 @@ async function attach(onLost: (error: Error) => void) {
       return Promise.resolve(subscription)
     }
   )
+  return () => callbacks
+}
+
+/** Lets the attach resume past the awaited subscription before the test acts. */
+function settleSubscription(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+/** Attaches a transport whose subscription is under this test's control. */
+async function attach(onLost: (error: Error) => void) {
+  const read = stubSubscription()
 
   const transport = new PortForwardTransport({ pairing: PAIRING, onLost })
   const starting = transport.start()
-  await vi.waitFor(() => expect(callbacks).toBeDefined())
-  callbacks?.onResponse({
+  await vi.waitFor(() => expect(read()).toBeDefined())
+  read()?.onResponse({
     id: 'port-forward',
     ok: true,
     result: { type: 'ready', tunnelGeneration: 7 },
@@ -56,7 +66,7 @@ async function attach(onLost: (error: Error) => void) {
   await starting
 
   // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: waitFor above settles before the callbacks are read, so the subscription exists by here.
-  return { transport, callbacks: callbacks as RemoteRuntimeSubscriptionCallbacks }
+  return { transport, callbacks: read() as RemoteRuntimeSubscriptionCallbacks }
 }
 
 describe('PortForwardTransport', () => {
@@ -77,6 +87,22 @@ describe('PortForwardTransport', () => {
 
     transport.close()
 
+    expect(onLost).not.toHaveBeenCalled()
+  })
+
+  it('settles a pending attach when it is closed before readiness', async () => {
+    const onLost = vi.fn()
+    const read = stubSubscription()
+    const transport = new PortForwardTransport({ pairing: PAIRING, onLost })
+
+    const starting = transport.start()
+    await vi.waitFor(() => expect(read()).toBeDefined())
+    await settleSubscription()
+    // Nothing else can settle the attach at this point: the subscription is held but no
+    // ready event arrived, and close() short-circuits the failure path.
+    transport.close()
+
+    await expect(starting).rejects.toThrow('port_forward_transport_closed')
     expect(onLost).not.toHaveBeenCalled()
   })
 

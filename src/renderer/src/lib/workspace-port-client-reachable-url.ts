@@ -50,17 +50,31 @@ export function resolveClientReachableUrlForPort(
 
 /** Reactive form for rows that display the address, so what is shown, copied and
  *  opened cannot drift apart. Null keeps the caller on the OS-derived address. */
-export function useClientReachableUrlForPort(port: WorkspacePort): string | null {
+export function useClientReachableUrlForPort(port: WorkspacePort | null): string | null {
   const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
   // Why: container and external ports carry no owner, so they inherit the active
   // workspace's host — the same fallback openWorkspacePortInBrowser applies.
-  const worktreeId = port.kind === 'workspace' ? port.owner.worktreeId : activeWorktreeId
+  const worktreeId = port?.kind === 'workspace' ? port.owner.worktreeId : activeWorktreeId
   const target = useWorktreeRuntimeTarget(worktreeId)
   const runtimeEnvironments = useAppStore((s) => s.runtimeEnvironments)
   return useMemo(
-    () => resolveClientReachableUrlForPort({ runtimeEnvironments }, port, target),
+    () => (port ? resolveClientReachableUrlForPort({ runtimeEnvironments }, port, target) : null),
     [runtimeEnvironments, port, target]
   )
+}
+
+/**
+ * Whether the system-browser modifier can actually serve this port. A local port is
+ * already on this machine; a remote one needs an address this machine can reach, and a
+ * loopback-bound remote port has none. Callers use it to avoid advertising a modifier
+ * that would silently fall through to the in-app browser.
+ */
+export function usePortSystemBrowserAvailable(port: WorkspacePort | null): boolean {
+  const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
+  const worktreeId = port?.kind === 'workspace' ? port.owner.worktreeId : activeWorktreeId
+  const target = useWorktreeRuntimeTarget(worktreeId)
+  const reachable = useClientReachableUrlForPort(port)
+  return target?.kind !== 'environment' || reachable !== null
 }
 
 /** The `host:port` shown on a row, preferring an address this machine can reach. */

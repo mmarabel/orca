@@ -1,10 +1,9 @@
 import { classifyRemotePairingHostname } from '../../../shared/remote-pairing-address'
 import type { PortForwardEntry, EnrichedDetectedPort } from '../../../shared/ssh-types'
-import type { WorkspacePort } from '../../../shared/workspace-ports'
+import { isWildcardBindHost, type WorkspacePort } from '../../../shared/workspace-ports'
 
 const HTTPS_PORTS = new Set([443, 8443])
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0', '::'])
-const WILDCARD_BIND_HOSTS = new Set(['0.0.0.0', '::', '*'])
 
 // Why: the scanner reports numeric addresses (127.0.0.1, 0.0.0.0, ::1, ::)
 // while UI actions should use an address a browser can reliably open.
@@ -38,11 +37,7 @@ export function browserUrlForPort(port: WorkspacePort): string {
   return `${protocol}://${hostForLocalAction(port.connectHost)}:${port.port}`
 }
 
-/** A wildcard bind accepts connections on every interface, so another machine can
- *  reach the listener. A loopback bind never leaves its own host at any address. */
-export function isWildcardBindHost(bindHost: string): boolean {
-  return WILDCARD_BIND_HOSTS.has(bindHost.trim())
-}
+export { isWildcardBindHost }
 
 // Why: the address this client already uses to reach the runtime is reachable by
 // definition, whatever carries it — LAN, VPN, tailnet, public. Deriving the host from

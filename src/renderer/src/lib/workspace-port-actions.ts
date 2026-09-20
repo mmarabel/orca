@@ -67,8 +67,16 @@ export function getPortSystemBrowserHint(isMac: boolean = isMacShortcutPlatform(
   return isMac ? '⇧⌘+click for system browser' : 'Shift+Ctrl+click for system browser'
 }
 
-export function getPortOpenBrowserTooltipLabel(openLabel: string, isMac?: boolean): string {
-  return `${openLabel}. ${getPortSystemBrowserHint(isMac)}`
+export function getPortOpenBrowserTooltipLabel(
+  openLabel: string,
+  isMac?: boolean,
+  // Why: a remote loopback-bound port has no address this machine can open, so the
+  // modifier falls through to the in-app browser. Advertising it there promises an
+  // action that does nothing. Omitting the hint needs no new string; local ports and
+  // reachable remote ones keep it.
+  systemBrowserAvailable = true
+): string {
+  return systemBrowserAvailable ? `${openLabel}. ${getPortSystemBrowserHint(isMac)}` : openLabel
 }
 
 type PortOpenClickEvent = Pick<MouseEvent, 'metaKey' | 'ctrlKey' | 'shiftKey'>

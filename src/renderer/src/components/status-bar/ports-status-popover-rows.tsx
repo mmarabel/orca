@@ -16,7 +16,8 @@ import {
 import type { WorkspacePortGroup } from '@/lib/workspace-port-groups'
 import {
   clientReachableAddress,
-  useClientReachableUrlForPort
+  useClientReachableUrlForPort,
+  usePortSystemBrowserAvailable
 } from '@/lib/workspace-port-client-reachable-url'
 import { useLocalhostLabelRouteForPort } from '@/lib/workspace-port-localhost-label-selector'
 import { useWorktreeRuntimeTarget } from '@/runtime/use-worktree-runtime-target'
@@ -86,6 +87,7 @@ export function PortRow({
   // nothing is listening. Show and copy the reachable one so the row stays honest.
   const clientReachableUrl = useClientReachableUrlForPort(port)
   const address = clientReachableAddress(clientReachableUrl) ?? addressForPort(port)
+  const systemBrowserAvailable = usePortSystemBrowserAvailable(port)
   const createBrowserTab = useAppStore((s) => s.createBrowserTab)
   const setRemoteBrowserPageHandle = useAppStore((s) => s.setRemoteBrowserPageHandle)
   const replaceWorkspacePortScans = useAppStore((s) => s.replaceWorkspacePortScans)
@@ -235,7 +237,11 @@ export function PortRow({
           <div className="absolute inset-y-0 right-0 flex items-center gap-0.5 rounded-md border border-border/40 bg-popover/95 px-0.5 can-hover:opacity-0 shadow-xs transition-opacity group-hover/port:opacity-100 group-focus-within/port:opacity-100">
             <PortAction
               label={openBrowserLabel}
-              tooltipLabel={getPortOpenBrowserTooltipLabel(openBrowserLabel)}
+              tooltipLabel={getPortOpenBrowserTooltipLabel(
+                openBrowserLabel,
+                undefined,
+                systemBrowserAvailable
+              )}
               onClick={handleOpen}
             >
               <ExternalLink className="size-3" />

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkspacePort } from '../../../shared/workspace-ports'
+import { getPortOpenBrowserTooltipLabel } from './workspace-port-actions'
 import { clientReachableBrowserUrlForPort, isWildcardBindHost } from './workspace-port-urls'
 
 const TAILNET_ENDPOINT = 'ws://100.64.1.20:6768'
@@ -116,5 +117,20 @@ describe('clientReachableBrowserUrlForPort', () => {
         TAILNET_ENDPOINT
       )
     ).toBe('http://100.64.1.20:8080')
+  })
+})
+
+describe('getPortOpenBrowserTooltipLabel', () => {
+  it('advertises the modifier when the system browser can serve the port', () => {
+    expect(getPortOpenBrowserTooltipLabel('Open in Browser', true)).toContain('for system browser')
+    expect(getPortOpenBrowserTooltipLabel('Open in Browser', true, true)).toContain(
+      'for system browser'
+    )
+  })
+
+  it('drops the hint when no reachable address exists, rather than promising a no-op', () => {
+    // A remote loopback-bound port cannot be opened externally at any URL, so the
+    // modifier would silently fall through to the in-app browser.
+    expect(getPortOpenBrowserTooltipLabel('Open in Browser', true, false)).toBe('Open in Browser')
   })
 })

@@ -3,7 +3,8 @@ import { Box, Copy, ExternalLink, Info, Server, Trash2 } from 'lucide-react'
 import { getPortOpenBrowserTooltipLabel } from '@/lib/workspace-port-actions'
 import {
   clientReachableAddress,
-  useClientReachableUrlForPort
+  useClientReachableUrlForPort,
+  usePortSystemBrowserAvailable
 } from '@/lib/workspace-port-client-reachable-url'
 import { addressForPort } from '@/lib/workspace-port-urls'
 import { Button } from '@/components/ui/button'
@@ -41,6 +42,7 @@ export function LocalPortRow({
   // address instead keeps the row honest and makes a remote port read like a local one.
   const reachableUrl = useClientReachableUrlForPort(port)
   const address = clientReachableAddress(reachableUrl) ?? addressForPort(port)
+  const systemBrowserAvailable = usePortSystemBrowserAvailable(port)
 
   const handleCopy = useCallback(() => {
     void window.api.ui.writeClipboardText(address)
@@ -151,7 +153,11 @@ export function LocalPortRow({
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="top" sideOffset={4}>
-                {getPortOpenBrowserTooltipLabel(openBrowserLabel)}
+                {getPortOpenBrowserTooltipLabel(
+                  openBrowserLabel,
+                  undefined,
+                  systemBrowserAvailable
+                )}
               </TooltipContent>
             </Tooltip>
             <Tooltip>

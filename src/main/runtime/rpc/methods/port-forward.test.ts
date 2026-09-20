@@ -1,6 +1,9 @@
 import { createServer, type Server } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { PORT_FORWARD_RUNTIME_CAPABILITY } from '../../../../shared/protocol-version'
+import {
+  PORT_FORWARD_RUNTIME_CAPABILITY,
+  RUNTIME_CAPABILITIES
+} from '../../../../shared/protocol-version'
 import type { OrcaRuntimeService } from '../../orca-runtime'
 import { RpcDispatcher } from '../dispatcher'
 import { ALL_RPC_METHODS } from './index'
@@ -66,6 +69,12 @@ function baseOptions() {
 describe('network.portForward registration', () => {
   it('is registered in production', () => {
     expect(ALL_RPC_METHODS.some((method) => method.name === 'network.portForward')).toBe(true)
+  })
+
+  it('is advertised in runtime status, not only registered', () => {
+    // getStatus() builds its advertised set from RUNTIME_CAPABILITIES, so a method that
+    // is registered but missing from it reads to every client as a host predating it.
+    expect(RUNTIME_CAPABILITIES).toContain(PORT_FORWARD_RUNTIME_CAPABILITY)
   })
 })
 
@@ -147,6 +156,30 @@ describe('connectLoopbackForwardDestination', () => {
     expect(received).toEqual(['ping'])
     expect(reply).toBe('pong')
     socket.destroy()
+  })
+
+  it('dials the validated literal rather than the string it was handed', async () => {
+    const received: string[] = []
+    const port = await listenLoopback((chunk) => received.push(chunk))
+
+    // `[127.0.0.1]` is not valid dial input — it reaches the listener only because the
+    // bracket-stripped literal is what gets connected. Passing the raw string would send
+    // it to getaddrinfo, which resolves such forms as names.
+    const socket = connectLoopbackForwardDestination({ host: '[127.0.0.1]', port })
+    const reply = await new Promise<string>((resolve, reject) => {
+      socket.on('connect', () => socket.write(new TextEncoder().encode('ping')))
+      socket.on('data', (chunk: Uint8Array) => resolve(new TextDecoder().decode(chunk)))
+      socket.on('error', reject)
+    })
+
+    expect(reply).toBe('pong')
+    socket.destroy()
+  })
+
+  it('refuses a leading-zero octet a resolver would answer as a hostname', () => {
+    expect(() => connectLoopbackForwardDestination({ host: '127.0.0.08', port: 80 })).toThrow(
+      'port_forward_destination_refused'
+    )
   })
 
   it('refuses a routable destination instead of dialling it', () => {

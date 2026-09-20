@@ -119,7 +119,14 @@ export class PortForwardManager {
     }
     environment.forwards.delete(remotePort)
     await forward.listener.close()
-    if (environment.forwards.size === 0 && environment.pending.size === 0) {
+    // Why re-check, as open() does: closeEnvironment works by id, and the environment
+    // this call observed as empty may have been replaced by a live one while close()
+    // awaited — tearing that replacement down would kill forwards nobody released.
+    if (
+      this.environments.get(environmentId) === environment &&
+      environment.forwards.size === 0 &&
+      environment.pending.size === 0
+    ) {
       this.closeEnvironment(environmentId)
     }
   }

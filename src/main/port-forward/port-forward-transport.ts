@@ -176,6 +176,12 @@ export class PortForwardTransport {
   }
 
   private fail(error: Error, rejectReady: (error: Error) => void): void {
+    if (this.closed) {
+      // close() tears the tunnel client down, and its onClosed lands straight back here.
+      // Without this an intentional teardown would report itself as a lost tunnel, and a
+      // real loss would report itself twice.
+      return
+    }
     const wasReady = this.tunnelValue !== null
     this.close()
     rejectReady(error)

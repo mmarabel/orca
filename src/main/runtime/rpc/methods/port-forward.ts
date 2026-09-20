@@ -4,7 +4,7 @@ import type { BrowserNetworkTunnelOpen } from '../../../../shared/browser-networ
 import type { BrowserNetworkTunnelSocket } from '../../../browser/browser-network-tunnel-stream-state'
 import {
   isForwardablePort,
-  isLoopbackForwardDestination
+  resolveLoopbackForwardHost
 } from '../../../../shared/loopback-forward-destination'
 import { PortForwardAttachParams } from '../../../../shared/port-forward-protocol'
 import { PORT_FORWARD_RUNTIME_CAPABILITY } from '../../../../shared/protocol-version'
@@ -28,10 +28,14 @@ function mintTunnelGeneration(): number {
 export function connectLoopbackForwardDestination(
   target: BrowserNetworkTunnelOpen
 ): BrowserNetworkTunnelSocket {
-  if (!isLoopbackForwardDestination(target.host) || !isForwardablePort(target.port)) {
+  // Why the resolved literal rather than target.host: dialling the caller's string would
+  // send forms the check normalised away back through getaddrinfo, which resolves some of
+  // them as names and can land off-host.
+  const host = resolveLoopbackForwardHost(target.host)
+  if (!host || !isForwardablePort(target.port)) {
     throw new Error('port_forward_destination_refused')
   }
-  return connect({ host: target.host, port: target.port, allowHalfOpen: true })
+  return connect({ host, port: target.port, allowHalfOpen: true })
 }
 
 export function createPortForwardMethods(

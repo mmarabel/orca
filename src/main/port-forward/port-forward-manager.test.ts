@@ -8,9 +8,13 @@ import type { PortForwardTransport } from './port-forward-transport'
 // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the manager reads nothing off PairingOffer; it only forwards the value to createTransport, which is stubbed here.
 const PAIRING = {} as PairingOffer
 
-function harness(overrides: { listenPort?: (preferred: number) => number } = {}) {
+function harness(
+  overrides: { listenPort?: (preferred: number) => number; holdClose?: boolean } = {}
+) {
   const opened: number[] = []
+  const openers: (() => Promise<Duplex>)[] = []
   const closedListeners: number[] = []
+  const closeGates: (() => void)[] = []
   const transportClosed = vi.fn()
   let lostHandler: ((error: Error) => void) | null = null
   let listenerCount = 0
@@ -31,9 +35,10 @@ function harness(overrides: { listenPort?: (preferred: number) => number } = {})
         close: transportClosed
       } as unknown as PortForwardTransport
     },
-    createListener: () => {
+    createListener: (open) => {
       const id = ++listenerCount
       let bound = 0
+      openers.push(open)
       // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the manager calls only listen() and close() on a listener; the real one binds a socket, which this test does not need.
       return {
         listen: (preferred: number) => {
@@ -42,13 +47,25 @@ function harness(overrides: { listenPort?: (preferred: number) => number } = {})
         },
         close: () => {
           closedListeners.push(id)
-          return Promise.resolve()
+          if (!overrides.holdClose) {
+            return Promise.resolve()
+          }
+          // Held so a test can interleave work with a close that has not settled.
+          return new Promise<void>((resolve) => closeGates.push(resolve))
         }
       } as unknown as PortForwardListener
     }
   }
 
-  return { deps, opened, closedListeners, transportClosed, lost: () => lostHandler }
+  return {
+    deps,
+    opened,
+    openers,
+    closedListeners,
+    closeGates,
+    transportClosed,
+    lost: () => lostHandler
+  }
 }
 
 describe('PortForwardManager', () => {
@@ -138,14 +155,33 @@ describe('PortForwardManager', () => {
   })
 
   it('opens the stream against the host loopback, never the client address', async () => {
-    const { deps, opened } = harness()
+    const { deps, opened, openers } = harness({ listenPort: () => 53211 })
     const manager = new PortForwardManager(deps)
     const handle = await manager.ensure('env-1', PAIRING, 4322)
 
     // The listener is constructed with an opener bound to the remote port; the local
     // port it binds is incidental and must not be what the tunnel dials.
-    expect(handle.port).toBe(4322)
-    expect(opened).toEqual([])
+    expect(handle.port).toBe(53211)
+    await openers[0]?.()
+    expect(opened).toEqual([4322])
+  })
+
+  it('releasing a torn-down forward leaves the environment that replaced it alone', async () => {
+    const { deps, transportClosed, lost, closeGates } = harness({ holdClose: true })
+    const manager = new PortForwardManager(deps)
+    await manager.ensure('env-1', PAIRING, 4322)
+    const lostFirst = lost()
+
+    // The release suspends inside listener.close(), and the environment it is releasing
+    // is torn down and replaced under the same id while it waits.
+    const releasing = manager.release('env-1', 4322)
+    lostFirst?.(new Error('tunnel died'))
+    const replacement = await manager.ensure('env-1', PAIRING, 5173)
+    closeGates.shift()?.()
+    await releasing
+
+    expect(manager.get('env-1', 5173)).toEqual(replacement)
+    expect(transportClosed).toHaveBeenCalledTimes(1)
   })
 
   it('closes everything on shutdown', async () => {

@@ -37,11 +37,39 @@ const CHIP_BACKGROUNDS = [
 ] as const
 const CHIP_LABEL_FOREGROUND_PERCENT = 70
 const CHIP_LABEL_COLOR = `color-mix(in srgb, var(--foreground) ${CHIP_LABEL_FOREGROUND_PERCENT}%, transparent)`
-// Selected-card values from #15971's default-light and Match-terminal-dark cases.
+const SELECTED_CARD_SELECTOR = "[data-worktree-card-surface][data-worktree-card-active='primary']"
 const CHIP_LABEL_CONTRAST_CASES = [
-  ['default light', '.worktree-sidebar-chip', 10, 226],
-  ['Match-terminal dark', '.dark .worktree-sidebar-chip', 250, 45]
+  [
+    'default light',
+    ':root',
+    '.worktree-sidebar-chip',
+    SELECTED_CARD_SELECTOR,
+    '--worktree-sidebar'
+  ],
+  [
+    'Match-terminal dark',
+    '.dark',
+    '.dark .worktree-sidebar-chip',
+    `.dark ${SELECTED_CARD_SELECTOR}`,
+    '#171717'
+  ]
 ] as const
+
+function readGrayscaleChannel(value: string): number {
+  expect(value).toMatch(/^#[\da-f]{6}$/i)
+  const red = Number.parseInt(value.slice(1, 3), 16)
+  expect(Number.parseInt(value.slice(3, 5), 16)).toBe(red)
+  expect(Number.parseInt(value.slice(5, 7), 16)).toBe(red)
+  return red
+}
+
+function readMixPercentage(value: string, variable: string): number {
+  const percentage = value.match(
+    new RegExp(`var\\(${variable}\\)\\s+(?<percentage>\\d+(?:\\.\\d+)?)%`)
+  )?.groups?.percentage
+  expect(percentage).toBeTypeOf('string')
+  return Number(percentage)
+}
 
 function linearizeSrgb(channel: number): number {
   const normalized = channel / 255
@@ -77,13 +105,22 @@ describe('worktree sidebar chip surface', () => {
 
   it.each(CHIP_LABEL_CONTRAST_CASES)(
     'keeps the label contrast above AA in %s',
-    (_, chipSelector, foreground, selectedCard) => {
+    (_, themeSelector, chipSelector, selectedCardSelector, sidebarSource) => {
+      const foreground = readGrayscaleChannel(readDeclaration(themeSelector, '--foreground'))
+      const selectedForeground = readGrayscaleChannel(
+        readDeclaration(themeSelector, '--worktree-sidebar-foreground')
+      )
+      const sidebar = readGrayscaleChannel(
+        sidebarSource.startsWith('--')
+          ? readDeclaration(themeSelector, sidebarSource)
+          : sidebarSource
+      )
+      const selectedCardFill = readDeclaration(selectedCardSelector, 'background')
+      const selectedCardShare = readMixPercentage(selectedCardFill, '--worktree-sidebar-foreground')
+      const selectedCard =
+        selectedForeground * (selectedCardShare / 100) + sidebar * (1 - selectedCardShare / 100)
       const chipFill = readDeclaration(chipSelector, 'background')
-      const chipForegroundPercent = chipFill.match(/var\(--foreground\) (?<percent>\d+)%/)?.groups
-        ?.percent
-      expect(chipForegroundPercent).toBeTypeOf('string')
-
-      const chipShare = Number(chipForegroundPercent) / 100
+      const chipShare = readMixPercentage(chipFill, '--foreground') / 100
       const chip = foreground * chipShare + selectedCard * (1 - chipShare)
       const labelShare = CHIP_LABEL_FOREGROUND_PERCENT / 100
       const label = foreground * labelShare + chip * (1 - labelShare)

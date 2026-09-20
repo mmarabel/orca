@@ -13,6 +13,10 @@ import {
   refreshWorkspacePortScanAfterStop,
   resolvePortOpenInOrcaBrowser
 } from '@/lib/workspace-port-actions'
+import {
+  clientReachableAddress,
+  useClientReachableUrlForPort
+} from '@/lib/workspace-port-client-reachable-url'
 import { useLocalhostLabelRouteForPort } from '@/lib/workspace-port-localhost-label-selector'
 import { addressForPort } from '@/lib/workspace-port-urls'
 import type { WorkspacePort } from '../../../../shared/workspace-ports'
@@ -110,7 +114,10 @@ function WorktreePortRow({ port }: { port: WorkspacePort }): React.JSX.Element {
     port.kind === 'workspace' ? port.owner.worktreeId : null
   )
   const processLabel = port.processName ?? (port.pid ? `PID ${port.pid}` : 'Unknown process')
-  const address = addressForPort(port)
+  // Why: on a remote workspace the OS-derived address names *this* machine, where
+  // nothing is listening. Show and copy the reachable one so the row stays honest.
+  const clientReachableUrl = useClientReachableUrlForPort(port)
+  const address = clientReachableAddress(clientReachableUrl) ?? addressForPort(port)
   const canStop = canStopWorkspacePort(port)
   const openBrowserLabel = translate(
     'auto.components.sidebar.WorktreeCardPorts.33bc7d7495',
@@ -134,7 +141,8 @@ function WorktreePortRow({ port }: { port: WorkspacePort }): React.JSX.Element {
         createBrowserTab,
         setRemoteBrowserPageHandle,
         openInOrcaBrowser,
-        localhostLabelRoute
+        localhostLabelRoute,
+        clientReachableUrl
       }).then((result) => {
         if (!result.ok) {
           toast.error(
@@ -148,6 +156,7 @@ function WorktreePortRow({ port }: { port: WorkspacePort }): React.JSX.Element {
       })
     },
     [
+      clientReachableUrl,
       createBrowserTab,
       port,
       localhostLabelRoute,
@@ -162,7 +171,6 @@ function WorktreePortRow({ port }: { port: WorkspacePort }): React.JSX.Element {
     (event: React.MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation()
       recordFeatureInteraction('ports')
-      const address = addressForPort(port)
       void window.api.ui.writeClipboardText(address)
       toast.success(
         translate('auto.components.sidebar.WorktreeCardPorts.c89f290e25', 'Copied {{value0}}', {
@@ -170,7 +178,7 @@ function WorktreePortRow({ port }: { port: WorkspacePort }): React.JSX.Element {
         })
       )
     },
-    [port, recordFeatureInteraction]
+    [address, recordFeatureInteraction]
   )
 
   const handleStop = useCallback(

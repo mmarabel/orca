@@ -15,9 +15,12 @@
 // input path.
 const LEADING_SPACES = /^ */
 
-// Keep in sync with the terminal link detectors' frame alphabet.
-const FRAME_CHARACTER = /[│┃║╎╏┆┇┊┋|]/
-const TRAILING_FRAME = / *[│┃║╎╏┆┇┊┋|] *$/
+// Why narrower than the terminal link detectors' alphabet: ASCII `|` is far
+// more often aligned output than a box edge, and the two failures are not
+// symmetric — a wrong strip silently eats copied text, a missed one only
+// leaves the frame behind for the user to delete.
+const FRAME_CHARACTER = /[│┃║╎╏┆┇┊┋]/
+const TRAILING_FRAME = / *[│┃║╎╏┆┇┊┋] *$/
 
 type SelectionLine = { indent: number; text: string; terminator: string }
 
@@ -38,9 +41,15 @@ function firstFrameIndex(text: string): number {
 // the box, so it is missing the edge every later row carries. A box the user
 // selected deliberately has that edge on the anchor row too, and is left alone.
 function measureFramedBlock(lines: readonly SelectionLine[]): FramedBlock | null {
-  const [anchor, ...rest] = lines.filter((line) => line.indent < line.text.length)
+  const content = lines.filter((line) => line.indent < line.text.length)
+  const [anchor, ...rest] = content
   const [firstContinuation] = rest
   if (!anchor || !firstContinuation || rest.length < 2) {
+    return null
+  }
+  // A box has two sides; a column separator has one. Only the final row may
+  // lack the closing edge, because that is where the drag stopped.
+  if (!content.slice(0, -1).every((line) => TRAILING_FRAME.test(line.text))) {
     return null
   }
   const column = firstFrameIndex(firstContinuation.text)

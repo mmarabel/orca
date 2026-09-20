@@ -144,3 +144,23 @@ describe('stripTerminalSelectionGutter: TUI overlay frames', () => {
     expect(stripTerminalSelectionGutter(drifting)).toBe(drifting)
   })
 })
+
+describe('stripTerminalSelectionGutter: frame evidence is not guessed', () => {
+  it('keeps an aligned two-column listing whose separator is an ASCII pipe', () => {
+    const listing = ['title', 'foo | value', 'bar | other'].join('\n')
+
+    expect(stripTerminalSelectionGutter(listing)).toBe(listing)
+  })
+
+  it('keeps an aligned listing separated by a box-drawing character', () => {
+    const listing = ['title', 'foo │ value', 'bar │ other'].join('\n')
+
+    expect(stripTerminalSelectionGutter(listing)).toBe(listing)
+  })
+
+  it('keeps an ASCII-bordered block, whose edges are not evidence enough', () => {
+    const block = ['value', 'foo | inside |', 'bar | inside |'].join('\n')
+
+    expect(stripTerminalSelectionGutter(block)).toBe(block)
+  })
+})

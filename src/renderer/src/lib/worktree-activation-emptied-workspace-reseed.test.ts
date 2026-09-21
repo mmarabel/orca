@@ -6,6 +6,7 @@ import {
   activateAndRevealWorktree
 } from './worktree-activation'
 import * as activationGate from './worktree-agent-activation-gate'
+import { resolveWorkspaceTerminalHostAuthority } from './workspace-terminal-host-authority'
 import { ensureWorktreeHasInitialTerminal } from './worktree-initial-terminal-seeding'
 import { folderWorkspaceKey } from '../../../shared/workspace-scope'
 import { toSshExecutionHostId } from '../../../shared/execution-host'
@@ -176,10 +177,66 @@ describe('activating a workspace whose last terminal was closed', () => {
     expect(useAppStore.getState().tabsByWorktree[worktree.id]).toHaveLength(1)
   })
 
+  // Why: the wiring this covers is `gateAndReseedEmptyWorkspace` passing the gate-approved flag
+  // for `empty` — driving `ensureWorktreeHasInitialTerminal` directly would stay green if that
+  // argument were dropped.
+  it('seeds an explicitly reopened empty SSH workspace through a mocked empty gate', async () => {
+    const worktree = makeWorktree()
+    seedEmptyActivatableWorktree(worktree)
+    seedClosedLastTerminal(worktree.id)
+    useAppStore.setState({
+      worktreesByRepo: {
+        // Why Object.assign and not a spread literal: the helper's row type carries no host
+        // field, and a spread literal with an extra prop trips consistent-type-assertions.
+        [worktree.repoId]: (useAppStore.getState().worktreesByRepo[worktree.repoId] ?? []).map(
+          (w) => (w.id === worktree.id ? Object.assign({}, w, { hostId: 'ssh:target-1' }) : w)
+        )
+      },
+      sleepingAgentSessionsByPaneKey: {
+        'pane-1': { worktreeId: worktree.id }
+      } as never
+    })
+    expect(resolveWorkspaceTerminalHostAuthority(useAppStore.getState(), worktree.id)).toBe(
+      'unverifiable'
+    )
+    const gate = vi.spyOn(activationGate, 'gateWorktreeAgentActivation')
+    gate.mockResolvedValue('empty')
+
+    activateAndRevealWorktree(worktree.id, { notifyHostRuntime: false })
+    await gate.mock.results[0]?.value
+
+    expect(useAppStore.getState().tabsByWorktree[worktree.id]).toHaveLength(1)
+  })
+
   // Why: `blocked` means the census could not answer, not that the workspace has a surface.
-  // Falling back to the local authority check still rescues `none` workspaces instead of
-  // stranding an explicitly opened empty workspace (no-terminal-awaken).
-  it('re-seeds a local empty workspace when the gate reports blocked', async () => {
+  // With no sleeping sessions known, the local authority check still decides (`none` reseeds),
+  // instead of stranding an explicitly opened empty workspace (no-terminal-awaken).
+  it('re-seeds a local empty workspace with no sleeping sessions when the gate reports blocked', async () => {
+    const worktree = makeWorktree()
+    seedEmptyActivatableWorktree(worktree)
+    seedClosedLastTerminal(worktree.id)
+    // Why: without a runtime/pty inventory the gate never triggers in tests, so the sync path
+    // would seed before the mocked `blocked` outcome is even reached. Stub the inventory surface
+    // so this exercises the gate's blocked fallback, as in production.
+    vi.stubGlobal('window', {
+      api: {
+        runtime: { call: vi.fn() },
+        pty: { listSessions: vi.fn() }
+      }
+    })
+    const gate = vi.spyOn(activationGate, 'gateWorktreeAgentActivation')
+    gate.mockResolvedValue('blocked')
+
+    activateAndRevealWorktree(worktree.id, { notifyHostRuntime: false })
+    await gate.mock.results[0]?.value
+
+    expect(useAppStore.getState().tabsByWorktree[worktree.id]).toHaveLength(1)
+  })
+
+  // Why: a `blocked` gate also covers restores that never became ready and inconsistent
+  // structured ownership — cases where the renderer does not yet know what surfaces exist.
+  // Seeding there would add the stray shell the deferral was avoiding.
+  it('leaves a sleeping workspace alone when the gate reports blocked', async () => {
     const worktree = makeWorktree()
     seedEmptyActivatableWorktree(worktree)
     seedClosedLastTerminal(worktree.id)
@@ -194,7 +251,7 @@ describe('activating a workspace whose last terminal was closed', () => {
     activateAndRevealWorktree(worktree.id, { notifyHostRuntime: false })
     await gate.mock.results[0]?.value
 
-    expect(useAppStore.getState().tabsByWorktree[worktree.id]).toHaveLength(1)
+    expect(useAppStore.getState().tabsByWorktree[worktree.id]).toEqual([])
   })
 
   // Why: hydration restores an emptied workspace as active, so the user is already looking at the

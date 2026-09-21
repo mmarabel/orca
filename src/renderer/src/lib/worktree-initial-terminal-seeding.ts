@@ -9,7 +9,10 @@ import { getSetupRunnerCommandPlatformForPath } from '../../../shared/setup-runn
 import { agentKindToTuiAgent } from '../../../shared/agent-kind'
 import { useAppStore } from '@/store'
 import { queueHookCommandsForFirstWorktreeTab } from '@/lib/hook-command-delayed-delivery'
-import { resolveWorkspaceTerminalHostAuthority } from '@/lib/workspace-terminal-host-authority'
+import {
+  isDirectSshWorkspace,
+  resolveWorkspaceTerminalHostAuthority
+} from '@/lib/workspace-terminal-host-authority'
 import { initialAgentTabViewModeProps } from './native-chat-initial-view-mode'
 import { getConnectionId } from '@/lib/connection-context'
 import { isNativeChatTranscriptLocalReadable } from '@/lib/native-chat-transcript-readability'
@@ -41,7 +44,7 @@ export function reseedGatedEmptyWorkspace(
   workspaceKey: string,
   callerProvidesSurface: boolean,
   executionHostId?: ExecutionHostId,
-  gateVerifiedEmpty?: boolean
+  gateApprovedReseed?: boolean
 ): void {
   const state = useAppStore.getState()
   if (
@@ -60,7 +63,7 @@ export function reseedGatedEmptyWorkspace(
     undefined,
     {
       reseedEmptiedWorkspace: true,
-      ...(gateVerifiedEmpty === true ? { gateVerifiedEmpty: true } : {})
+      ...(gateApprovedReseed === true ? { gateApprovedReseed: true } : {})
     }
   )
 }
@@ -179,15 +182,17 @@ export function ensureWorktreeHasInitialTerminal(
     Object.hasOwn(store.tabsByWorktree, worktreeId) && opts?.reseedEmptiedWorkspace !== true
   // Why: an execution host that has not answered is not a host with no terminals; seeding into that
   // gap is what adds a tab per launch (STA-4658). Explicit launch work below is a request to create
-  // a terminal now, so it stays ungated. A gate-verified empty is the exception: the activation
-  // gate already censused the owning host's PTYs and found none, so an `unverifiable` workspace-sync
-  // verdict must not strand an explicitly re-opened empty workspace with no surface. `live` stays
-  // excluded — the host owns creation there and mirrors the surface itself.
+  // a terminal now, so it stays ungated. A gate-approved reseed is the one exception, and only for
+  // direct-SSH workspaces: the gate finished without producing a surface, and stranding an
+  // explicitly reopened empty workspace is worse than one fresh shell there. A runtime host that
+  // cannot be named also reports `unverifiable`, but the host owns creation there, so it stays
+  // excluded (#15556). `live` stays excluded for the same reason.
   const shouldAutoCreate =
     (hostAuthority === 'none' ||
-      (opts?.gateVerifiedEmpty === true &&
+      (opts?.gateApprovedReseed === true &&
+        opts?.reseedEmptiedWorkspace === true &&
         hostAuthority === 'unverifiable' &&
-        opts?.reseedEmptiedWorkspace === true)) &&
+        isDirectSshWorkspace(ownerState, worktreeId))) &&
     shouldAutoCreateInitialTerminal(renderableTabCount, shouldHonourClosedTerminalTombstone)
   const shouldCreateForExplicitWork = renderableTabCount === 0 && hasExplicitLaunchWork
   const shouldCreateNewStartupTerminal =

@@ -226,11 +226,65 @@ describe('workspace terminal seeding authority', () => {
     expect(terminalTabCount(store, PAIRED_WORKTREE_ID)).toBe(0)
   })
 
-  it('seeds an explicitly reopened empty SSH workspace once the gate verified it empty', () => {
+  it('does not seed a runtime-unnameable workspace even for a gate-approved reseed', () => {
+    // Why: a runtime host that cannot be named also reports `unverifiable`, and the gate reports
+    // `empty` there (its scoped census is undefined, so it falls back to the local inventory).
+    // Seeding would plant a client terminal beside the host's own — the #15556 double-write.
+    const store = createTestStore()
+    store.setState({
+      repos: [repo('repoPaired', '/srv/proj')],
+      worktreesByRepo: {},
+      tabsByWorktree: { [PAIRED_WORKTREE_ID]: [] },
+      detectedWorktreesByRepo: {
+        repoPaired: {
+          authoritative: true,
+          worktrees: [
+            makeWorktree({
+              id: PAIRED_WORKTREE_ID,
+              repoId: 'repoPaired',
+              path: '/srv/proj/paired',
+              hostId: `runtime:${ENVIRONMENT_ID}`,
+              runtimeOwnerEnvironmentId: ENVIRONMENT_ID
+            } as never)
+          ]
+        },
+        repoPairedRival: {
+          authoritative: true,
+          worktrees: [
+            makeWorktree({
+              id: PAIRED_WORKTREE_ID,
+              repoId: 'repoPairedRival',
+              path: '/srv/proj/paired',
+              hostId: 'local'
+            } as never)
+          ]
+        }
+      } as never
+    })
+
+    expect(resolveWorkspaceTerminalHostAuthority(store.getState(), PAIRED_WORKTREE_ID)).toBe(
+      'unverifiable'
+    )
+    expect(
+      ensureWorktreeHasInitialTerminal(
+        store.getState(),
+        PAIRED_WORKTREE_ID,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { reseedEmptiedWorkspace: true, gateApprovedReseed: true }
+      )
+    ).toBeNull()
+    expect(terminalTabCount(store, PAIRED_WORKTREE_ID)).toBe(0)
+  })
+
+  it('seeds an explicitly reopened empty SSH workspace once the gate approved the reseed', () => {
     // Why: closing the last tab leaves an explicit empty row (tombstone). Direct activation must
-    // not seed while the host is unanswered (STA-4658), but the async gate already censused the
-    // host PTYs and found none — that positive evidence must awaken the workspace instead of
-    // stranding it with no surface (no-terminal-awaken).
+    // not seed while the host is unanswered (STA-4658), but a gate-approved reseed of an
+    // explicitly reopened direct-SSH workspace proceeds instead of stranding it with no surface
+    // (no-terminal-awaken). Runtime-unnameable hosts also report `unverifiable` but stay excluded
+    // (#15556, covered below).
     const store = createTestStore()
     seedDirectSsh(store)
     store.setState({ tabsByWorktree: { [SSH_WORKTREE_ID]: [] } })
@@ -260,13 +314,13 @@ describe('workspace terminal seeding authority', () => {
       undefined,
       undefined,
       undefined,
-      { reseedEmptiedWorkspace: true, gateVerifiedEmpty: true }
+      { reseedEmptiedWorkspace: true, gateApprovedReseed: true }
     )
     expect(tabId).toBeTruthy()
     expect(terminalTabCount(store, SSH_WORKTREE_ID)).toBe(1)
   })
 
-  it('never seeds a live runtime workspace even when the gate verified it empty', () => {
+  it('never seeds a live runtime workspace even when the gate approved the reseed', () => {
     const store = createTestStore()
     store.setState({
       repos: [repo('repoPaired', '/srv/proj')],
@@ -295,7 +349,7 @@ describe('workspace terminal seeding authority', () => {
         undefined,
         {
           reseedEmptiedWorkspace: true,
-          gateVerifiedEmpty: true
+          gateApprovedReseed: true
         }
       )
     ).toBeNull()

@@ -113,6 +113,24 @@ export function resolveWorkspaceTerminalHostAuthority(
 }
 
 /**
+ * True only for git worktrees whose execution host is direct-SSH (folder workspaces excluded).
+ * A runtime host that cannot be named also resolves `unverifiable`, but the host owns creation
+ * there — it must never be treated as the SSH-sync-in-flight case (#15556).
+ */
+export function isDirectSshWorkspace(
+  state: WorkspaceTerminalHostAuthorityState,
+  worktreeId: string | null | undefined
+): boolean {
+  if (!worktreeId || worktreeId === FLOATING_TERMINAL_WORKTREE_ID) {
+    return false
+  }
+  return (
+    parseExecutionHostId(getExecutionHostIdForWorktree(state, worktreeId))?.kind === 'ssh' &&
+    parseWorkspaceKey(worktreeId)?.type !== 'folder'
+  )
+}
+
+/**
  * Every slice the resolution above reads. Resolution walks the owner catalogs (and, for an active
  * `ssh:` selection, `worktreesByRepo` uncached via resolveSelectedHostRoute), so a Zustand selector
  * must not run it per store write — STA-3363 is the same shape. Same retained-selector memo as

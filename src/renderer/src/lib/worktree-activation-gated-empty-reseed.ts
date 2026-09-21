@@ -1,6 +1,8 @@
 import type { ExecutionHostId } from '../../../shared/execution-host'
+import { useAppStore } from '@/store'
 import {
   gateWorktreeAgentActivation,
+  workspaceHasSleepingAgentSessions,
   type WorktreeAgentActivationOutcome
 } from './worktree-agent-activation-gate'
 import { reseedGatedEmptyWorkspace } from './worktree-initial-terminal-seeding'
@@ -39,12 +41,19 @@ export function gateAndReseedEmptyWorkspace(
         true
       )
     } else if (outcome === 'blocked') {
-      // Why: `blocked` means the PTY/structured census could not answer, not that the workspace
-      // has a surface. Falling back to the local authority check still rescues `none` workspaces
-      // (e.g. structured inventory threw for a non-runtime workspace) instead of stranding an
-      // explicitly opened empty workspace. `unverifiable` stays unseeded here — without the gate's
-      // empty verdict there is no positive evidence the host holds nothing (STA-4658).
-      reseedGatedEmptyWorkspace(workspaceKey, intent.callerProvidesSurface, intent.executionHostId)
+      // Why: `blocked` conflates a census that could not answer with restores that never became
+      // ready and inconsistent structured ownership — in those cases the renderer does not yet know
+      // what surfaces exist, so only fall back when no sleeping sessions are known. Otherwise the
+      // reseed would add the stray shell the gate's deferral was avoiding. With no sleeping
+      // sessions, the local authority check still decides: `none` reseeds, `unverifiable`/`live`
+      // stay unseeded without the gate's positive empty verdict (STA-4658, #15556).
+      if (!workspaceHasSleepingAgentSessions(useAppStore.getState(), workspaceKey)) {
+        reseedGatedEmptyWorkspace(
+          workspaceKey,
+          intent.callerProvidesSurface,
+          intent.executionHostId
+        )
+      }
     }
   })
 }

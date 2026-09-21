@@ -45,6 +45,12 @@ export type WorktreeAgentActivationOutcome =
   | 'resumed'
   | 'empty'
   | 'blocked'
+  // Why a second blocked flavor instead of a boolean: the reseed caller must tell "the census
+  // itself could not answer" apart from "the renderer does not yet know what surfaces exist"
+  // (unrestored sessions, structured reads that threw, inconsistent structured ownership).
+  // Only the former may reseed a local shell; the latter would plant the stray terminal beside a
+  // chat that is about to appear.
+  | 'blocked-census-unavailable'
 
 const inFlightByWorktreeId = new Map<string, Promise<WorktreeAgentActivationOutcome>>()
 const WORKSPACE_SESSION_READY_TIMEOUT_MS = 30_000
@@ -191,8 +197,9 @@ export async function runWorktreeAgentActivationGate(
   try {
     sessions = await deps.listSessions()
   } catch {
-    // Inventory uncertainty cannot authorize a second writer.
-    return 'blocked'
+    // Why this is its own outcome: the census itself could not answer, as distinct from the
+    // renderer not yet knowing what surfaces exist. Only this flavor may reseed a local shell.
+    return 'blocked-census-unavailable'
   }
 
   // Why either signal rather than a preference: a relay row's worktreeId can be seeded from the

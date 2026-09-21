@@ -40,13 +40,13 @@ export function gateAndReseedEmptyWorkspace(
         intent.executionHostId,
         true
       )
-    } else if (outcome === 'blocked') {
-      // Why: `blocked` conflates a census that could not answer with restores that never became
-      // ready and inconsistent structured ownership — in those cases the renderer does not yet know
-      // what surfaces exist, so only fall back when no sleeping sessions are known. Otherwise the
-      // reseed would add the stray shell the gate's deferral was avoiding. With no sleeping
-      // sessions, the local authority check still decides: `none` reseeds, `unverifiable`/`live`
-      // stay unseeded without the gate's positive empty verdict (STA-4658, #15556).
+    } else if (outcome === 'blocked-census-unavailable') {
+      // Why only this blocked flavor: the PTY census itself could not answer, as distinct from
+      // the renderer not yet knowing what surfaces exist (unrestored sessions, structured reads
+      // that threw, inconsistent structured ownership). With no sleeping sessions known, the local
+      // authority check still decides: `none` reseeds instead of stranding an explicitly opened
+      // empty workspace, while `unverifiable`/`live` stay unseeded without the gate's positive
+      // empty verdict (STA-4658, #15556).
       if (!workspaceHasSleepingAgentSessions(useAppStore.getState(), workspaceKey)) {
         reseedGatedEmptyWorkspace(
           workspaceKey,

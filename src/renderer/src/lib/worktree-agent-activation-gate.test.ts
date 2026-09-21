@@ -268,6 +268,18 @@ describe('worktree agent activation gate', () => {
     expect(resume).not.toHaveBeenCalled()
   })
 
+  it('reports census-unavailable when the PTY census itself throws', async () => {
+    const { deps, createTab, resume } = testDeps({})
+    deps.listSessions.mockRejectedValue(new Error('No PTY provider for connection: gone'))
+
+    await expect(runWorktreeAgentActivationGate(WORKTREE_ID, deps)).resolves.toBe(
+      'blocked-census-unavailable'
+    )
+
+    expect(createTab).not.toHaveBeenCalled()
+    expect(resume).not.toHaveBeenCalled()
+  })
+
   it('adopts a live daemon PTY before activation can resume another agent', async () => {
     const ptyId = `${WORKTREE_ID}@@live-pty`
     const { deps, createTab, resume } = testDeps({ sessions: [listed(ptyId)] })

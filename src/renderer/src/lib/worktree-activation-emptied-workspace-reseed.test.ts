@@ -211,7 +211,7 @@ describe('activating a workspace whose last terminal was closed', () => {
   // Why: `blocked` means the census could not answer, not that the workspace has a surface.
   // With no sleeping sessions known, the local authority check still decides (`none` reseeds),
   // instead of stranding an explicitly opened empty workspace (no-terminal-awaken).
-  it('re-seeds a local empty workspace with no sleeping sessions when the gate reports blocked', async () => {
+  it('re-seeds a local empty workspace with no sleeping sessions when the census is unavailable', async () => {
     const worktree = makeWorktree()
     seedEmptyActivatableWorktree(worktree)
     seedClosedLastTerminal(worktree.id)
@@ -225,12 +225,35 @@ describe('activating a workspace whose last terminal was closed', () => {
       }
     })
     const gate = vi.spyOn(activationGate, 'gateWorktreeAgentActivation')
-    gate.mockResolvedValue('blocked')
+    gate.mockResolvedValue('blocked-census-unavailable')
 
     activateAndRevealWorktree(worktree.id, { notifyHostRuntime: false })
     await gate.mock.results[0]?.value
 
     expect(useAppStore.getState().tabsByWorktree[worktree.id]).toHaveLength(1)
+  })
+
+  // Why: plain `blocked` covers unrestored sessions and inconsistent structured ownership —
+  // cases where the renderer does not yet know what surfaces exist (e.g. an ownerless
+  // `agent-session` the runtime is about to project). Seeding there would plant the stray
+  // shell beside the chat that appears moments later.
+  it('leaves an empty workspace alone when the gate reports plain blocked', async () => {
+    const worktree = makeWorktree()
+    seedEmptyActivatableWorktree(worktree)
+    seedClosedLastTerminal(worktree.id)
+    vi.stubGlobal('window', {
+      api: {
+        runtime: { call: vi.fn() },
+        pty: { listSessions: vi.fn() }
+      }
+    })
+    const gate = vi.spyOn(activationGate, 'gateWorktreeAgentActivation')
+    gate.mockResolvedValue('blocked')
+
+    activateAndRevealWorktree(worktree.id, { notifyHostRuntime: false })
+    await gate.mock.results[0]?.value
+
+    expect(useAppStore.getState().tabsByWorktree[worktree.id]).toEqual([])
   })
 
   // Why: a `blocked` gate also covers restores that never became ready and inconsistent

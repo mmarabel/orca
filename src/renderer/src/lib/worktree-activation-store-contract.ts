@@ -81,7 +81,8 @@ export type InitialTerminalOptions = {
    *  terminals — `empty` is the gate's "produced no surface, seed one" directive (it also arises
    *  from the detached-relay unscoped fallback and declined live-PT adoption) — only a bounded
    *  exception for the SSH-sync-in-flight case, where stranding with no surface is worse than one
-   *  fresh shell. Never set for `live` or runtime-unnameable hosts: the host owns creation there
-   *  (#15556). */
+   *  fresh shell. Never honored for `live` or runtime-unnameable hosts: the host owns creation
+   *  there (#15556). The `empty` branch passes the flag for every host kind; the predicate
+   *  honors it only for direct-SSH. */
   gateApprovedReseed?: boolean
 }

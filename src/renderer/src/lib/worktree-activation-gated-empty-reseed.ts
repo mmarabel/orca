@@ -32,6 +32,18 @@ export function gateAndReseedEmptyWorkspace(
     }
     latestReseedIntentByGate.delete(gate)
     if (outcome === 'empty') {
+      reseedGatedEmptyWorkspace(
+        workspaceKey,
+        intent.callerProvidesSurface,
+        intent.executionHostId,
+        true
+      )
+    } else if (outcome === 'blocked') {
+      // Why: `blocked` means the PTY/structured census could not answer, not that the workspace
+      // has a surface. Falling back to the local authority check still rescues `none` workspaces
+      // (e.g. structured inventory threw for a non-runtime workspace) instead of stranding an
+      // explicitly opened empty workspace. `unverifiable` stays unseeded here — without the gate's
+      // empty verdict there is no positive evidence the host holds nothing (STA-4658).
       reseedGatedEmptyWorkspace(workspaceKey, intent.callerProvidesSurface, intent.executionHostId)
     }
   })

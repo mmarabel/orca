@@ -75,4 +75,10 @@ export type InitialTerminalOptions = {
    *  Setup/issue work still runs, but work that needs no host terminal must not seed a shell
    *  beside the chat the caller is about to create. */
   callerProvidesSurface?: boolean
+  /** Set only by the async activation gate after it verified the owning host holds no live
+   *  PTYs for this workspace. Lets an explicit empty-workspace reseed proceed even while
+   *  workspace-sync hydration still reports `unverifiable` — the gate's PTY census is the
+   *  stronger signal, and without this the workspace stays empty with no surface (no-terminal
+   *  awaken). Never set for `live` hosts: the host owns creation there. */
+  gateVerifiedEmpty?: boolean
 }

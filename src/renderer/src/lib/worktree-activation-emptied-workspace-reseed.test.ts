@@ -176,6 +176,27 @@ describe('activating a workspace whose last terminal was closed', () => {
     expect(useAppStore.getState().tabsByWorktree[worktree.id]).toHaveLength(1)
   })
 
+  // Why: `blocked` means the census could not answer, not that the workspace has a surface.
+  // Falling back to the local authority check still rescues `none` workspaces instead of
+  // stranding an explicitly opened empty workspace (no-terminal-awaken).
+  it('re-seeds a local empty workspace when the gate reports blocked', async () => {
+    const worktree = makeWorktree()
+    seedEmptyActivatableWorktree(worktree)
+    seedClosedLastTerminal(worktree.id)
+    useAppStore.setState({
+      sleepingAgentSessionsByPaneKey: {
+        'pane-1': { worktreeId: worktree.id }
+      } as never
+    })
+    const gate = vi.spyOn(activationGate, 'gateWorktreeAgentActivation')
+    gate.mockResolvedValue('blocked')
+
+    activateAndRevealWorktree(worktree.id, { notifyHostRuntime: false })
+    await gate.mock.results[0]?.value
+
+    expect(useAppStore.getState().tabsByWorktree[worktree.id]).toHaveLength(1)
+  })
+
   // Why: hydration restores an emptied workspace as active, so the user is already looking at the
   // blank pane when they click its row. Suppressing the re-seed there strands them on the bug.
   it('re-seeds when the restored active workspace is reopened on the same host', () => {

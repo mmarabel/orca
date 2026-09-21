@@ -40,7 +40,8 @@ function getSetupRunnerCommandPlatformForLaunch(setup: WorktreeSetupLaunch): 'wi
 export function reseedGatedEmptyWorkspace(
   workspaceKey: string,
   callerProvidesSurface: boolean,
-  executionHostId?: ExecutionHostId
+  executionHostId?: ExecutionHostId,
+  gateVerifiedEmpty?: boolean
 ): void {
   const state = useAppStore.getState()
   if (
@@ -58,7 +59,8 @@ export function reseedGatedEmptyWorkspace(
     undefined,
     undefined,
     {
-      reseedEmptiedWorkspace: true
+      reseedEmptiedWorkspace: true,
+      ...(gateVerifiedEmpty === true ? { gateVerifiedEmpty: true } : {})
     }
   )
 }
@@ -177,9 +179,15 @@ export function ensureWorktreeHasInitialTerminal(
     Object.hasOwn(store.tabsByWorktree, worktreeId) && opts?.reseedEmptiedWorkspace !== true
   // Why: an execution host that has not answered is not a host with no terminals; seeding into that
   // gap is what adds a tab per launch (STA-4658). Explicit launch work below is a request to create
-  // a terminal now, so it stays ungated.
+  // a terminal now, so it stays ungated. A gate-verified empty is the exception: the activation
+  // gate already censused the owning host's PTYs and found none, so an `unverifiable` workspace-sync
+  // verdict must not strand an explicitly re-opened empty workspace with no surface. `live` stays
+  // excluded — the host owns creation there and mirrors the surface itself.
   const shouldAutoCreate =
-    hostAuthority === 'none' &&
+    (hostAuthority === 'none' ||
+      (opts?.gateVerifiedEmpty === true &&
+        hostAuthority === 'unverifiable' &&
+        opts?.reseedEmptiedWorkspace === true)) &&
     shouldAutoCreateInitialTerminal(renderableTabCount, shouldHonourClosedTerminalTombstone)
   const shouldCreateForExplicitWork = renderableTabCount === 0 && hasExplicitLaunchWork
   const shouldCreateNewStartupTerminal =

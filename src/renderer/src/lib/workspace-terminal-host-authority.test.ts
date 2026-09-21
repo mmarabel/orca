@@ -225,4 +225,80 @@ describe('workspace terminal seeding authority', () => {
     expect(ensureWorktreeHasInitialTerminal(store.getState(), PAIRED_WORKTREE_ID)).toBeNull()
     expect(terminalTabCount(store, PAIRED_WORKTREE_ID)).toBe(0)
   })
+
+  it('seeds an explicitly reopened empty SSH workspace once the gate verified it empty', () => {
+    // Why: closing the last tab leaves an explicit empty row (tombstone). Direct activation must
+    // not seed while the host is unanswered (STA-4658), but the async gate already censused the
+    // host PTYs and found none — that positive evidence must awaken the workspace instead of
+    // stranding it with no surface (no-terminal-awaken).
+    const store = createTestStore()
+    seedDirectSsh(store)
+    store.setState({ tabsByWorktree: { [SSH_WORKTREE_ID]: [] } })
+
+    expect(resolveWorkspaceTerminalHostAuthority(store.getState(), SSH_WORKTREE_ID)).toBe(
+      'unverifiable'
+    )
+    expect(
+      ensureWorktreeHasInitialTerminal(
+        store.getState(),
+        SSH_WORKTREE_ID,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          reseedEmptiedWorkspace: true
+        }
+      )
+    ).toBeNull()
+    expect(terminalTabCount(store, SSH_WORKTREE_ID)).toBe(0)
+
+    const tabId = ensureWorktreeHasInitialTerminal(
+      store.getState(),
+      SSH_WORKTREE_ID,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { reseedEmptiedWorkspace: true, gateVerifiedEmpty: true }
+    )
+    expect(tabId).toBeTruthy()
+    expect(terminalTabCount(store, SSH_WORKTREE_ID)).toBe(1)
+  })
+
+  it('never seeds a live runtime workspace even when the gate verified it empty', () => {
+    const store = createTestStore()
+    store.setState({
+      repos: [repo('repoPaired', '/srv/proj')],
+      worktreesByRepo: {
+        repoPaired: [
+          makeWorktree({
+            id: PAIRED_WORKTREE_ID,
+            repoId: 'repoPaired',
+            path: '/srv/proj/paired',
+            hostId: `runtime:${ENVIRONMENT_ID}`,
+            runtimeOwnerEnvironmentId: ENVIRONMENT_ID
+          } as never)
+        ]
+      },
+      tabsByWorktree: { [PAIRED_WORKTREE_ID]: [] }
+    })
+
+    expect(resolveWorkspaceTerminalHostAuthority(store.getState(), PAIRED_WORKTREE_ID)).toBe('live')
+    expect(
+      ensureWorktreeHasInitialTerminal(
+        store.getState(),
+        PAIRED_WORKTREE_ID,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          reseedEmptiedWorkspace: true,
+          gateVerifiedEmpty: true
+        }
+      )
+    ).toBeNull()
+    expect(terminalTabCount(store, PAIRED_WORKTREE_ID)).toBe(0)
+  })
 })

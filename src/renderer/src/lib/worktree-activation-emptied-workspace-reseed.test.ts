@@ -208,9 +208,10 @@ describe('activating a workspace whose last terminal was closed', () => {
     expect(useAppStore.getState().tabsByWorktree[worktree.id]).toHaveLength(1)
   })
 
-  // Why: `blocked` means the census could not answer, not that the workspace has a surface.
-  // With no sleeping sessions known, the local authority check still decides (`none` reseeds),
-  // instead of stranding an explicitly opened empty workspace (no-terminal-awaken).
+  // Why: `blocked-census-unavailable` means the PTY census itself could not answer — no
+  // structured surface is known, so with no sleeping sessions the local authority check still
+  // decides (`none` reseeds) instead of stranding an explicitly opened empty workspace
+  // (no-terminal-awaken).
   it('re-seeds a local empty workspace with no sleeping sessions when the census is unavailable', async () => {
     const worktree = makeWorktree()
     seedEmptyActivatableWorktree(worktree)
@@ -256,10 +257,9 @@ describe('activating a workspace whose last terminal was closed', () => {
     expect(useAppStore.getState().tabsByWorktree[worktree.id]).toEqual([])
   })
 
-  // Why: a `blocked` gate also covers restores that never became ready and inconsistent
-  // structured ownership — cases where the renderer does not yet know what surfaces exist.
-  // Seeding there would add the stray shell the deferral was avoiding.
-  it('leaves a sleeping workspace alone when the gate reports blocked', async () => {
+  // Why: the census-unavailable fallback must still defer to known sleeping sessions —
+  // reseeding there would add the stray shell beside the session the gate was protecting.
+  it('leaves a sleeping workspace alone when the census is unavailable', async () => {
     const worktree = makeWorktree()
     seedEmptyActivatableWorktree(worktree)
     seedClosedLastTerminal(worktree.id)
@@ -269,7 +269,7 @@ describe('activating a workspace whose last terminal was closed', () => {
       } as never
     })
     const gate = vi.spyOn(activationGate, 'gateWorktreeAgentActivation')
-    gate.mockResolvedValue('blocked')
+    gate.mockResolvedValue('blocked-census-unavailable')
 
     activateAndRevealWorktree(worktree.id, { notifyHostRuntime: false })
     await gate.mock.results[0]?.value

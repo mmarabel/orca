@@ -197,8 +197,13 @@ export async function runWorktreeAgentActivationGate(
   try {
     sessions = await deps.listSessions()
   } catch {
-    // Why this is its own outcome: the census itself could not answer, as distinct from the
-    // renderer not yet knowing what surfaces exist. Only this flavor may reseed a local shell.
+    // Why `blocked` when structured owners are on record: the census is load-bearing validation
+    // for them — TUI terminals need it to bind, and it still lets adoption mint coexisting live
+    // shells — so its failure stays conservative. Only a census with no structured context gets
+    // the reseedable flavor.
+    if (structuredInventory) {
+      return 'blocked'
+    }
     return 'blocked-census-unavailable'
   }
 

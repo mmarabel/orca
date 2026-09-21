@@ -280,6 +280,73 @@ describe('worktree agent activation gate', () => {
     expect(resume).not.toHaveBeenCalled()
   })
 
+  it('keeps a native-only structured inventory structured without seeding', async () => {
+    // Why: native owners name the surface hydration will project, so the gate must resolve
+    // `structured` — never a seed — while still running the census so adoption can mint
+    // coexisting live shells.
+    const { deps, createTab, resume } = testDeps({})
+    const hasStructuredSession = vi.fn(async () => ({
+      snapshot: runtimeSnapshot('tab-1', LIVE_LEAF_ID, []),
+      ownerBySessionId: new Map([['live-session', { owner: 'native' as const }]])
+    }))
+
+    await expect(
+      runWorktreeAgentActivationGate(WORKTREE_ID, { ...deps, hasStructuredSession })
+    ).resolves.toBe('structured')
+
+    expect(deps.listSessions).toHaveBeenCalledOnce()
+    expect(createTab).not.toHaveBeenCalled()
+    expect(resume).not.toHaveBeenCalled()
+  })
+
+  it('stays blocked when the census rejects with native owners on record', async () => {
+    // Why: with structured owners on record the census is load-bearing validation — its
+    // failure must stay conservative instead of becoming the reseedable flavor.
+    const { deps, createTab, resume } = testDeps({})
+    deps.listSessions.mockRejectedValue(new Error('gone'))
+    const hasStructuredSession = vi.fn(async () => ({
+      snapshot: runtimeSnapshot('tab-1', LIVE_LEAF_ID, []),
+      ownerBySessionId: new Map([['live-session', { owner: 'native' as const }]])
+    }))
+
+    await expect(
+      runWorktreeAgentActivationGate(WORKTREE_ID, { ...deps, hasStructuredSession })
+    ).resolves.toBe('blocked')
+
+    expect(createTab).not.toHaveBeenCalled()
+    expect(resume).not.toHaveBeenCalled()
+  })
+
+  it('stays blocked when the census rejects with TUI owners on record', async () => {
+    // Why: TUI terminals need census validation to bind — a rejected census must not become the
+    // reseedable flavor, or a shell lands beside the chat once its PTY answers.
+    const { deps, createTab, resume } = testDeps({})
+    deps.listSessions.mockRejectedValue(new Error('gone'))
+    const hasStructuredSession = vi.fn(async () => ({
+      snapshot: runtimeSnapshot('surf-tab', LIVE_LEAF_ID, []),
+      ownerBySessionId: new Map([
+        [
+          'live-session',
+          {
+            owner: 'tui' as const,
+            terminal: {
+              paneKey: `surf-tab:${LIVE_LEAF_ID}`,
+              ptyId: `${WORKTREE_ID}@@live-agent`,
+              tabId: 'surf-tab'
+            }
+          }
+        ]
+      ])
+    }))
+
+    await expect(
+      runWorktreeAgentActivationGate(WORKTREE_ID, { ...deps, hasStructuredSession })
+    ).resolves.toBe('blocked')
+
+    expect(createTab).not.toHaveBeenCalled()
+    expect(resume).not.toHaveBeenCalled()
+  })
+
   it('adopts a live daemon PTY before activation can resume another agent', async () => {
     const ptyId = `${WORKTREE_ID}@@live-pty`
     const { deps, createTab, resume } = testDeps({ sessions: [listed(ptyId)] })

@@ -60,14 +60,26 @@ export function mapClaudeResetGrants(raw: unknown, now = Date.now()): ClaudeRese
     }
     totalEarnedCount += readCount(grant.resets_total) ?? resetsLeft
     const expiresAt = readTimestamp(grant.ends_at)
+    const grantedAt = readTimestamp(grant.starts_at)
     const paused = grant.paused === true
     const expired = expiresAt !== null && expiresAt <= now
+    // Why: `usable_now` is redeem-time gating (cooldown, at-limit rules), not ownership, so only
+    // a grant that hasn't started yet is left out of what the user holds.
+    const scheduled = grantedAt !== null && grantedAt > now
     credits.push({
-      status: expired ? 'expired' : paused ? 'paused' : resetsLeft > 0 ? 'available' : 'used',
+      status: expired
+        ? 'expired'
+        : paused
+          ? 'paused'
+          : scheduled
+            ? 'scheduled'
+            : resetsLeft > 0
+              ? 'available'
+              : 'used',
       expiresAt,
-      grantedAt: readTimestamp(grant.starts_at)
+      grantedAt
     })
-    if (paused || expired || resetsLeft === 0) {
+    if (paused || expired || scheduled || resetsLeft === 0) {
       continue
     }
     availableCount += resetsLeft

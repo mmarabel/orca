@@ -114,6 +114,23 @@ describe('mapClaudeResetGrants', () => {
     expect(result?.credits?.map((credit) => credit.status)).toEqual(['paused', 'expired'])
   })
 
+  it('does not count a grant that has not started yet', () => {
+    const result = mapClaudeResetGrants(
+      eligibleBlock([launchGrant({ starts_at: '2026-10-01T00:00:00Z' })]),
+      NOW
+    )
+    expect(result).toMatchObject({ availableCount: 0, nextExpiresAt: null })
+    expect(result?.credits?.[0]?.status).toBe('scheduled')
+  })
+
+  it('counts a held reset even while the server says it cannot be used right now', () => {
+    const result = mapClaudeResetGrants(
+      eligibleBlock([launchGrant({ usable_now: false, use_requires_limit: true })]),
+      NOW
+    )
+    expect(result?.availableCount).toBe(1)
+  })
+
   it('hides resets for an ineligible account', () => {
     expect(
       mapClaudeResetGrants({ eligible: false, ineligible_reason: 'surface', grants: [] }, NOW)

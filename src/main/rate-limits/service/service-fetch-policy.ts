@@ -39,8 +39,8 @@ export abstract class RateLimitServiceFetchPolicy extends RateLimitServiceFetchT
     )
   }
 
-  // Why: the statusline never carries the Fable window or earned resets, so for an account that has
-  // either the live feed cannot stand in for the OAuth poll; only accounts the feed fully covers skip it.
+  // Why: the statusline never carries the Fable window or earned resets. An account with Fable, or one
+  // eligible for resets (even at 0, so a newly earned reset shows up), keeps the OAuth poll.
   protected shouldSkipAutomatedClaudeFetch(limits: ProviderRateLimits | null): boolean {
     return (
       this.isRetryAfterActive(limits) ||

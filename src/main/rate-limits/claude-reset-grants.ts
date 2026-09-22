@@ -76,5 +76,9 @@ export function mapClaudeResetGrants(raw: unknown, now = Date.now()): ClaudeRese
     }
   }
 
+  // Why: grants we couldn't read give no count, so hide the row rather than claim zero.
+  if (raw.grants.length > 0 && credits.length === 0) {
+    return null
+  }
   return { availableCount, totalEarnedCount, nextExpiresAt, credits }
 }

@@ -135,4 +135,14 @@ describe('mapClaudeResetGrants', () => {
     expect(result?.availableCount).toBe(1)
     expect(result?.credits).toHaveLength(1)
   })
+
+  it('hides resets when no grant is readable instead of reporting zero', () => {
+    expect(
+      mapClaudeResetGrants(eligibleBlock([launchGrant({ resets_left: '1' }), null]), NOW)
+    ).toBeNull()
+  })
+
+  it('reports zero for an eligible account with no grants yet', () => {
+    expect(mapClaudeResetGrants(eligibleBlock([]), NOW)?.availableCount).toBe(0)
+  })
 })

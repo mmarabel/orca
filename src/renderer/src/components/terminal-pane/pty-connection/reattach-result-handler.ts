@@ -8,7 +8,7 @@ import { useAppStore } from '@/store'
 import { isPassiveCompletedHibernationEvidence } from '@/lib/sleeping-agent-pane-ownership'
 import { parseAppSshPtyId } from '../../../../../shared/ssh-pty-id'
 import { resolveHiddenRestoreScrollbackRows } from '../terminal-hidden-restore-scrollback'
-import { shouldIgnoreStalePanePtyLayoutBinding } from './pane-pty-layout-binding'
+import { resolveReattachReplacementPtyId } from './reattach-replacement-pty-id'
 
 import { isRemoteRuntimePtyId } from './paired-parked-terminal-restore'
 import type { ColdRestoreAgentResumeStartup } from './fresh-spawn-types'
@@ -223,28 +223,12 @@ export function bindHandleReattachResult(sessionBag: ConnectPanePtySession): voi
     session.reportPanePtyVisibility(ptyId, session.deps.isVisibleRef.current)
     session.registerSideEffectFactConsumerForPty(ptyId)
     session.syncHiddenRendererPtyDelivery()
-    const currentTabPtyId = Object.values(useAppStore.getState().tabsByWorktree)
-      .flat()
-      .find((tab) => tab.id === session.deps.tabId)?.ptyId
-    const existingLeafPtyId =
-      useAppStore.getState().terminalLayoutsByTabId[session.deps.tabId]?.ptyIdsByLeafId?.[
-        session.pane.leafId
-      ]
-    // A split pane has its own PTY while the legacy tab-level field still
-    // names the source pane. Only infer a tab-wide replacement when that
-    // field is actually bound to this leaf; an unrelated sibling must not be
-    // rewritten to the new pane's PTY.
-    const inferredReplacementPtyId =
-      currentTabPtyId &&
-      shouldIgnoreStalePanePtyLayoutBinding({
-        existingPtyId: existingLeafPtyId,
-        nextPtyId: ptyId,
-        tabPtyId: currentTabPtyId
-      })
-        ? existingLeafPtyId
-        : undefined
-    const replacementPtyId =
-      staleSessionId && staleSessionId !== ptyId ? staleSessionId : inferredReplacementPtyId
+    const replacementPtyId = resolveReattachReplacementPtyId({
+      tabId: session.deps.tabId,
+      leafId: session.pane.leafId,
+      ptyId,
+      staleSessionId
+    })
     if (session.capturedDirectSshRetryPtyAccepted && session.directSshRetryAttempt) {
       session.deps.updateTabPtyId(
         session.deps.tabId,

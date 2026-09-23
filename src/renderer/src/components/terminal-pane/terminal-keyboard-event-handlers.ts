@@ -19,7 +19,10 @@ import { dispatchTerminalShortcutAction } from './terminal-keyboard-action-dispa
 import { getLayoutCharacterForCode } from '@/lib/keyboard-layout/layout-base-character'
 import { createTerminalKeyboardReleaseHandlers } from './terminal-keyboard-release-handlers'
 import { synchronizeTerminalKeyboardPane } from './terminal-keyboard-pane-resolution'
-import type { TerminalCapturedInputBinding } from './terminal-captured-input-dispatch'
+import {
+  createShortcutInputSender,
+  type TerminalCapturedInputBinding
+} from './terminal-captured-input-dispatch'
 
 const MAX_OBSERVED_ENTER_KEYDOWNS_PER_CODE = 8
 
@@ -238,32 +241,13 @@ export function createTerminalKeyboardEventHandlers(context: EventContext) {
         return
       }
       const sendResolvedInput = createCapturedInputSender(pane, action.data)
-      const sendCurrentResolvedInput = (data: string): void => {
-        createCapturedInputSender(pane, data)()
-      }
-      const sendShortcutInput = (dataOverride?: string): void => {
-        const currentBinding = panePtyBindingsRef.current.get(pane.id) as
-          | TerminalCapturedInputBinding
-          | undefined
-        const kittyKeyboardInput =
-          dataOverride !== undefined
-            ? { kitty: dataOverride, legacy: dataOverride }
-            : action.kittyKeyboardInput
-        if (
-          kittyKeyboardInput &&
-          currentBinding?.dispatchKittyShortcutInput?.(
-            kittyKeyboardInput,
-            sendCurrentResolvedInput
-          ) === true
-        ) {
-          return
-        }
-        if (dataOverride !== undefined) {
-          sendCurrentResolvedInput(dataOverride)
-          return
-        }
-        sendResolvedInput()
-      }
+      const sendShortcutInput = createShortcutInputSender({
+        getBinding: () =>
+          panePtyBindingsRef.current.get(pane.id) as TerminalCapturedInputBinding | undefined,
+        kittyKeyboardInput: action.kittyKeyboardInput,
+        sendResolvedInput,
+        sendData: (data) => createCapturedInputSender(pane, data)()
+      })
       if (action.consumeOptionKeyUp) {
         optionKittyReleases.armNativeDeadKey(e)
       } else if (action.optionKittyRelease) {

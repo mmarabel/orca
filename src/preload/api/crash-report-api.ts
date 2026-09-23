@@ -36,6 +36,11 @@ export type FeedbackApi = {
     githubEmail: string | null
     images?: { contentType: string; data: Uint8Array }[]
   }) => Promise<
-    { ok: true; imagesDelivered?: boolean } | { ok: false; status: number | null; error: string }
+    | {
+        ok: true
+        imagesDelivered?: boolean
+        imagesFailure?: { status: number | null; error: string }
+      }
+    | { ok: false; status: number | null; error: string }
   >
 }

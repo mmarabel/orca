@@ -282,6 +282,47 @@ describe('SidebarFeedbackDialog image submission', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
+  it('says the screenshots were dropped when the host rejected them', async () => {
+    mocks.readFeedbackImageFiles.mockResolvedValue({
+      images: [
+        {
+          id: 'shot',
+          name: 'shot.png',
+          contentType: 'image/png',
+          bytes: 1,
+          data: new Uint8Array([1]),
+          previewUrl: 'blob:shot'
+        }
+      ],
+      errors: []
+    })
+    mocks.submit.mockResolvedValue({
+      ok: true,
+      imagesDelivered: false,
+      imagesFailure: { status: 413, error: 'status 413' }
+    })
+    const onOpenChange = vi.fn()
+    const { container } = render(<SidebarFeedbackDialog open onOpenChange={onOpenChange} />)
+    fireEvent.change(screen.getByPlaceholderText('What could we improve?'), {
+      target: { value: 'Screenshot attached' }
+    })
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')
+    fireEvent.change(input!, {
+      target: { files: [new File(['x'], 'shot.png', { type: 'image/png' })] }
+    })
+    await screen.findByRole('button', { name: 'Remove shot.png' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+
+    await waitFor(() =>
+      expect(mocks.toastWarning).toHaveBeenCalledWith(
+        "Feedback sent without your screenshots. They couldn't be uploaded."
+      )
+    )
+    expect(mocks.toastWarning).toHaveBeenCalledTimes(1)
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
   it('releases image previews when the sidebar unmounts the dialog', async () => {
     mocks.readFeedbackImageFiles.mockResolvedValue({
       images: [
@@ -311,12 +352,12 @@ describe('SidebarFeedbackDialog image submission', () => {
   it('does not consume text when the pasted image cannot be attached', () => {
     mocks.readFeedbackImageFiles.mockResolvedValue({
       images: [],
-      errors: ['huge.png is larger than 8.0 MB.']
+      errors: ['huge.png is larger than 4.0 MB.']
     })
     render(<SidebarFeedbackDialog open onOpenChange={vi.fn()} />)
     const textarea = screen.getByPlaceholderText('What could we improve?')
     const file = new File(['image'], 'huge.png', { type: 'image/png' })
-    Object.defineProperty(file, 'size', { value: 8 * 1024 * 1024 + 1 })
+    Object.defineProperty(file, 'size', { value: 4 * 1024 * 1024 + 1 })
     const paste = new Event('paste', { bubbles: true, cancelable: true })
     Object.defineProperty(paste, 'clipboardData', {
       value: { files: [file] }
@@ -325,7 +366,39 @@ describe('SidebarFeedbackDialog image submission', () => {
     fireEvent(textarea, paste)
 
     expect(paste.defaultPrevented).toBe(false)
-    expect(mocks.readFeedbackImageFiles).toHaveBeenCalledWith([file], 0)
+    expect(mocks.readFeedbackImageFiles).toHaveBeenCalledWith([file], 0, 0)
+  })
+
+  it('counts committed and in-flight image bytes against the total budget', async () => {
+    mocks.readFeedbackImageFiles.mockResolvedValueOnce({
+      images: [
+        {
+          id: 'first',
+          name: 'first.png',
+          contentType: 'image/png',
+          bytes: 1000,
+          data: new Uint8Array([1]),
+          previewUrl: 'blob:first'
+        }
+      ],
+      errors: []
+    })
+    mocks.readFeedbackImageFiles.mockReturnValue(new Promise(() => {}))
+    const { container } = render(<SidebarFeedbackDialog open onOpenChange={vi.fn()} />)
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')
+    fireEvent.change(input!, {
+      target: { files: [new File(['x'], 'first.png', { type: 'image/png' })] }
+    })
+    await screen.findByRole('button', { name: 'Remove first.png' })
+    const second = new File(['x'], 'second.png', { type: 'image/png' })
+    Object.defineProperty(second, 'size', { value: 200 })
+    const third = new File(['x'], 'third.png', { type: 'image/png' })
+
+    fireEvent.change(input!, { target: { files: [second] } })
+    fireEvent.change(input!, { target: { files: [third] } })
+
+    expect(mocks.readFeedbackImageFiles).toHaveBeenNthCalledWith(2, [second], 1, 1000)
+    expect(mocks.readFeedbackImageFiles).toHaveBeenNthCalledWith(3, [third], 2, 1200)
   })
 
   it('rejects images added after submission starts instead of clearing them unsent', async () => {

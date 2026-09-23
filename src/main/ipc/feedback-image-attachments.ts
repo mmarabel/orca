@@ -10,7 +10,10 @@ const FEEDBACK_IMAGE_EXTENSIONS: Record<string, string> = {
 }
 
 export const MAX_FEEDBACK_IMAGE_COUNT = 4
-export const MAX_FEEDBACK_IMAGE_BYTES = 8 * 1024 * 1024
+// Why: the endpoint's host rejects bodies over ~4.5 MB with 413; 4 MiB leaves
+// ~300 KB for multipart framing and the text, matching MAX_BUNDLE_BYTES.
+export const MAX_FEEDBACK_IMAGE_TOTAL_BYTES = 4 * 1024 * 1024
+export const MAX_FEEDBACK_IMAGE_BYTES = MAX_FEEDBACK_IMAGE_TOTAL_BYTES
 export const MAX_FEEDBACK_IMAGE_RESPONSE_BYTES = 64 * 1024
 export const FEEDBACK_IMAGE_FORM_FIELD = 'feedbackImage'
 
@@ -37,6 +40,7 @@ export function validateFeedbackImages(images: unknown): string | null {
   if (images.length > MAX_FEEDBACK_IMAGE_COUNT) {
     return `Attach ${MAX_FEEDBACK_IMAGE_COUNT} images or fewer.`
   }
+  let totalBytes = 0
   for (const image of images) {
     if (!image || typeof image !== 'object') {
       return 'Invalid image attachment.'
@@ -56,6 +60,10 @@ export function validateFeedbackImages(images: unknown): string | null {
     if (image.data.byteLength > MAX_FEEDBACK_IMAGE_BYTES) {
       return `Each image must be ${MAX_FEEDBACK_IMAGE_BYTES} bytes or fewer.`
     }
+    totalBytes += image.data.byteLength
+  }
+  if (totalBytes > MAX_FEEDBACK_IMAGE_TOTAL_BYTES) {
+    return `Image attachments must total ${MAX_FEEDBACK_IMAGE_TOTAL_BYTES} bytes or fewer.`
   }
   return null
 }

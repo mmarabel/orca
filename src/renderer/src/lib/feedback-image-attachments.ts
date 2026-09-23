@@ -7,7 +7,10 @@ import {
 } from '../../../shared/raster-image-preview-limits'
 
 export const MAX_FEEDBACK_IMAGE_COUNT = 4
-export const MAX_FEEDBACK_IMAGE_BYTES = 8 * 1024 * 1024
+// Why: mirrors the main-process caps, which keep uploads under the endpoint's
+// ~4.5 MB request body limit.
+export const MAX_FEEDBACK_IMAGE_TOTAL_BYTES = 4 * 1024 * 1024
+export const MAX_FEEDBACK_IMAGE_BYTES = MAX_FEEDBACK_IMAGE_TOTAL_BYTES
 export const SUPPORTED_FEEDBACK_IMAGE_TYPES = [
   'image/png',
   'image/jpeg',
@@ -70,11 +73,13 @@ function feedbackImageDisplayName(file: File): string {
  */
 export async function readFeedbackImageFiles(
   files: readonly File[],
-  existingCount: number
+  existingCount: number,
+  existingBytes = 0
 ): Promise<{ images: FeedbackImageDraft[]; errors: string[] }> {
   const images: FeedbackImageDraft[] = []
   const errors: string[] = []
   let remaining = MAX_FEEDBACK_IMAGE_COUNT - existingCount
+  let remainingBytes = MAX_FEEDBACK_IMAGE_TOTAL_BYTES - existingBytes
   let omittedErrorCount = 0
   const addError = (createMessage: () => string): void => {
     if (errors.length < MAX_FEEDBACK_IMAGE_DETAIL_ERRORS) {
@@ -128,6 +133,19 @@ export async function readFeedbackImageFiles(
         )
         break
       }
+      if (file.size > remainingBytes) {
+        addError(() =>
+          translate(
+            'auto.lib.feedback.image.attachments.totalTooLarge',
+            '{{fileName}} would bring the attachments over {{maxSize}} in total.',
+            {
+              fileName,
+              maxSize: formatFeedbackImageSize(MAX_FEEDBACK_IMAGE_TOTAL_BYTES)
+            }
+          )
+        )
+        continue
+      }
       const data = new Uint8Array(await file.arrayBuffer())
       try {
         assertRasterImagePreviewWithinLimits(data, file.type)
@@ -155,6 +173,7 @@ export async function readFeedbackImageFiles(
         throw error
       }
       remaining -= 1
+      remainingBytes -= file.size
       images.push({
         // Why: crypto.randomUUID is undefined in non-secure browser contexts (LAN
         // web client over plain HTTP); createBrowserUuid falls back safely.

@@ -161,7 +161,14 @@ export function SidebarFeedbackDialog({
       if (mountedRef.current) {
         // Why: the text reached us but the screenshots did not, so say that
         // plainly instead of a blanket success the user would misread.
-        if (result.imagesDelivered === false) {
+        if (result.imagesFailure) {
+          toast.warning(
+            translate(
+              'auto.components.sidebar.SidebarFeedbackDialog.imagesRejected',
+              "Feedback sent without your screenshots. They couldn't be uploaded."
+            )
+          )
+        } else if (result.imagesDelivered === false) {
           toast.warning(
             translate(
               'auto.components.sidebar.SidebarFeedbackDialog.imagesNotDelivered',

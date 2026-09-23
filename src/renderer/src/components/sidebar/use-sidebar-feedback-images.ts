@@ -31,7 +31,9 @@ export function useSidebarFeedbackImages(params: {
   // Why: committed state lags in-flight reads, so batches still being read count
   // against capacity — otherwise two quick pastes both see room for four.
   const pendingImageReadsRef = useRef(0)
+  const pendingImageReadBytesRef = useRef(0)
   const imageCount = images.length
+  const imageBytes = images.reduce((total, image) => total + image.bytes, 0)
 
   const clearImages = useCallback(() => {
     liveImageDraftsRef.current.forEach(releaseFeedbackImageDraft)
@@ -65,11 +67,15 @@ export function useSidebarFeedbackImages(params: {
       // Why: read the committed count from the closure rather than a ref. A ref
       // synced in an effect can still be stale-low right after an add.
       const existingCount = imageCount + pendingImageReadsRef.current
+      const existingBytes = imageBytes + pendingImageReadBytesRef.current
+      const batchBytes = files.reduce((total, file) => total + file.size, 0)
       pendingImageReadsRef.current += files.length
+      pendingImageReadBytesRef.current += batchBytes
       setPendingImageReadCount((current) => current + files.length)
-      void readFeedbackImageFiles(files, existingCount).then(
+      void readFeedbackImageFiles(files, existingCount, existingBytes).then(
         ({ images: added, errors }) => {
           pendingImageReadsRef.current -= files.length
+          pendingImageReadBytesRef.current -= batchBytes
           if (!params.mountedRef.current) {
             added.forEach(releaseFeedbackImageDraft)
             return
@@ -84,6 +90,7 @@ export function useSidebarFeedbackImages(params: {
         },
         (error: unknown) => {
           pendingImageReadsRef.current -= files.length
+          pendingImageReadBytesRef.current -= batchBytes
           console.error('Failed to read feedback image attachments:', error)
           if (params.mountedRef.current) {
             setPendingImageReadCount((current) => Math.max(0, current - files.length))
@@ -97,7 +104,7 @@ export function useSidebarFeedbackImages(params: {
         }
       )
     },
-    [imageCount, params.isSubmitting, params.mountedRef]
+    [imageBytes, imageCount, params.isSubmitting, params.mountedRef]
   )
 
   const handleRemoveImage = useCallback((id: string) => {

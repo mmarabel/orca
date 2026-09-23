@@ -7,6 +7,7 @@ import {
 const SETUP_COMPLETION_PREFIX = '__ORCA_SETUP_COMPLETE__:'
 const SETUP_COMPLETION_CARRY_LENGTH = SETUP_COMPLETION_PREFIX.length + 96
 const WINDOWS_SETUP_RUNNER_ENV = 'ORCA_SETUP_RUNNER_PATH'
+export const POSIX_SETUP_OBSERVED_SCRIPT_ENV = 'ORCA_SETUP_OBSERVED_SCRIPT'
 
 export function buildObservedSetupCommand(
   runnerScriptPath: string,
@@ -42,7 +43,12 @@ export function buildObservedSetupCommand(
     `printf '\\n${completionPrefix(completionToken)}%s\\n' "$status"`,
     'exit "$status"'
   ].join('; ')
-  return { command: `bash -lc ${quotePosixArg(script)}` }
+  // Why: the command is typed into the user's line editor, where pair-inserting widgets
+  // (zsh-autopair) rewrite `( ` and corrupt it (#18059); the script rides env instead.
+  return {
+    command: `bash -lc 'eval "$${POSIX_SETUP_OBSERVED_SCRIPT_ENV}"'`,
+    env: { [POSIX_SETUP_OBSERVED_SCRIPT_ENV]: script }
+  }
 }
 
 export function createSetupCompletionScanner(
@@ -77,8 +83,4 @@ export function createSetupCompletionScanner(
 
 function completionPrefix(completionToken: string): string {
   return `${SETUP_COMPLETION_PREFIX}${completionToken}:`
-}
-
-function quotePosixArg(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`
 }

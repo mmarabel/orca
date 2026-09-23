@@ -184,7 +184,11 @@ describe('OrcaRuntimeService', () => {
     expect(spawn).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        command: expect.stringContaining('__ORCA_SETUP_COMPLETE__:')
+        command: `bash -lc 'eval "$ORCA_SETUP_OBSERVED_SCRIPT"'`,
+        env: expect.objectContaining({
+          ORCA_ROOT_PATH: '/tmp/repo',
+          ORCA_SETUP_OBSERVED_SCRIPT: expect.stringContaining('__ORCA_SETUP_COMPLETE__:')
+        })
       })
     )
     expect(result.setupReceipt).toMatchObject({
@@ -257,9 +261,16 @@ describe('OrcaRuntimeService', () => {
     })
 
     await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(2))
-    const setupCommand = (spawn.mock.calls[1]![0] as { command: string }).command
-    expect(setupCommand).toContain('bash /mnt/c/tmp/repo/.git/orca/setup-runner.sh')
-    expect(setupCommand).toContain('__ORCA_SETUP_COMPLETE__:')
+    expect(spawn).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        env: expect.objectContaining({
+          ORCA_SETUP_OBSERVED_SCRIPT: expect.stringMatching(
+            /bash \/mnt\/c\/tmp\/repo\/\.git\/orca\/setup-runner\.sh.*__ORCA_SETUP_COMPLETE__:/
+          )
+        })
+      })
+    )
   })
 
   it('creates the first terminal for CLI-created worktrees without activating them', async () => {

@@ -296,50 +296,54 @@ describe('orchestration new-worktree workers', () => {
     })
   })
 
-  it('records a later setup failure without gating a start-immediately worker', async () => {
-    mockCreatedWorktree({
-      terminals: [
-        { handle: 'term_worker', title: 'Codex' },
-        { handle: 'term_setup', title: 'Setup' }
-      ]
-    })
-    let finishSetup: ((result: { exitCode: number | null }) => void) | undefined
-    vi.mocked(runtime.waitForSetupTerminalCompletion).mockImplementation(
-      async () =>
-        await new Promise((resolve) => {
-          finishSetup = resolve
-        })
-    )
-
-    const { result, task } = await startWorker()
-    const dispatchId = (result as { dispatchId: string }).dispatchId
-
-    expect(result).toMatchObject({ state: 'ready', setup: { state: 'running' } })
-    expect(
-      db.settleWorkerReport({
-        taskId: task.id,
-        dispatchId,
-        outcome: 'succeeded',
-        result: '{}'
+  // null is a setup shell that exited without its completion marker (#18059).
+  it.each([1, null])(
+    'records a later setup failure (exit %s) without gating a start-immediately worker',
+    async (setupExitCode) => {
+      mockCreatedWorktree({
+        terminals: [
+          { handle: 'term_worker', title: 'Codex' },
+          { handle: 'term_setup', title: 'Setup' }
+        ]
       })
-    ).toMatchObject({ action: 'settled' })
-    finishSetup?.({ exitCode: 1 })
-    await vi.waitFor(() => expect(db.getWorkerDispatch(dispatchId)?.setup_state).toBe('failed'))
-    expect(db.getWorkerDispatch(dispatchId)).toMatchObject({
-      state: 'succeeded',
-      stage: 'settled',
-      setup_state: 'failed'
-    })
-    expect(JSON.parse(db.getWorkerDispatch(dispatchId)?.effects ?? '[]')).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ kind: 'dispatch_input', state: 'accepted' })
-      ])
-    )
-    expect(runtime.sendTerminalAgentPrompt).toHaveBeenCalledOnce()
-    expect(db.getInbox(10).filter((message) => message.run_id === runId)).toEqual(
-      expect.arrayContaining([expect.objectContaining({ type: 'status', priority: 'high' })])
-    )
-  })
+      let finishSetup: ((result: { exitCode: number | null }) => void) | undefined
+      vi.mocked(runtime.waitForSetupTerminalCompletion).mockImplementation(
+        async () =>
+          await new Promise((resolve) => {
+            finishSetup = resolve
+          })
+      )
+
+      const { result, task } = await startWorker()
+      const dispatchId = (result as { dispatchId: string }).dispatchId
+
+      expect(result).toMatchObject({ state: 'ready', setup: { state: 'running' } })
+      expect(
+        db.settleWorkerReport({
+          taskId: task.id,
+          dispatchId,
+          outcome: 'succeeded',
+          result: '{}'
+        })
+      ).toMatchObject({ action: 'settled' })
+      finishSetup?.({ exitCode: setupExitCode })
+      await vi.waitFor(() => expect(db.getWorkerDispatch(dispatchId)?.setup_state).toBe('failed'))
+      expect(db.getWorkerDispatch(dispatchId)).toMatchObject({
+        state: 'succeeded',
+        stage: 'settled',
+        setup_state: 'failed'
+      })
+      expect(JSON.parse(db.getWorkerDispatch(dispatchId)?.effects ?? '[]')).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: 'dispatch_input', state: 'accepted' })
+        ])
+      )
+      expect(runtime.sendTerminalAgentPrompt).toHaveBeenCalledOnce()
+      expect(db.getInbox(10).filter((message) => message.run_id === runId)).toEqual(
+        expect.arrayContaining([expect.objectContaining({ type: 'status', priority: 'high' })])
+      )
+    }
+  )
 
   it('uses the exact setup handle instead of a configured tab title', async () => {
     mockCreatedWorktree({

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, truncateSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -10,6 +10,8 @@ import {
   listEnvironments,
   MAX_RUNTIME_ENVIRONMENT_STORE_FILE_BYTES,
   markEnvironmentUsed,
+  markEnvironmentUsedIfPresent,
+  removeEnvironment,
   updateEnvironmentFromPairingCode
 } from './runtime-environment-store'
 
@@ -175,6 +177,51 @@ describe('runtime environment store', () => {
       pairedDeviceId: 'device-from-status',
       lastUsedAt: 2_000
     })
+  })
+
+  it('skips marking a removed environment without touching the store', () => {
+    const userDataPath = mkdtempSync(join(tmpdir(), 'orca-runtime-env-store-'))
+    tempDirs.push(userDataPath)
+    const kept = addEnvironmentFromPairingCode(userDataPath, {
+      name: 'kept box',
+      pairingCode: pairingCode()
+    })
+    const removed = addEnvironmentFromPairingCode(userDataPath, {
+      name: 'removed box',
+      pairingCode: pairingCode('ws://192.0.2.10:6768')
+    })
+    removeEnvironment(userDataPath, removed.id)
+    const before = readFileSync(getEnvironmentStorePath(userDataPath), 'utf8')
+
+    expect(
+      markEnvironmentUsedIfPresent(userDataPath, removed.id, { runtimeId: 'runtime-1', now: 1 })
+    ).toBe(false)
+    expect(readFileSync(getEnvironmentStorePath(userDataPath), 'utf8')).toBe(before)
+    expect(() => markEnvironmentUsed(userDataPath, removed.id)).toThrow(/Unknown environment/)
+
+    expect(
+      markEnvironmentUsedIfPresent(userDataPath, kept.id, { runtimeId: 'runtime-1', now: 2 })
+    ).toBe(true)
+    expect(listEnvironments(userDataPath)[0]).toMatchObject({ lastUsedAt: 2 })
+  })
+
+  it('still surfaces ambiguous selectors and unreadable stores when marking if present', () => {
+    const userDataPath = mkdtempSync(join(tmpdir(), 'orca-runtime-env-store-'))
+    tempDirs.push(userDataPath)
+    const path = getEnvironmentStorePath(userDataPath)
+    const first = addEnvironmentFromPairingCode(userDataPath, {
+      name: 'dev box',
+      pairingCode: pairingCode()
+    })
+    const stored = JSON.parse(readFileSync(path, 'utf8'))
+    stored.environments.push({ ...stored.environments[0], id: `${first.id}-copy` })
+    writeFileSync(path, JSON.stringify(stored))
+    expect(() => markEnvironmentUsedIfPresent(userDataPath, 'dev box')).toThrow(/ambiguous/)
+
+    writeFileSync(path, '{not json')
+    expect(() => markEnvironmentUsedIfPresent(userDataPath, first.id)).toThrow(
+      RuntimeEnvironmentStoreError
+    )
   })
 
   it('rejects an oversized sparse environment store before parsing it', () => {

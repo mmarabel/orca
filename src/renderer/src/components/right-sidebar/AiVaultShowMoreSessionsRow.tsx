@@ -25,9 +25,9 @@ export function AiVaultShowMoreSessionsRow({
     return null
   }
   return (
-    <div className="flex justify-center border-t border-sidebar-border py-1">
+    // Muted on the row: ghost buttons inherit color until hover.
+    <div className="flex justify-center border-t border-sidebar-border py-1 text-muted-foreground">
       <Button
-        className="text-muted-foreground"
         variant="ghost"
         size="xs"
         disabled={loading}

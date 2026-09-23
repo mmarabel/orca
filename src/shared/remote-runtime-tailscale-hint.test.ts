@@ -47,8 +47,8 @@ describe('isTailscaleEndpoint', () => {
 
 describe('withRemoteRuntimeTailscaleHint', () => {
   it('recommends switching to Tailscale when the endpoint is not on a tailnet', () => {
-    const result = withRemoteRuntimeTailscaleHint(UNREACHABLE, 'ws://192.168.1.10:6768')
-    expect(result).toContain(UNREACHABLE)
+    const result = withRemoteRuntimeTailscaleHint(UNREACHABLE, 'wss://orca.example.com')
+    expect(result).toContain('Could not connect to the remote Orca runtime')
     expect(result).toContain('connect both devices to Tailscale')
     expect(result).toContain('https://tailscale.com/download')
   })
@@ -64,7 +64,7 @@ describe('withRemoteRuntimeTailscaleHint', () => {
     expect(
       withRemoteRuntimeTailscaleHint(
         'Remote Orca runtime closed the connection.',
-        'ws://192.168.1.10:6768'
+        'wss://orca.example.com'
       )
     ).toContain('connect both devices to Tailscale')
     expect(
@@ -80,9 +80,74 @@ describe('withRemoteRuntimeTailscaleHint', () => {
     expect(withRemoteRuntimeTailscaleHint(auth, 'ws://192.168.1.10:6768')).toBe(auth)
   })
 
-  it('is idempotent — does not append the hint twice', () => {
-    const once = withRemoteRuntimeTailscaleHint(UNREACHABLE, 'ws://192.168.1.10:6768')
-    const twice = withRemoteRuntimeTailscaleHint(once, 'ws://192.168.1.10:6768')
-    expect(twice).toBe(once)
+  it('is idempotent — does not append the hint or endpoint twice', () => {
+    for (const endpoint of ['ws://192.168.1.10:6768', 'ws://100.64.0.5:6768', 'wss://a.example']) {
+      const once = withRemoteRuntimeTailscaleHint(UNREACHABLE, endpoint)
+      expect(withRemoteRuntimeTailscaleHint(once, endpoint)).toBe(once)
+    }
+  })
+
+  // Why: #14210 — a LAN pairing address failed from a device on the same tailnet, and the
+  // hint blamed Tailscale instead of naming the unreachable address.
+  it('names a LAN endpoint and does not blame Tailscale', () => {
+    const result = withRemoteRuntimeTailscaleHint(UNREACHABLE, 'ws://192.168.1.20:6768')
+    expect(result).toBe(
+      "Could not connect to the remote Orca runtime (dialed ws://192.168.1.20:6768). That is a local-network address, so it only works from the server's own network. A device elsewhere, even one on the same tailnet, should re-pair using an address it can reach, such as the server's Tailscale address (100.x or a *.ts.net name)."
+    )
+    expect(result).not.toContain('connect both devices to Tailscale')
+    expect(withRemoteRuntimeTailscaleHint(UNREACHABLE, 'ws://[fe80::1]:6768')).toContain(
+      'local-network address'
+    )
+  })
+
+  it('names a tailnet endpoint alongside the tailnet hint', () => {
+    const result = withRemoteRuntimeTailscaleHint(
+      'Timed out waiting for the remote Orca runtime to respond.',
+      'ws://100.64.0.5:6768/path?token=abc'
+    )
+    expect(result).toMatch(
+      /^Timed out waiting for the remote Orca runtime to respond \(dialed ws:\/\/100\.64\.0\.5:6768\)\. The server may be offline on your tailnet/
+    )
+    expect(result).not.toContain('token=abc')
+  })
+
+  it('keeps the other-network hint for public and loopback endpoints', () => {
+    for (const endpoint of ['wss://orca.example.com', 'ws://127.0.0.1:6768', 'ws://devbox:6768']) {
+      const result = withRemoteRuntimeTailscaleHint(UNREACHABLE, endpoint)
+      expect(result).toContain('connect both devices to Tailscale')
+      expect(result).toContain(`(dialed ${endpoint})`)
+    }
+  })
+
+  it('does not repeat an endpoint the message already names', () => {
+    const message =
+      'Could not connect to the remote Orca runtime at ws://192.168.1.20:6768: the host did not answer, so anything running on it is unverifiable.'
+    const result = withRemoteRuntimeTailscaleHint(message, 'ws://192.168.1.20:6768')
+    expect(result.startsWith(`${message} That is a local-network address`)).toBe(true)
+    expect(result.split('192.168.1.20').length - 1).toBe(1)
+  })
+
+  it('shows only a sanitized endpoint', () => {
+    const withUserinfo = withRemoteRuntimeTailscaleHint(
+      UNREACHABLE,
+      'wss://user:s3cret@desk.example.com:6768/p'
+    )
+    expect(withUserinfo).toContain('(dialed wss://desk.example.com:6768)')
+    expect(withUserinfo).not.toContain('s3cret')
+    const smuggled = withRemoteRuntimeTailscaleHint(UNREACHABLE, 'ws://terminal_gone.example:6768')
+    expect(smuggled).toContain('(dialed the paired endpoint)')
+    expect(smuggled).not.toContain('terminal_gone')
+  })
+
+  it('adds no endpoint when none is known', () => {
+    expect(withRemoteRuntimeTailscaleHint(UNREACHABLE, null)).toMatch(
+      /^Could not connect to the remote Orca runtime\. If the server is on another network/
+    )
+  })
+
+  it('passes non-connectivity errors through unchanged, endpoint included', () => {
+    const auth = 'Remote Orca runtime rejected the pairing token.'
+    expect(withRemoteRuntimeTailscaleHint(auth, 'ws://100.64.0.5:6768')).toBe(auth)
+    expect(withRemoteRuntimeTailscaleHint(auth, null)).toBe(auth)
   })
 })

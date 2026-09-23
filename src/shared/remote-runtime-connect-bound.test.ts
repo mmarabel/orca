@@ -165,7 +165,7 @@ describe('remote runtime connect bound', () => {
         message: `Error invoking remote method 'runtimeEnvironments:subscribe': Error: ${message}`
       })
     ).toBe(true)
-    expect(withRemoteRuntimeTailscaleHint(message, 'ws://192.168.1.10:6768')).toContain(
+    expect(withRemoteRuntimeTailscaleHint(message, 'ws://desk.example.com:6768')).toContain(
       'connect both devices to Tailscale'
     )
     expect(

@@ -1,11 +1,13 @@
 /**
- * Appends an actionable Tailscale recommendation to remote-runtime connection
- * failures, mirroring `withMacTailscaleDnsHint`. Lives in `shared` as a pure,
- * dependency-free function so both the main process (desktop transport) and the
- * renderer (web client) can route their user-facing errors through it without
- * leaking presentation copy into the shared error constructors (which the CLI,
- * logs, and mobile typecheck also consume).
+ * Appends the dialed endpoint and an actionable network recommendation to
+ * remote-runtime connection failures, mirroring `withMacTailscaleDnsHint`. Lives
+ * in `shared` as a pure function with no package dependencies so both the main
+ * process (desktop transport) and the renderer (web client) can route their
+ * user-facing errors through it without leaking presentation copy into the
+ * shared error constructors (which the CLI, logs, and mobile typecheck also
+ * consume).
  */
+import { classifyRemotePairingHostname, endpointForDisplay } from './remote-pairing-endpoint'
 
 const TAILSCALE_DOWNLOAD_URL = 'https://tailscale.com/download'
 
@@ -65,6 +67,11 @@ export function isTailscaleEndpoint(endpoint: string | null | undefined): boolea
 const TAILNET_ENDPOINT_HINT =
   "The server may be offline on your tailnet, or its Tailscale Funnel reverted to tailnet-only. Confirm it's reachable; re-pair only when adding a new device, since already-paired devices reconnect with their saved token."
 
+// Why: a LAN address fails from any other network regardless of Tailscale, so the fix is a
+// reachable address in the pairing link, not joining a tailnet the device may already be on.
+const LAN_ENDPOINT_HINT =
+  "That is a local-network address, so it only works from the server's own network. A device elsewhere, even one on the same tailnet, should re-pair using an address it can reach, such as the server's Tailscale address (100.x or a *.ts.net name)."
+
 const OTHER_NETWORK_HINT = `If the server is on another network, connect both devices to Tailscale and pair using its Tailscale address (100.x or a *.ts.net name). See ${TAILSCALE_DOWNLOAD_URL}.`
 
 export function withRemoteRuntimeTailscaleHint(
@@ -77,8 +84,37 @@ export function withRemoteRuntimeTailscaleHint(
   // Why: keep the hint idempotent so a message routed through this helper twice (e.g. a
   // re-wrapped error response) isn't suffixed with duplicate guidance. Keyed on the hints
   // themselves, not on the word — messages now carry an endpoint whose host can contain it.
-  if (message.endsWith(TAILNET_ENDPOINT_HINT) || message.endsWith(OTHER_NETWORK_HINT)) {
+  if (
+    message.endsWith(TAILNET_ENDPOINT_HINT) ||
+    message.endsWith(LAN_ENDPOINT_HINT) ||
+    message.endsWith(OTHER_NETWORK_HINT)
+  ) {
     return message
   }
-  return `${message} ${isTailscaleEndpoint(endpoint) ? TAILNET_ENDPOINT_HINT : OTHER_NETWORK_HINT}`
+  return `${withDialedEndpoint(message, endpoint)} ${hintForEndpoint(endpoint)}`
+}
+
+// Why: name the address that was actually dialed, so a stale or unreachable address in the
+// pairing link is visible instead of the hint implying the network itself is at fault.
+function withDialedEndpoint(message: string, endpoint: string | null | undefined): string {
+  if (!endpoint) {
+    return message
+  }
+  const display = endpointForDisplay(endpoint)
+  if (message.includes(display)) {
+    return message
+  }
+  return message.endsWith('.')
+    ? `${message.slice(0, -1)} (dialed ${display}).`
+    : `${message} (dialed ${display})`
+}
+
+function hintForEndpoint(endpoint: string | null | undefined): string {
+  if (isTailscaleEndpoint(endpoint)) {
+    return TAILNET_ENDPOINT_HINT
+  }
+  const host = endpoint ? extractHost(endpoint) : null
+  return host && classifyRemotePairingHostname(host) === 'lan'
+    ? LAN_ENDPOINT_HINT
+    : OTHER_NETWORK_HINT
 }

@@ -7,8 +7,8 @@ import {
 } from '../native-chat/wsl-transcript-fs-access'
 import { WslTranscriptFsError } from '../native-chat/wsl-transcript-fs-gate'
 import { isPathInsideOrEqual } from '../../shared/cross-platform-path'
-import { encodeClaudeProjectPaths, isClaudeProjectDirInScope } from './claude-project-dir-encoding'
-import type { AiVaultScanIssue } from '../../shared/ai-vault-types'
+import { CLAUDE_CWD_BUCKET_LAYOUT, type CwdBucketLayout } from './session-cwd-bucket-layouts'
+import type { AiVaultAgent, AiVaultScanIssue } from '../../shared/ai-vault-types'
 import { parseWslUncPath } from '../../shared/wsl-paths'
 import { recordSessionScanIssue } from './session-scan-issues'
 import type { FileWithMtime } from './session-scanner-types'
@@ -18,7 +18,7 @@ import { errorMessage, extractString, parseJsonObject } from './session-scanner-
 // dir's cwd; cap both so a giant or cwd-less transcript can't stall the scan.
 const REPRESENTATIVE_CWD_LINE_LIMIT = 200
 const REPRESENTATIVE_FILE_LIMIT = 3
-const CLAUDE_EXTENSIONS = new Set(['.jsonl'])
+const TRANSCRIPT_EXTENSIONS = new Set(['.jsonl'])
 
 // A Claude project dir encodes exactly one cwd, so a resolved cwd never
 // changes; caching it spares each rescan the transcript-head reads.
@@ -31,15 +31,21 @@ export function resetProjectDirCwdCacheForTests(): void {
 
 // A gate refusal is a stalled WSL root, not an empty one: keep the existing
 // degrade-to-empty containment but make the gap visible in the scan issues.
-function recordRefusal(issues: AiVaultScanIssue[], path: string, error: unknown): void {
+function recordRefusal(
+  issues: AiVaultScanIssue[],
+  path: string,
+  error: unknown,
+  agent: AiVaultAgent
+): void {
   if (error instanceof WslTranscriptFsError) {
-    recordSessionScanIssue(issues, { agent: 'claude', path, message: error.message })
+    recordSessionScanIssue(issues, { agent, path, message: error.message })
   }
 }
 
 async function cachedProjectDirCwd(
   projectDir: string,
-  issues: AiVaultScanIssue[]
+  issues: AiVaultScanIssue[],
+  agent: AiVaultAgent
 ): Promise<string | null> {
   const cached = projectDirCwdCache.get(projectDir)
   if (cached !== undefined) {
@@ -48,7 +54,7 @@ async function cachedProjectDirCwd(
     projectDirCwdCache.set(projectDir, cached)
     return cached
   }
-  const cwd = await readProjectDirCwd(projectDir, issues)
+  const cwd = await readProjectDirCwd(projectDir, issues, agent)
   if (cwd) {
     if (projectDirCwdCache.size >= PROJECT_DIR_CWD_CACHE_MAX) {
       const oldest = projectDirCwdCache.keys().next()
@@ -61,6 +67,14 @@ async function cachedProjectDirCwd(
   return cwd
 }
 
+type InScopeDiscoveryArgs = {
+  rootDirs: readonly string[]
+  scopePaths: readonly string[]
+  limit: number
+  excludedFilePaths: ReadonlySet<string>
+  issues: AiVaultScanIssue[]
+}
+
 /**
  * Fully include the transcripts of Claude project directories whose cwd falls
  * inside the active workspace/project paths.
@@ -71,25 +85,33 @@ async function cachedProjectDirCwd(
  * finds it. For scoped panel views we resolve each project dir's cwd cheaply and
  * bypass the cap for the ones that belong to the active scope.
  */
-export async function discoverInScopeClaudeFiles(args: {
-  rootDirs: readonly string[]
-  scopePaths: readonly string[]
-  limit: number
-  excludedFilePaths: ReadonlySet<string>
-  issues: AiVaultScanIssue[]
-}): Promise<FileWithMtime[]> {
+export function discoverInScopeClaudeFiles(args: InScopeDiscoveryArgs): Promise<FileWithMtime[]> {
+  return discoverInScopeCwdBucketFiles(CLAUDE_CWD_BUCKET_LAYOUT, args)
+}
+
+/** Same guarantee for any agent that buckets transcripts by an encoded cwd (Pi included). */
+export async function discoverInScopeCwdBucketFiles(
+  layout: CwdBucketLayout,
+  args: InScopeDiscoveryArgs
+): Promise<FileWithMtime[]> {
   if (args.scopePaths.length === 0 || args.limit <= 0) {
     return []
   }
-  const scopeProjectPrefixes = claudeProjectScopePrefixes(args.scopePaths)
+  const scopeProjectPrefixes = cwdBucketScopePrefixes(layout, args.scopePaths)
   const collected = new Map<string, FileWithMtime>()
   for (const rootDir of args.rootDirs) {
-    for (const projectDir of await listProjectDirs(rootDir, scopeProjectPrefixes, args.issues)) {
-      const cwd = await cachedProjectDirCwd(projectDir, args.issues)
+    for (const projectDir of await listProjectDirs(
+      layout,
+      rootDir,
+      scopeProjectPrefixes,
+      args.issues
+    )) {
+      const cwd = await cachedProjectDirCwd(projectDir, args.issues, layout.agent)
       if (!cwd || !args.scopePaths.some((scopePath) => isCwdInsideScopePath(scopePath, cwd))) {
         continue
       }
-      await collectClaudeFiles({
+      await collectBucketFiles({
+        agent: layout.agent,
         projectDir,
         issues: args.issues,
         collected,
@@ -101,11 +123,14 @@ export async function discoverInScopeClaudeFiles(args: {
   return [...collected.values()].sort((left, right) => right.mtimeMs - left.mtimeMs)
 }
 
-function claudeProjectScopePrefixes(scopePaths: readonly string[]): Set<string> {
+function cwdBucketScopePrefixes(
+  layout: CwdBucketLayout,
+  scopePaths: readonly string[]
+): Set<string> {
   const prefixes = new Set<string>()
   for (const scopePath of scopePaths) {
     for (const candidate of scopePathCandidates(scopePath)) {
-      for (const prefix of encodeClaudeProjectPaths(candidate)) {
+      for (const prefix of layout.encodeScopePrefixes(candidate)) {
         prefixes.add(prefix)
       }
     }
@@ -134,6 +159,7 @@ function isCwdInsideScopePath(scopePath: string, cwd: string): boolean {
 }
 
 async function listProjectDirs(
+  layout: CwdBucketLayout,
   rootDir: string,
   scopeProjectPrefixes: ReadonlySet<string>,
   issues: AiVaultScanIssue[]
@@ -142,23 +168,22 @@ async function listProjectDirs(
   try {
     entries = await wslGatedReaddir(rootDir, 'scan')
   } catch (err) {
-    recordRefusal(issues, rootDir, err)
+    recordRefusal(issues, rootDir, err, layout.agent)
     return []
   }
   return entries
-    .filter(
-      (entry) => entry.isDirectory() && isClaudeProjectDirInScope(entry.name, scopeProjectPrefixes)
-    )
+    .filter((entry) => entry.isDirectory() && layout.isDirInScope(entry.name, scopeProjectPrefixes))
     .map((entry) => join(rootDir, entry.name))
 }
 
 async function readProjectDirCwd(
   projectDir: string,
-  issues: AiVaultScanIssue[]
+  issues: AiVaultScanIssue[],
+  agent: AiVaultAgent
 ): Promise<string | null> {
-  const files = await newestClaudeFilesInDir(projectDir, issues)
+  const files = await newestTranscriptsInDir(projectDir, issues, agent)
   for (const file of files.slice(0, REPRESENTATIVE_FILE_LIMIT)) {
-    const cwd = await readFirstCwd(file, issues)
+    const cwd = await readFirstCwd(file, issues, agent)
     if (cwd) {
       return cwd
     }
@@ -166,20 +191,21 @@ async function readProjectDirCwd(
   return null
 }
 
-async function newestClaudeFilesInDir(
+async function newestTranscriptsInDir(
   projectDir: string,
-  issues: AiVaultScanIssue[]
+  issues: AiVaultScanIssue[],
+  agent: AiVaultAgent
 ): Promise<string[]> {
   let entries
   try {
     entries = await wslGatedReaddir(projectDir, 'scan')
   } catch (err) {
-    recordRefusal(issues, projectDir, err)
+    recordRefusal(issues, projectDir, err, agent)
     return []
   }
   const newest: { path: string; mtimeMs: number }[] = []
   for (const entry of entries) {
-    if (!entry.isFile() || !CLAUDE_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
+    if (!entry.isFile() || !TRANSCRIPT_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
       continue
     }
     const path = join(projectDir, entry.name)
@@ -191,13 +217,17 @@ async function newestClaudeFilesInDir(
     } catch (err) {
       // Best effort: unreadable candidates are ignored here and reported during
       // full collection if the project directory proves in-scope.
-      recordRefusal(issues, path, err)
+      recordRefusal(issues, path, err, agent)
     }
   }
   return newest.sort((left, right) => right.mtimeMs - left.mtimeMs).map((value) => value.path)
 }
 
-async function readFirstCwd(filePath: string, issues: AiVaultScanIssue[]): Promise<string | null> {
+async function readFirstCwd(
+  filePath: string,
+  issues: AiVaultScanIssue[],
+  agent: AiVaultAgent
+): Promise<string | null> {
   const input = openTranscriptReadStream(filePath, { encoding: 'utf-8' }, 'scan')
   const lines = createInterface({ input, crlfDelay: Infinity })
   let read = 0
@@ -212,7 +242,7 @@ async function readFirstCwd(filePath: string, issues: AiVaultScanIssue[]): Promi
       }
     }
   } catch (err) {
-    recordRefusal(issues, filePath, err)
+    recordRefusal(issues, filePath, err, agent)
     return null
   } finally {
     // readline.close() leaves the underlying stream open; destroy it so the early
@@ -223,7 +253,8 @@ async function readFirstCwd(filePath: string, issues: AiVaultScanIssue[]): Promi
   return null
 }
 
-async function collectClaudeFiles(args: {
+async function collectBucketFiles(args: {
+  agent: AiVaultAgent
   projectDir: string
   issues: AiVaultScanIssue[]
   collected: Map<string, FileWithMtime>
@@ -234,11 +265,11 @@ async function collectClaudeFiles(args: {
   try {
     entries = await wslGatedReaddir(args.projectDir, 'scan')
   } catch (err) {
-    recordRefusal(args.issues, args.projectDir, err)
+    recordRefusal(args.issues, args.projectDir, err, args.agent)
     return
   }
   for (const entry of entries) {
-    if (!entry.isFile() || !CLAUDE_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
+    if (!entry.isFile() || !TRANSCRIPT_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
       continue
     }
     const path = join(args.projectDir, entry.name)
@@ -254,7 +285,7 @@ async function collectClaudeFiles(args: {
         sizeBytes: fileStat.size
       })
     } catch (err) {
-      recordSessionScanIssue(args.issues, { agent: 'claude', path, message: errorMessage(err) })
+      recordSessionScanIssue(args.issues, { agent: args.agent, path, message: errorMessage(err) })
     }
   }
 }

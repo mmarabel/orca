@@ -41,6 +41,7 @@ import {
 } from './AiVaultSessionListBar'
 import { aiVaultBrowseSortMenu, aiVaultSearchSortMenu } from './ai-vault-sort-options'
 import { AiVaultShowMoreSessionsRow } from './AiVaultShowMoreSessionsRow'
+import { aiVaultSessionsFillLimit } from './ai-vault-session-limit'
 import { AiVaultSessionVirtualList } from './AiVaultSessionVirtualList'
 import { useAiVaultSessionRefresh } from './ai-vault-session-refresh'
 import {
@@ -333,7 +334,11 @@ export default function AiVaultPanel(): React.JSX.Element {
             )
           : sessions.length > 0 && (
               <AiVaultSessionListBar
-                label={aiVaultSessionCountLabel(filteredSessions.length, listed.scopedSessionCount)}
+                label={aiVaultSessionCountLabel(
+                  filteredSessions.length,
+                  listed.scopedSessionCount,
+                  scope === 'all' && aiVaultSessionsFillLimit(sessions.length, loadedSessionLimit)
+                )}
                 value={sort}
                 menu={aiVaultBrowseSortMenu()}
                 onChange={setSort}

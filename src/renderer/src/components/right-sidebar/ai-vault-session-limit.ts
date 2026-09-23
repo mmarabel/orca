@@ -14,3 +14,16 @@ export function normalizeAiVaultSessionLimit(value: unknown): AiVaultSessionLimi
     ? value
     : DEFAULT_AI_VAULT_SESSION_LIMIT
 }
+
+/** The scan returned as many rows as it was allowed, so older sessions likely remain unread. */
+export function aiVaultSessionsFillLimit(
+  loaded: number,
+  loadedSessionLimit: AiVaultSessionLimit | null
+): boolean {
+  return (
+    loaded > 0 &&
+    loadedSessionLimit !== null &&
+    loadedSessionLimit !== 'unlimited' &&
+    loaded >= loadedSessionLimit
+  )
+}

@@ -32,8 +32,6 @@ export function useSidebarFeedbackImages(params: {
   // against capacity — otherwise two quick pastes both see room for four.
   const pendingImageReadsRef = useRef(0)
   const pendingImageReadBytesRef = useRef(0)
-  const imageCount = images.length
-  const imageBytes = images.reduce((total, image) => total + image.bytes, 0)
 
   const clearImages = useCallback(() => {
     liveImageDraftsRef.current.forEach(releaseFeedbackImageDraft)
@@ -64,10 +62,13 @@ export function useSidebarFeedbackImages(params: {
         )
         return
       }
-      // Why: read the committed count from the closure rather than a ref. A ref
-      // synced in an effect can still be stale-low right after an add.
-      const existingCount = imageCount + pendingImageReadsRef.current
-      const existingBytes = imageBytes + pendingImageReadBytesRef.current
+      // Why: a read's callback moves its batch from pending to the live ref in one
+      // step, but rendered state lags a render, so only the ref covers that gap.
+      const liveDrafts = liveImageDraftsRef.current
+      const existingCount = liveDrafts.length + pendingImageReadsRef.current
+      const existingBytes =
+        liveDrafts.reduce((total, image) => total + image.bytes, 0) +
+        pendingImageReadBytesRef.current
       const batchBytes = files.reduce((total, file) => total + file.size, 0)
       pendingImageReadsRef.current += files.length
       pendingImageReadBytesRef.current += batchBytes
@@ -104,7 +105,7 @@ export function useSidebarFeedbackImages(params: {
         }
       )
     },
-    [imageBytes, imageCount, params.isSubmitting, params.mountedRef]
+    [params.isSubmitting, params.mountedRef]
   )
 
   const handleRemoveImage = useCallback((id: string) => {

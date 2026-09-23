@@ -4,7 +4,9 @@ import { ReplacementAuthenticationTimeoutError } from './replacement-session-aut
 import type { RelayReconnectController } from './mobile-relay-reconnect-controller'
 import type { StableLogicalRpcClient } from './stable-logical-rpc-client'
 import type { HostProfile } from './types'
+import type { MobileEndpointSupervisorDependencies } from './mobile-endpoint-supervisor-contract'
 import type { MobileRelayEndpoint } from '../../../src/shared/mobile-relay-credential-contract'
+import { withRelayRouting } from './mobile-relay-host-overlay'
 
 // Why: a suspect session that survived a failed replacement dial must come down,
 // else the armed unforced retry dead-ends on needsRecovery seeing stale 'connected'.
@@ -80,11 +82,9 @@ export function isDirectorResolutionFailure(error: Error): boolean {
   )
 }
 
-export function relayWebSocketUrl(relay: { cellUrl: string; relayHostId: string }): string {
-  const url = new URL(relay.cellUrl)
-  url.protocol = 'wss:'
-  url.pathname = `/v1/connect/${encodeURIComponent(relay.relayHostId)}`
-  return url.toString()
+function withHostRelayRouting(host: HostProfile, relay: MobileRelayEndpoint): HostProfile {
+  const endpoints = host.endpoints ?? [{ id: 'direct-primary', kind: 'lan', url: host.endpoint }]
+  return { ...host, ...withRelayRouting(endpoints, relay) }
 }
 
 export async function persistRelayHost(
@@ -92,13 +92,24 @@ export async function persistRelayHost(
   relay: MobileRelayEndpoint,
   saveHost: (host: HostProfile) => Promise<void>
 ): Promise<HostProfile> {
-  const endpoints = [
-    ...(host.endpoints ?? [{ id: 'direct-primary', kind: 'lan' as const, url: host.endpoint }])
-  ].filter(({ kind }) => kind !== 'relay')
-  endpoints.push({ id: 'relay-primary', kind: 'relay', url: relayWebSocketUrl(relay) })
-  const updated = { ...host, endpoints, relayHostId: relay.relayHostId, relay }
+  const updated = withHostRelayRouting(host, relay)
   await saveHost(updated)
   return updated
+}
+
+// Why: a supervisor's snapshot may predate a host edit, so persist only relay routing; a
+// stopped supervisor's late resolution must not write at all, since its successor owns the host.
+export async function persistSupervisedRelay(
+  host: HostProfile,
+  relay: MobileRelayEndpoint,
+  dependencies: Pick<MobileEndpointSupervisorDependencies, 'saveRelayEndpoint'>,
+  stopped = false
+): Promise<HostProfile> {
+  if (stopped) {
+    return host
+  }
+  await dependencies.saveRelayEndpoint(host.id, relay)
+  return withHostRelayRouting(host, relay)
 }
 
 export function encodeBase64Url(value: Uint8Array): string {

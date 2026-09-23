@@ -187,7 +187,8 @@ async function persistHost(host: HostProfile, requireExisting: boolean): Promise
         // Why: an authoritative save is the safe point to collapse pre-existing duplicate rows to the preserved host id.
         next = hosts
           .filter(({ id }) => !duplicateHostIds.has(id))
-          .map((candidate) => (candidate.id === stored.id ? stored : candidate))
+          // Why: a relay upgrade changes no row field, and its snapshot may predate a name/address edit.
+          .map((candidate) => (candidate.id === stored.id && !requireExisting ? stored : candidate))
       } else if (requireExisting) {
         // Why: an in-flight relay upgrade must not resurrect a host the user removed.
         throw new MobileRelayUpgradeHostRemovedError('mobile relay upgrade host was removed')

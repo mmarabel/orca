@@ -36,7 +36,10 @@ export async function joinHostCatalogCredentials(args: {
       ...stored,
       ...(overlay
         ? {
-            endpoints: overlay.endpoints,
+            // Why: the stored row owns the paired address; an edit must not leave the old one probed.
+            endpoints: overlay.endpoints.map((endpoint) =>
+              endpoint.id === 'direct-primary' ? { ...endpoint, url: stored.endpoint } : endpoint
+            ),
             relayHostId: overlay.relayHostId,
             relay: overlay.relay
           }

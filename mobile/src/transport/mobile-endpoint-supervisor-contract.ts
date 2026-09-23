@@ -5,7 +5,7 @@ import type { MobileRelayRpcSession } from './mobile-relay-rpc-session'
 import type { resolveMobileRelayEndpoint } from './mobile-relay-resume-director'
 import type { RpcClient } from './rpc-client'
 import type { ScheduleTimer } from './timer-scheduler'
-import type { ConnectionLogSink, HostProfile } from './types'
+import type { ConnectionLogSink } from './types'
 
 export type MobileEndpointSupervisorDependencies = {
   openDirect: (endpoint: string) => RpcClient
@@ -18,7 +18,8 @@ export type MobileEndpointSupervisorDependencies = {
   resolveRelay: typeof resolveMobileRelayEndpoint
   readBundle: (hostId: string) => Promise<MobileRelayCredentialBundle | null>
   writeBundle: (bundle: MobileRelayCredentialBundle) => Promise<void>
-  saveHost: (host: HostProfile) => Promise<void>
+  // Merges relay routing onto the current stored host; never writes a whole snapshot.
+  saveRelayEndpoint: (hostId: string, relay: MobileRelayEndpoint) => Promise<void>
   now: () => number
   randomBytes: (length: number) => Uint8Array
   setTimer: ScheduleTimer

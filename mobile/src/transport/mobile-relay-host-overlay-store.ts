@@ -1,8 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import {
   MobileRelayHostOverlaySchema,
+  withRelayRouting,
   type MobileRelayHostOverlay
 } from './mobile-relay-host-overlay'
+import { dropSharedHostListLoad } from './host-list-load-sharing'
+import type { MobileRelayEndpoint } from '../../../src/shared/mobile-relay-credential-contract'
 
 const OVERLAY_STORAGE_KEY = 'orca:mobile-relay:host-overlays:v2'
 let overlayMutation: Promise<void> = Promise.resolve()
@@ -87,6 +90,26 @@ export async function saveMobileRelayHostOverlay(overlay: MobileRelayHostOverlay
     next[index] = validated
     return next
   })
+}
+
+// Why: supervisors persist relay moves from a host snapshot; merging only relay routing onto
+// the stored overlay keeps a concurrent name/endpoint edit, and never recreates a removed host.
+export async function saveMobileRelayHostRouting(
+  hostId: string,
+  relay: MobileRelayEndpoint
+): Promise<void> {
+  await mutateOverlays((overlays) => {
+    const current = overlays.find((overlay) => overlay.hostId === hostId)
+    if (!current) {
+      return overlays
+    }
+    const updated = MobileRelayHostOverlaySchema.parse({
+      ...current,
+      ...withRelayRouting(current.endpoints, relay)
+    })
+    return overlays.map((overlay) => (overlay === current ? updated : overlay))
+  })
+  dropSharedHostListLoad()
 }
 
 export function removeMobileRelayHostOverlay(hostId: string): Promise<void> {

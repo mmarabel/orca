@@ -1,5 +1,8 @@
 import { z } from 'zod'
-import { MobileRelayEndpointSchema } from '../../../src/shared/mobile-relay-credential-contract'
+import {
+  MobileRelayEndpointSchema,
+  type MobileRelayEndpoint
+} from '../../../src/shared/mobile-relay-credential-contract'
 
 export const MobileAccessEndpointSchema = z
   .object({
@@ -45,3 +48,25 @@ export const MobileRelayHostOverlaySchema = z
 
 export type MobileAccessEndpoint = z.infer<typeof MobileAccessEndpointSchema>
 export type MobileRelayHostOverlay = z.infer<typeof MobileRelayHostOverlaySchema>
+type MobileRelayRouting = Pick<MobileRelayHostOverlay, 'endpoints' | 'relayHostId' | 'relay'>
+
+export function relayWebSocketUrl(relay: { cellUrl: string; relayHostId: string }): string {
+  const url = new URL(relay.cellUrl)
+  url.protocol = 'wss:'
+  url.pathname = `/v1/connect/${encodeURIComponent(relay.relayHostId)}`
+  return url.toString()
+}
+
+export function withRelayRouting(
+  endpoints: readonly MobileAccessEndpoint[],
+  relay: MobileRelayEndpoint
+): MobileRelayRouting {
+  return {
+    endpoints: [
+      ...endpoints.filter(({ kind }) => kind !== 'relay'),
+      { id: 'relay-primary', kind: 'relay', url: relayWebSocketUrl(relay) }
+    ],
+    relayHostId: relay.relayHostId,
+    relay
+  }
+}

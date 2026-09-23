@@ -234,7 +234,7 @@ function dependencies(
     resolveRelay: vi.fn(async ({ relay }) => relay),
     readBundle: vi.fn(async () => bundleWith(2, Number.MAX_SAFE_INTEGER)),
     writeBundle: vi.fn(async () => {}),
-    saveHost: vi.fn(async () => {}),
+    saveRelayEndpoint: vi.fn(async () => {}),
     now: Date.now,
     randomBytes: (length: number) => new Uint8Array(length),
     setTimer: (handler, ms) => setTimeout(handler, ms),

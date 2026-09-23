@@ -21,6 +21,12 @@ describe('PI_CWD_BUCKET_LAYOUT', () => {
     expect(piDirInScope('--home-ada-reposit--', '/home/ada/repo')).toBe(false)
   })
 
+  it('treats a root scope as containing every bucket', () => {
+    expect(piDirInScope('--home-ada-repo--', '/')).toBe(true)
+    expect(piDirInScope('----', '/')).toBe(true)
+    expect(piDirInScope('not-a-bucket', '/')).toBe(false)
+  })
+
   it('encodes Windows drive paths the way Pi does', () => {
     expect(piDirInScope('--C--Users-ada-repo--', 'C:\\Users\\ada\\repo')).toBe(true)
   })

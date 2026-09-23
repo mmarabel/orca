@@ -30,6 +30,10 @@ export const PI_CWD_BUCKET_LAYOUT: CwdBucketLayout = {
   },
   isDirInScope: (dirName, prefixes) => {
     for (const prefix of prefixes) {
+      // A root scope encodes to the bare `--`, which contains every bucket.
+      if (prefix === '--' && dirName.startsWith('--') && dirName.endsWith('--')) {
+        return true
+      }
       if (dirName === `${prefix}--` || dirName.startsWith(`${prefix}-`)) {
         return true
       }

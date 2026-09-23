@@ -7,7 +7,7 @@ import {
 } from '../native-chat/wsl-transcript-fs-access'
 import { WslTranscriptFsError } from '../native-chat/wsl-transcript-fs-gate'
 import { isPathInsideOrEqual } from '../../shared/cross-platform-path'
-import { CLAUDE_CWD_BUCKET_LAYOUT, type CwdBucketLayout } from './session-cwd-bucket-layouts'
+import type { CwdBucketLayout } from './session-cwd-bucket-layouts'
 import type { AiVaultAgent, AiVaultScanIssue } from '../../shared/ai-vault-types'
 import { parseWslUncPath } from '../../shared/wsl-paths'
 import { recordSessionScanIssue } from './session-scan-issues'
@@ -20,7 +20,7 @@ const REPRESENTATIVE_CWD_LINE_LIMIT = 200
 const REPRESENTATIVE_FILE_LIMIT = 3
 const TRANSCRIPT_EXTENSIONS = new Set(['.jsonl'])
 
-// A Claude project dir encodes exactly one cwd, so a resolved cwd never
+// A cwd-bucket dir (Claude, Pi) encodes exactly one cwd, so a resolved cwd never
 // changes; caching it spares each rescan the transcript-head reads.
 const PROJECT_DIR_CWD_CACHE_MAX = 2048
 const projectDirCwdCache = new Map<string, string>()
@@ -76,20 +76,15 @@ type InScopeDiscoveryArgs = {
 }
 
 /**
- * Fully include the transcripts of Claude project directories whose cwd falls
- * inside the active workspace/project paths.
+ * Fully include the transcripts of cwd-bucket directories (Claude, Pi) whose cwd
+ * falls inside the active workspace/project paths.
  *
- * Why: Claude organizes `~/.claude/projects/<cwd-encoded>/` one directory per
- * cwd. The global scan is recency-capped, so a project the user hasn't touched
- * recently can drop off the list entirely even though `claude --resume` still
- * finds it. For scoped panel views we resolve each project dir's cwd cheaply and
- * bypass the cap for the ones that belong to the active scope.
+ * Why: these agents keep one directory per cwd, e.g. `~/.claude/projects/<cwd-encoded>/`.
+ * The global scan is recency-capped, so a project the user hasn't touched recently
+ * can drop off the list entirely even though the agent's own resume still finds it.
+ * For scoped panel views we resolve each bucket's cwd cheaply and bypass the cap for
+ * the ones that belong to the active scope.
  */
-export function discoverInScopeClaudeFiles(args: InScopeDiscoveryArgs): Promise<FileWithMtime[]> {
-  return discoverInScopeCwdBucketFiles(CLAUDE_CWD_BUCKET_LAYOUT, args)
-}
-
-/** Same guarantee for any agent that buckets transcripts by an encoded cwd (Pi included). */
 export async function discoverInScopeCwdBucketFiles(
   layout: CwdBucketLayout,
   args: InScopeDiscoveryArgs

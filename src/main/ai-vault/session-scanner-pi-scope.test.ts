@@ -14,8 +14,8 @@ afterEach(async () => {
   resetProjectDirCwdCacheForTests()
 })
 
-// Pi's own rule, spelled out rather than imported so drift from Pi is caught:
-// `--${cwd.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`.
+// Copied from Pi's getDefaultSessionDirPath (coding-agent session-manager.ts)
+// rather than imported from the layout module, so the fixtures stay Pi-shaped.
 function piSessionDirName(cwd: string): string {
   return `--${cwd.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`
 }

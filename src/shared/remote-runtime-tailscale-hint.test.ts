@@ -100,6 +100,12 @@ describe('withRemoteRuntimeTailscaleHint', () => {
     )
   })
 
+  it('gives an IPv4-mapped IPv6 tailnet endpoint the tailnet hint', () => {
+    const result = withRemoteRuntimeTailscaleHint(UNREACHABLE, 'ws://[::ffff:100.64.0.5]:6768')
+    expect(result).toContain('offline on your tailnet')
+    expect(result).not.toContain('connect both devices to Tailscale')
+  })
+
   it('names a tailnet endpoint alongside the tailnet hint', () => {
     const result = withRemoteRuntimeTailscaleHint(
       'Timed out waiting for the remote Orca runtime to respond.',

@@ -114,7 +114,10 @@ function hintForEndpoint(endpoint: string | null | undefined): string {
     return TAILNET_ENDPOINT_HINT
   }
   const host = endpoint ? extractHost(endpoint) : null
-  return host && classifyRemotePairingHostname(host) === 'lan'
-    ? LAN_ENDPOINT_HINT
-    : OTHER_NETWORK_HINT
+  const kind = host ? classifyRemotePairingHostname(host) : null
+  // Why: the classifier also recognises IPv4-mapped IPv6 tailnet literals isTailscaleEndpoint misses.
+  if (kind === 'tailscale') {
+    return TAILNET_ENDPOINT_HINT
+  }
+  return kind === 'lan' ? LAN_ENDPOINT_HINT : OTHER_NETWORK_HINT
 }

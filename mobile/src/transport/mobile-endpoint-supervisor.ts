@@ -316,16 +316,17 @@ export class MobileEndpointSupervisor {
     this.credentialRotationInFlight = true
     let credentialRefreshed = false
     try {
-      const result = await rotateMobileRelayCredential({
+      const { bundle, relay } = await rotateMobileRelayCredential({
         client: this.logical,
         bundle: this.bundle,
         writeBundle: this.dependencies.writeBundle,
         randomBytes: this.dependencies.randomBytes
       })
-      this.bundle = result.bundle
+      this.bundle = bundle
       // Why: a scheduled rotation can finish after the old credential enters the rejection gate.
       credentialRefreshed = true
-      this.host = await persistSupervisedRelay(this.host, result.relay, this.dependencies)
+      // Why: the rotated bundle is already durable; a stopped supervisor's successor owns routing.
+      this.host = await persistSupervisedRelay(this.host, relay, this.dependencies, this.stopped)
     } catch {
       // Why: pending material remains durable; the next authenticated direct
       // opportunity must reconcile it before creating another install key.

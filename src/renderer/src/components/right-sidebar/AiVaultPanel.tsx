@@ -337,7 +337,8 @@ export default function AiVaultPanel(): React.JSX.Element {
                 label={aiVaultSessionCountLabel(
                   filteredSessions.length,
                   listed.scopedSessionCount,
-                  scope === 'all' && aiVaultSessionsFillLimit(sessions.length, loadedSessionLimit)
+                  // The scoped pass is capped by the same limit, so a full scope may be partial too.
+                  aiVaultSessionsFillLimit(listed.scopedSessionCount, loadedSessionLimit)
                 )}
                 value={sort}
                 menu={aiVaultBrowseSortMenu()}

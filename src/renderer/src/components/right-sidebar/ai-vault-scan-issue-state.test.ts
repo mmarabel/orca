@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { AiVaultListResult } from '../../../../shared/ai-vault-types'
 import {
   aiVaultScanNoticeIssues,
+  aiVaultSessionFileKey,
+  aiVaultSessionReadNotices,
   blockingAiVaultScanIssue,
   skippedAiVaultTranscriptCount,
   skippedAiVaultTranscriptReasons
@@ -114,6 +116,39 @@ describe('aiVaultScanNoticeIssues', () => {
   })
 })
 
+describe('aiVaultSessionReadNotices', () => {
+  const oversized = {
+    executionHostId: 'local' as const,
+    agent: 'pi' as const,
+    kind: 'notice' as const,
+    path: '/sessions/big.jsonl',
+    message: 'Skipped 1 oversized transcript record over the 10.0 MiB limit.'
+  }
+
+  it('moves a notice about a listed session onto that session instead of a banner', () => {
+    const scan = result([{ id: 'big' }], [oversized])
+
+    expect(aiVaultScanNoticeIssues(scan)).toEqual([])
+    expect(aiVaultSessionReadNotices(scan).get(aiVaultSessionFileKey(scan.sessions[0]))).toBe(
+      oversized.message
+    )
+  })
+
+  it('keeps a notice that matches no listed session as a banner', () => {
+    const overflow = { ...oversized, path: '/sessions' }
+    const scan = result([{ id: 'big' }], [overflow])
+
+    expect(aiVaultScanNoticeIssues(scan)).toEqual([overflow])
+    expect(aiVaultSessionReadNotices(scan).size).toBe(0)
+  })
+
+  it('does not attach a notice from another host to a same-path session', () => {
+    const scan = result([{ id: 'big' }], [{ ...oversized, executionHostId: 'ssh:dev-box' }])
+
+    expect(aiVaultSessionReadNotices(scan).size).toBe(0)
+  })
+})
+
 describe('skippedAiVaultTranscriptReasons', () => {
   it('surfaces the file-too-large reason behind a skipped transcript', () => {
     expect(
@@ -171,11 +206,16 @@ describe('skippedAiVaultTranscriptReasons', () => {
 })
 
 function result(
-  sessions: { id: string }[],
+  sessions: { id: string; filePath?: string; executionHostId?: string }[],
   issues: AiVaultListResult['issues']
 ): AiVaultListResult {
   return {
-    sessions: sessions as AiVaultListResult['sessions'],
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: fixtures carry only the fields these helpers read.
+    sessions: sessions.map((session) => ({
+      executionHostId: 'local',
+      filePath: `/sessions/${session.id}.jsonl`,
+      ...session
+    })) as unknown as AiVaultListResult['sessions'],
     issues,
     scannedAt: '2026-07-26T00:00:00.000Z'
   }

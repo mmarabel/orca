@@ -1,8 +1,13 @@
 import { SubagentExpansionProvider } from './ai-vault-subagent-expansion'
+import { AiVaultSessionReadNoticeProvider } from './AiVaultSessionReadNotice'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import type { AgentStatusState } from '../../../../shared/agent-status-types'
-import type { AiVaultScope, AiVaultSession } from '../../../../shared/ai-vault-types'
+import type {
+  AiVaultListResult,
+  AiVaultScope,
+  AiVaultSession
+} from '../../../../shared/ai-vault-types'
 import type { AiVaultResumeStartup } from '@/lib/ai-vault-resume-command'
 import { translate } from '@/i18n/i18n'
 import { getActiveStickyHeaderIndexForScroll } from '../sidebar/worktree-list/viewport/virtual-rows'
@@ -33,6 +38,8 @@ export function AiVaultSessionVirtualList({
   loading,
   sessionsCount,
   filteredSessionsCount,
+  scopedSessionsCount,
+  scanResult,
   noAgentsSelected,
   error,
   vaultScope,
@@ -64,6 +71,10 @@ export function AiVaultSessionVirtualList({
   loading: boolean
   sessionsCount: number
   filteredSessionsCount: number
+  /** Sessions in the current scope before agent/empty filters. */
+  scopedSessionsCount: number
+  /** Source of per-session read notices shown in row details. */
+  scanResult: AiVaultListResult | null
   noAgentsSelected: boolean
   error: string | null
   vaultScope: AiVaultScope
@@ -166,79 +177,91 @@ export function AiVaultSessionVirtualList({
   })
 
   return (
-    <SubagentExpansionProvider>
-      <div
-        ref={listScrollRef}
-        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden scrollbar-sleek"
-      >
-        {loading && sessionsCount === 0 ? <SessionLoadingState /> : null}
+    <AiVaultSessionReadNoticeProvider scanResult={scanResult}>
+      <SubagentExpansionProvider>
+        <div
+          ref={listScrollRef}
+          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden scrollbar-sleek"
+        >
+          {loading && sessionsCount === 0 ? <SessionLoadingState /> : null}
 
-        {!loading && sessionsCount === 0 && !error ? (
-          <EmptyState
-            title={translate(
-              'auto.components.right.sidebar.AiVaultPanel.noAgentSessionsFound',
-              'No agent sessions found'
-            )}
-          />
-        ) : null}
+          {!loading && sessionsCount === 0 && !error ? (
+            <EmptyState
+              title={translate(
+                'auto.components.right.sidebar.AiVaultPanel.noAgentSessionsFound',
+                'No agent sessions found'
+              )}
+            />
+          ) : null}
 
-        {sessionsCount > 0 && filteredSessionsCount === 0 ? (
-          <EmptyState
-            title={
-              noAgentsSelected
-                ? translate(
-                    'auto.components.right.sidebar.AiVaultPanel.noAgentsSelected',
-                    'No agents selected'
-                  )
-                : translate(
-                    'auto.components.right.sidebar.AiVaultPanel.noSessionsMatchFilters',
-                    'No sessions match the current filters'
-                  )
-            }
-          />
-        ) : null}
+          {sessionsCount > 0 && filteredSessionsCount === 0 ? (
+            <EmptyState
+              title={
+                noAgentsSelected
+                  ? translate(
+                      'auto.components.right.sidebar.AiVaultPanel.noAgentsSelected',
+                      'No agents selected'
+                    )
+                  : scopedSessionsCount === 0 && vaultScope === 'workspace'
+                    ? translate(
+                        'sessionSearch.panel.noWorkspaceSessions',
+                        'No sessions in this workspace'
+                      )
+                    : scopedSessionsCount === 0 && vaultScope === 'project'
+                      ? translate(
+                          'sessionSearch.panel.noProjectSessions',
+                          'No sessions in this project'
+                        )
+                      : translate(
+                          'auto.components.right.sidebar.AiVaultPanel.noSessionsMatchFilters',
+                          'No sessions match the current filters'
+                        )
+              }
+            />
+          ) : null}
 
-        {vaultRows.length > 0 ? (
-          <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
-            {virtualItems.map((virtualRow) => (
-              <AiVaultVirtualRow
-                key={virtualRow.key}
-                row={vaultRows[virtualRow.index]}
-                index={virtualRow.index}
-                start={virtualRow.start}
-                activeStickyHeaderIndex={activeStickyHeaderIndexRef.current}
-                measureElement={virtualizer.measureElement}
-                collapsedGroups={collapsedGroups}
-                expandedSessionIds={expandedSessionIds}
-                vaultScope={vaultScope}
-                searchHits={searchHits}
-                buildResumeStartup={buildResumeStartup}
-                getOriginalPaneTarget={getOriginalPaneTarget}
-                isStructuredSessionOpen={isStructuredSessionOpen}
-                getSessionLiveState={getSessionLiveState}
-                getWorktreeInfo={getWorktreeInfo}
-                getSessionResumeState={getSessionResumeState}
-                getSessionResumeActions={getSessionResumeActions}
-                getSessionResumeInChat={getSessionResumeInChat}
-                onToggleGroup={onToggleGroup}
-                onToggleSessionDetails={toggleSessionDetails}
-                onJumpToOriginalPane={onJumpToOriginalPane}
-                onJumpToWorktree={onJumpToWorktree}
-                onResume={onResume}
-                onContinueInNewSession={onContinueInNewSession}
-                onResumeInNewChat={onResumeInNewChat}
-                onCopyResume={onCopyResume}
-                onCopyId={onCopyId}
-                onCopyPath={onCopyPath}
-                onOpenLog={onOpenLog}
-                onRevealLog={onRevealLog}
-                onOpenCwd={onOpenCwd}
-                onRequestDelete={onRequestDelete}
-              />
-            ))}
-          </div>
-        ) : null}
-      </div>
-    </SubagentExpansionProvider>
+          {vaultRows.length > 0 ? (
+            <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+              {virtualItems.map((virtualRow) => (
+                <AiVaultVirtualRow
+                  key={virtualRow.key}
+                  row={vaultRows[virtualRow.index]}
+                  index={virtualRow.index}
+                  start={virtualRow.start}
+                  activeStickyHeaderIndex={activeStickyHeaderIndexRef.current}
+                  measureElement={virtualizer.measureElement}
+                  collapsedGroups={collapsedGroups}
+                  expandedSessionIds={expandedSessionIds}
+                  vaultScope={vaultScope}
+                  searchHits={searchHits}
+                  buildResumeStartup={buildResumeStartup}
+                  getOriginalPaneTarget={getOriginalPaneTarget}
+                  isStructuredSessionOpen={isStructuredSessionOpen}
+                  getSessionLiveState={getSessionLiveState}
+                  getWorktreeInfo={getWorktreeInfo}
+                  getSessionResumeState={getSessionResumeState}
+                  getSessionResumeActions={getSessionResumeActions}
+                  getSessionResumeInChat={getSessionResumeInChat}
+                  onToggleGroup={onToggleGroup}
+                  onToggleSessionDetails={toggleSessionDetails}
+                  onJumpToOriginalPane={onJumpToOriginalPane}
+                  onJumpToWorktree={onJumpToWorktree}
+                  onResume={onResume}
+                  onContinueInNewSession={onContinueInNewSession}
+                  onResumeInNewChat={onResumeInNewChat}
+                  onCopyResume={onCopyResume}
+                  onCopyId={onCopyId}
+                  onCopyPath={onCopyPath}
+                  onOpenLog={onOpenLog}
+                  onRevealLog={onRevealLog}
+                  onOpenCwd={onOpenCwd}
+                  onRequestDelete={onRequestDelete}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </SubagentExpansionProvider>
+    </AiVaultSessionReadNoticeProvider>
   )
 }

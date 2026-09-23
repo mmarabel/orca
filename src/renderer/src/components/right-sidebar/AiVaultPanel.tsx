@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { toast } from 'sonner'
 import { useAppStore } from '@/store'
 import {
   useActiveRepo,
@@ -34,7 +33,6 @@ import {
 import { openAiVaultSessionLogInOrca } from './ai-vault-session-log-open'
 import { useAiVaultOriginalPaneActions } from './ai-vault-original-pane-actions'
 import type { AiVaultSession } from '../../../../shared/ai-vault-types'
-import { translate } from '@/i18n/i18n'
 import { AiVaultPanelHeader } from './AiVaultPanelHeader'
 import {
   aiVaultResultCountLabel,
@@ -55,6 +53,7 @@ import { useAiVaultSearchFocusRequest } from './use-ai-vault-search-focus-reques
 import { usePersistedAiVaultViewOptions } from './use-persisted-ai-vault-view-options'
 import { AgentSessionContinuationDialog } from '@/components/agent-session-continuation/AgentSessionContinuationDialog'
 import { AiVaultScanIssueBanners } from './AiVaultScanIssueBanners'
+import { copyAiVaultSessionId, copyAiVaultSessionLogPath } from './ai-vault-session-copy'
 import { useAiVaultSessionDeleteAction } from './ai-vault-session-delete-action'
 import { useAiVaultPanelSearch } from './use-ai-vault-search'
 import { aiVaultSearchScopeIdentity } from './ai-vault-search-scope-identity'
@@ -210,7 +209,7 @@ export default function AiVaultPanel(): React.JSX.Element {
     sessionLimit
   })
 
-  const { filteredSessions, groups } = useAiVaultPanelSessions(sessions, searching, group, {
+  const listed = useAiVaultPanelSessions(sessions, searching, group, {
     query,
     agents,
     scope,
@@ -221,15 +220,7 @@ export default function AiVaultPanel(): React.JSX.Element {
     projectLabelByKey,
     hideEmptySessions
   })
-
-  const copyText = useCallback(async (text: string, label: string): Promise<void> => {
-    await window.api.ui.writeClipboardText(text)
-    toast.success(
-      translate('auto.components.right.sidebar.AiVaultPanel.valueCopied', '{{value0}} copied', {
-        value0: label
-      })
-    )
-  }, [])
+  const { filteredSessions, groups } = listed
 
   const getSessionResumeState = useCallback(
     (session: AiVaultSession) =>
@@ -342,7 +333,7 @@ export default function AiVaultPanel(): React.JSX.Element {
             )
           : sessions.length > 0 && (
               <AiVaultSessionListBar
-                label={aiVaultSessionCountLabel(filteredSessions.length, sessions.length)}
+                label={aiVaultSessionCountLabel(filteredSessions.length, listed.scopedSessionCount)}
                 value={sort}
                 menu={aiVaultBrowseSortMenu()}
                 onChange={setSort}
@@ -357,6 +348,8 @@ export default function AiVaultPanel(): React.JSX.Element {
             loading={searching ? search.loading : loading}
             sessionsCount={sessions.length}
             filteredSessionsCount={filteredSessions.length}
+            scopedSessionsCount={listed.scopedSessionCount}
+            scanResult={scanResult}
             noAgentsSelected={agents.length === 0}
             error={error}
             vaultScope={scope}
@@ -377,18 +370,8 @@ export default function AiVaultPanel(): React.JSX.Element {
             onCopyResume={(session, worktreeId) =>
               void launchActions.copyResumeCommand(session, worktreeId)
             }
-            onCopyId={(session) =>
-              void copyText(
-                session.sessionId,
-                translate('auto.components.right.sidebar.AiVaultPanel.sessionId', 'Session ID')
-              )
-            }
-            onCopyPath={(session) =>
-              void copyText(
-                session.filePath,
-                translate('auto.components.right.sidebar.AiVaultPanel.logPath', 'Log path')
-              )
-            }
+            onCopyId={(session) => void copyAiVaultSessionId(session)}
+            onCopyPath={(session) => void copyAiVaultSessionLogPath(session)}
             onOpenLog={(session) => void openAiVaultSessionLogInOrca(session)}
             onRevealLog={(session) => void window.api.shell.openPath(session.filePath)}
             onOpenCwd={(session) => {
@@ -399,7 +382,8 @@ export default function AiVaultPanel(): React.JSX.Element {
             onRequestDelete={(session) => void requestDelete(session)}
           />
         )}
-        {!searching && (
+        {/* A deeper scan adds every workspace's next-oldest sessions, so a scoped view rarely gains a row. */}
+        {!searching && scope === 'all' && (
           <AiVaultShowMoreSessionsRow
             loaded={sessions.length}
             loadedSessionLimit={loadedSessionLimit}

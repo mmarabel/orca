@@ -1,4 +1,39 @@
-import type { AiVaultListResult, AiVaultScanIssue } from '../../../../shared/ai-vault-types'
+import type {
+  AiVaultListResult,
+  AiVaultScanIssue,
+  AiVaultSession
+} from '../../../../shared/ai-vault-types'
+import { LOCAL_EXECUTION_HOST_ID } from '../../../../shared/execution-host'
+import { normalizeRuntimePathForComparison } from '../../../../shared/cross-platform-path'
+
+function sessionFileKey(executionHostId: string | undefined, path: string): string {
+  return JSON.stringify([
+    executionHostId ?? LOCAL_EXECUTION_HOST_ID,
+    normalizeRuntimePathForComparison(path)
+  ])
+}
+
+export function aiVaultSessionFileKey(session: AiVaultSession): string {
+  return sessionFileKey(session.executionHostId, session.filePath)
+}
+
+/** Notices about one listed session's transcript (e.g. a skipped oversized record), keyed by that session's file. */
+export function aiVaultSessionReadNotices(
+  result: AiVaultListResult | null
+): ReadonlyMap<string, string> {
+  const notices = new Map<string, string>()
+  if (!result) {
+    return notices
+  }
+  const sessionKeys = new Set(result.sessions.map(aiVaultSessionFileKey))
+  for (const issue of result.issues) {
+    const key = sessionFileKey(issue.executionHostId, issue.path)
+    if (issue.kind === 'notice' && sessionKeys.has(key)) {
+      notices.set(key, notices.has(key) ? `${notices.get(key)} ${issue.message}` : issue.message)
+    }
+  }
+  return notices
+}
 
 export function blockingAiVaultScanIssue(
   result: AiVaultListResult | null
@@ -20,7 +55,18 @@ export function aiVaultScanNoticeIssues(result: AiVaultListResult | null): AiVau
     return []
   }
   const blocking = blockingAiVaultScanIssue(result)
-  return result.issues.filter((issue) => Boolean(issue.kind) && issue !== blocking)
+  // Why: a notice about one session's transcript belongs on that session, not in a
+  // panel-wide banner that every rescan re-emits for sessions outside the view.
+  const sessionNotices = aiVaultSessionReadNotices(result)
+  return result.issues.filter(
+    (issue) =>
+      Boolean(issue.kind) &&
+      issue !== blocking &&
+      !(
+        issue.kind === 'notice' &&
+        sessionNotices.has(sessionFileKey(issue.executionHostId, issue.path))
+      )
+  )
 }
 
 export function skippedAiVaultTranscriptCount(result: AiVaultListResult | null): number {

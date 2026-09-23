@@ -1,4 +1,5 @@
 import type { SentinelEvidence } from './terminal-render-desync-sentinel'
+import { createBrowserUuid } from '@/lib/browser-uuid'
 
 /**
  * Durable persistence for render-desync captures, split from the sentinel so
@@ -61,6 +62,6 @@ export async function persistHealedReference(
 
 export function createCaptureId(paneKey: string): string {
   const panePart = paneKey.replace(/[^a-zA-Z0-9_-]/g, '-')
-  const nonce = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
+  const nonce = createBrowserUuid()
   return `${Date.now()}-${panePart}-${nonce}`
 }

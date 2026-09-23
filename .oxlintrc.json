@@ -143,12 +143,26 @@
     {
       "files": ["src/renderer/src/**/*.{ts,tsx}"],
       "rules": {
-        "renderer-scrollbar-style/require-styled-vertical-scrollbar": "error"
+        "renderer-scrollbar-style/require-styled-vertical-scrollbar": "error",
+        "no-restricted-properties": [
+          "error",
+          {
+            "property": "randomUUID",
+            "message": "crypto.randomUUID is missing in non-secure contexts (Remote Web over plain HTTP), which white-screens the app. Use createBrowserUuid() from '@/lib/browser-uuid'."
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/renderer/src/lib/browser-uuid.ts"],
+      "rules": {
+        "no-restricted-properties": "off"
       }
     },
     {
       "files": ["**/*.test.*", "**/*.spec.*", "**/*-benchmark.*"],
       "rules": {
+        "no-restricted-properties": "off",
         "react/globals": "off",
         "quadratic-buffer-concat/no-loop-carried-concat": "off",
         "renderer-scrollbar-style/require-styled-vertical-scrollbar": "off"

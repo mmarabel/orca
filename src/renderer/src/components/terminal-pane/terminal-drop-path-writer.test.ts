@@ -1,6 +1,14 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const storeState = vi.hoisted(() => ({
+  lastTerminalInputAtByPaneKey: Object.fromEntries<number>([])
+}))
+
+vi.mock('@/store', () => ({ useAppStore: { getState: () => storeState } }))
+
 import { wrapTerminalBracketedPasteText } from './terminal-bracketed-paste'
 import { writeTerminalDropPathsToCapturedTarget } from './terminal-drop-path-writer'
+import { captureTerminalDropTarget } from './terminal-drop-target'
 
 function createTransport(
   sendInput: ReturnType<typeof vi.fn>,
@@ -257,5 +265,64 @@ describe('terminal drop path writer', () => {
       failureReason: 'target-stale'
     })
     expect(sendInputAccepted).toHaveBeenCalledTimes(1)
+  })
+
+  describe('input typed while the drop was pending', () => {
+    const leafId = '11111111-1111-4111-8111-111111111111'
+    const paneKey = `tab-1:${leafId}`
+
+    beforeEach(() => {
+      storeState.lastTerminalInputAtByPaneKey = { [paneKey]: 1_000 }
+    })
+
+    async function writeAfterPendingDrop(
+      paths: string[],
+      typedDuringDrop: boolean,
+      targetShell: 'posix' | 'windows' = 'posix'
+    ) {
+      const sendInputAccepted = vi.fn(async () => true)
+      const pane = { id: 1, leafId }
+      const transport = createTransport(
+        vi.fn(() => true),
+        'pty-1',
+        sendInputAccepted
+      )
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the writer only uses the getPtyId/isConnected/sendInput members this fake supplies.
+      const dropTarget = captureTerminalDropTarget(pane, transport as never, 'tab-1')
+      if (typedDuringDrop) {
+        storeState.lastTerminalInputAtByPaneKey = { [paneKey]: 2_000 }
+      }
+      await writeTerminalDropPathsToCapturedTarget({
+        dropTarget,
+        manager: { getActivePane: () => pane, getPanes: () => [pane] } as never,
+        paneTransports: new Map([[pane.id, transport]]) as never,
+        paths,
+        targetShell
+      })
+      return sendInputAccepted
+    }
+
+    it('keeps the bytes unchanged when nothing was typed', async () => {
+      const send = await writeAfterPendingDrop(['/repo/a.ts', '/repo/shot.png'], false)
+      expect(send.mock.calls).toEqual([
+        ['/repo/a.ts '],
+        [wrapTerminalBracketedPasteText('/repo/shot.png')]
+      ])
+    })
+
+    it('separates only the first path from the typed text', async () => {
+      const send = await writeAfterPendingDrop(['/repo/a b.ts', '/repo/c.ts'], true)
+      expect(send.mock.calls).toEqual([[" '/repo/a b.ts' "], ['/repo/c.ts ']])
+    })
+
+    it('separates Windows shell-quoted paths the same way', async () => {
+      const send = await writeAfterPendingDrop(['C:\\Remote Repo\\a.txt'], true, 'windows')
+      expect(send.mock.calls).toEqual([[' "C:\\Remote Repo\\a.txt" ']])
+    })
+
+    it('puts the separator outside the bracketed image paste', async () => {
+      const send = await writeAfterPendingDrop(['/repo/shot.png'], true)
+      expect(send.mock.calls).toEqual([[` ${wrapTerminalBracketedPasteText('/repo/shot.png')}`]])
+    })
   })
 })

@@ -6,7 +6,8 @@ import { wrapTerminalBracketedPasteText } from './terminal-bracketed-paste'
 import { canPasteImageDropPathRaw, isImageDropPath } from './terminal-drop-image-path'
 import {
   type CapturedTerminalDropTarget,
-  getCurrentTerminalDropTransport
+  getCurrentTerminalDropTransport,
+  hasTerminalInputSinceDropCapture
 } from './terminal-drop-target'
 import type { TerminalTargetShell } from './terminal-drop-shell'
 import { TERMINAL_PASTE_OPERATION_TIMEOUT_MS } from './terminal-paste-limits'
@@ -38,6 +39,9 @@ export async function writeTerminalDropPathsToCapturedTarget({
 }): Promise<TerminalDropPathWriteResult> {
   let sentAnyPath = false
   let pathsWritten = 0
+  // Why: the upload may outlive typing, so the path lands after the user's text (#18860).
+  // Outside the bracketed paste, so image attachment detection sees the bare path.
+  const leadingSeparator = hasTerminalInputSinceDropCapture(dropTarget) ? ' ' : ''
   for (const [index, path] of paths.entries()) {
     // Why: acknowledged PTY writes are async, so a multi-path drop can outlive
     // the pane or PTY it originally targeted.
@@ -65,12 +69,13 @@ export async function writeTerminalDropPathsToCapturedTarget({
       isImageDropPath(nextPath) &&
       canPasteImageDropPathRaw(nextPath, targetShell)
     const needsSeparatorAfterImage = nextPath !== undefined && !nextPathIsRawPasteImage
-    const payload = pathIsRawPasteImage
+    const pathPayload = pathIsRawPasteImage
       ? separateImagePasteFromFollowingText(
           wrapTerminalBracketedPasteText(path),
           needsSeparatorAfterImage
         )
       : `${shellEscapePath(path, targetShell)} `
+    const payload = index === 0 ? `${leadingSeparator}${pathPayload}` : pathPayload
     const writeResult = await runTerminalPasteOperationWithTimeout(
       () => writeTerminalPastePtyInput(liveTransport, payload),
       operationTimeoutMs

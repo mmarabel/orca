@@ -64,7 +64,7 @@ export async function handleInternalTerminalFileDrop({
   if (!transport) {
     return { status: 'ignored', reason: 'no-transport' }
   }
-  const dropTargetSnapshot = captureTerminalDropTarget(pane, transport)
+  const dropTargetSnapshot = captureTerminalDropTarget(pane, transport, tabId)
 
   const state = useAppStore.getState()
   const worktreePath = resolveTerminalDropWorktreePath(worktreeId, cwd) ?? paths[0]

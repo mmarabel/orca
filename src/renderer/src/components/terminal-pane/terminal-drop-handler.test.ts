@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
         | { kind: 'windows-host' }
         | { kind: 'wsl'; distro: string | null }
     }[],
+    lastTerminalInputAtByPaneKey: Object.fromEntries<number>([]),
     repos: [
       {
         id: 'repo1',
@@ -110,6 +111,7 @@ describe('handleTerminalFileDrop', () => {
       repo1: [{ id: 'wt-1', repoId: 'repo1', path: '/remote/repo' }]
     }
     mocks.storeState.sshConnectionStates = new Map()
+    mocks.storeState.lastTerminalInputAtByPaneKey = {}
   })
 
   it('uploads client-local drops into the active runtime before pasting paths', async () => {
@@ -685,5 +687,81 @@ describe('handleTerminalFileDrop', () => {
     })
 
     expect(sendInput).toHaveBeenCalledWith("'/remote/repo/it'\\''s here.txt' ")
+  })
+
+  describe('input typed while a remote upload is pending', () => {
+    const leafId = '11111111-1111-4111-8111-111111111111'
+    const paneKey = `tab-1:${leafId}`
+
+    function configureSshRepo(): void {
+      mocks.storeState.settings = { activeRuntimeEnvironmentId: null }
+      mocks.storeState.repos = [
+        { id: 'repo1', connectionId: 'ssh-1', path: '/remote/repo', executionHostId: 'ssh:ssh-1' }
+      ]
+      mocks.storeState.sshConnectionStates = new Map([
+        ['ssh-1', { remotePlatform: 'linux', connectionGeneration: 1 }]
+      ])
+    }
+
+    function holdUpload(flow: 'ssh' | 'runtime', remotePath: string): () => void {
+      let release = (): void => {}
+      const upload = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      if (flow === 'ssh') {
+        configureSshRepo()
+        mocks.resolveDroppedPathsForAgent.mockImplementation(async () => {
+          await upload
+          return { failed: [], resolvedPaths: [remotePath], skipped: [] }
+        })
+      } else {
+        mocks.importExternalPathsToRuntime.mockImplementation(async () => {
+          await upload
+          return { results: [{ status: 'imported', destPath: remotePath, kind: 'file' }] }
+        })
+      }
+      return release
+    }
+
+    it.each([
+      { flow: 'ssh', typed: true, path: '/remote/repo/a.txt', sent: ' /remote/repo/a.txt ' },
+      { flow: 'ssh', typed: false, path: '/remote/repo/a.txt', sent: '/remote/repo/a.txt ' },
+      { flow: 'runtime', typed: true, path: '/remote/repo/b.txt', sent: ' /remote/repo/b.txt ' },
+      { flow: 'runtime', typed: false, path: '/remote/repo/b.txt', sent: '/remote/repo/b.txt ' },
+      {
+        flow: 'runtime',
+        typed: true,
+        path: '/remote/repo/c.png',
+        sent: ` ${wrapTerminalBracketedPasteText('/remote/repo/c.png')}`
+      },
+      {
+        flow: 'ssh',
+        typed: false,
+        path: '/remote/repo/c.png',
+        sent: wrapTerminalBracketedPasteText('/remote/repo/c.png')
+      }
+    ] as const)('$flow drop of $path with typed=$typed', async ({ flow, typed, path, sent }) => {
+      mocks.storeState.lastTerminalInputAtByPaneKey = { [paneKey]: 1_000 }
+      const release = holdUpload(flow, path)
+      const sendInput = vi.fn(() => true)
+      const pane = { id: 1, leafId, terminal: { focus: vi.fn() } }
+
+      const drop = handleTerminalFileDrop({
+        manager: { getActivePane: () => pane, getPanes: () => [pane] } as never,
+        paneTransports: new Map([[1, createTerminalTransport(sendInput)]]) as never,
+        worktreeId: 'wt-1',
+        tabId: 'tab-1',
+        cwd: undefined,
+        data: { paths: ['/Users/me/dropped'], target: 'terminal' }
+      })
+      if (typed) {
+        // Keystrokes forwarded to this pane's PTY stamp its pane key.
+        mocks.storeState.lastTerminalInputAtByPaneKey = { [paneKey]: 2_000 }
+      }
+      release()
+      await drop
+
+      expect(sendInput.mock.calls).toEqual([[sent]])
+    })
   })
 })

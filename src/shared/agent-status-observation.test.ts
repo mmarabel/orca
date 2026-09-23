@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import {
   AgentStatusObservationSequencer,
@@ -115,8 +116,8 @@ describe('AgentStatusObservationSequencer', () => {
   it('gives each sequencer instance a distinct authority id', () => {
     // Why: revision counters live in memory, so a restarted authority must not be
     // comparable with the observations it emitted before.
-    const first = createAgentStatusAuthorityId('main-agent-hooks')
-    const second = createAgentStatusAuthorityId('main-agent-hooks')
+    const first = createAgentStatusAuthorityId('main-agent-hooks', randomUUID)
+    const second = createAgentStatusAuthorityId('main-agent-hooks', randomUUID)
 
     expect(first).not.toBe(second)
     expect(first.startsWith('main-agent-hooks:')).toBe(true)

@@ -193,7 +193,8 @@ export class AgentStatusObservationSequencer {
 
 /** Per-instance authority id. Regenerated every process start on purpose: a restarted
  *  authority's revision counter starts over, so its observations must not be comparable
- *  with the ones it emitted before (including any rehydrated from disk). */
-export function createAgentStatusAuthorityId(role: string): string {
-  return `${role}:${globalThis.crypto.randomUUID()}`
+ *  with the ones it emitted before (including any rehydrated from disk).
+ *  Why the injected source: a renderer served over plain HTTP has no crypto.randomUUID. */
+export function createAgentStatusAuthorityId(role: string, randomUuid: () => string): string {
+  return `${role}:${randomUuid()}`
 }

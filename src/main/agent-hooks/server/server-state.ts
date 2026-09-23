@@ -155,7 +155,7 @@ export abstract class AgentHookServerState {
   // Why: main is the pane authority for local/WSL/SSH panes — hook HTTP, relay, and its own
   // OSC parse all converge on applyNormalizedStatus, so one sequencer covers every ingress here.
   protected readonly observations = new AgentStatusObservationSequencer(
-    createAgentStatusAuthorityId('main-agent-hooks')
+    createAgentStatusAuthorityId('main-agent-hooks', randomUUID)
   )
 
   protected abstract withdrawReplayObservation(paneKey: string): void

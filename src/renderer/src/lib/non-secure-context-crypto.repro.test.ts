@@ -3,7 +3,7 @@
  * hides crypto.randomUUID and crypto.subtle (secure-context-only). This test
  * recreates that exact global shape and drives the real call sites.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const realCrypto = globalThis.crypto
 
@@ -48,6 +48,19 @@ describe('non-secure context (plain HTTP LAN web client)', () => {
       value: { getRandomValues: realCrypto.getRandomValues.bind(realCrypto) }
     })
     expect(await hashOrcaHookScript('echo hi')).toBe(secureHash)
+  })
+
+  // Regression for #19667: the store builds this sequencer at module load, so a throw here
+  // white-screened the whole Remote Web client before anything painted.
+  it('loads the renderer agent-status authority and its store slice', async () => {
+    vi.resetModules()
+    const { rendererAgentStatusObservations } = await import('./renderer-agent-status-observations')
+    const { createAgentStatusAuthorityActions } =
+      await import('../store/slices/agent-status-authority-actions')
+    expect(typeof createAgentStatusAuthorityActions).toBe('function')
+    expect(rendererAgentStatusObservations.getAuthorityId()).toMatch(
+      /^renderer:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    )
   })
 
   it('createBrowserUuid does not throw when randomUUID is missing', async () => {

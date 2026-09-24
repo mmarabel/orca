@@ -2,6 +2,7 @@ import { delimiter } from 'node:path'
 import { dropInheritedOrcaFishHistory } from '../../fish-history-session'
 import { removeAppImageRuntimeEnv } from '../../pty/appimage-terminal-env'
 import { stripInheritedBuildModeEnv } from '../../pty/build-mode-env'
+import { stripPiProcessOwnerEnv } from '../../pty/pi-process-owner-env'
 import { dropIncoherentCondaActivationEnv } from '../../pty/conda-activation-env'
 import { stripLegacyTerminalShimEnv } from '../../pty/legacy-terminal-shim-dir'
 import { removeInheritedNoColor } from '../../pty/terminal-color-env'
@@ -152,6 +153,7 @@ export function createDaemonPtyEnvironment(opts: PtySubprocessOptions): Record<s
     env.TERM = opts.env.TERM
   }
   removeUnspecifiedPaneIdentityEnv(env, opts.env)
+  stripPiProcessOwnerEnv(env)
   if (opts.env?.fish_history === undefined) {
     dropInheritedOrcaFishHistory(env)
   }
@@ -191,4 +193,5 @@ export function finalizeDaemonPtyEnvironment(
   promoteAgentTeamsShimPath(env, requestedPath)
   stripLegacyTerminalShimEnv(env, process.platform)
   dropIncoherentCondaActivationEnv(env, process.platform)
+  stripPiProcessOwnerEnv(env)
 }

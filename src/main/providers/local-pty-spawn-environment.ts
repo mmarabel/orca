@@ -5,6 +5,7 @@ import {
 } from '../../shared/terminal-image-protocol'
 import { removeAppImageRuntimeEnv } from '../pty/appimage-terminal-env'
 import { stripInheritedBuildModeEnv } from '../pty/build-mode-env'
+import { stripPiProcessOwnerEnv } from '../pty/pi-process-owner-env'
 import { removeInheritedNoColor } from '../pty/terminal-color-env'
 import { isWindowsGitBashShellPath } from '../git-bash'
 import { removeUnspecifiedPaneIdentityEnv } from './local-pty-launch-helpers'
@@ -33,6 +34,7 @@ export function buildLocalPtySpawnEnvironment(args: {
   } satisfies Record<string, string>
   // Why: Orca can be launched from an Orca terminal; pane identity belongs to the child PTY, not the parent shell.
   removeUnspecifiedPaneIdentityEnv(spawnEnv, spawn.env)
+  stripPiProcessOwnerEnv(spawnEnv)
   removeAppImageRuntimeEnv(spawnEnv)
   removeInheritedNoColor(spawnEnv)
   for (const key of spawn.envToDelete ?? []) {
@@ -78,6 +80,7 @@ export function enforceLocalPtySpawnEnvironmentOverrides(
   finalEnv: Record<string, string>
 ): void {
   // Why: app-level env hooks can re-add scrubbed vars; delete last so shims like Claude Agent Teams keep their PATH.
+  stripPiProcessOwnerEnv(finalEnv)
   for (const key of spawn.envToDelete ?? []) {
     delete finalEnv[key]
   }

@@ -126,6 +126,7 @@ function promoteAgentTeamsShimPath(
   env[pathKey] = [shimDir, ...currentParts.filter((part) => part !== shimDir)].join(pathDelimiter)
 }
 
+/** A dev receiver without an endpoint file must not fall back to another runtime's file. */
 function removeInheritedDevAgentHookEndpoint(
   env: Record<string, string>,
   explicitEnv: Record<string, string> | undefined
@@ -172,6 +173,7 @@ export function createDaemonPtyEnvironment(opts: PtySubprocessOptions): Record<s
   return env
 }
 
+/** Platform launch preparation must not undo the caller's explicit environment deletions. */
 export function rescrubDaemonPtyEnvironment(
   env: Record<string, string>,
   opts: PtySubprocessOptions

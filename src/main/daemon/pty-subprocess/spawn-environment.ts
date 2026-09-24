@@ -136,6 +136,7 @@ function removeInheritedDevAgentHookEndpoint(
   }
 }
 
+/** A persistent daemon's inherited environment cannot supply ownership for a new pane. */
 export function createDaemonPtyEnvironment(opts: PtySubprocessOptions): Record<string, string> {
   const env: Record<string, string> = {
     ...mergeGitConfigEnvProtocol(stripInheritedBuildModeEnv(process.env), opts.env),
@@ -181,6 +182,7 @@ export function rescrubDaemonPtyEnvironment(
   }
 }
 
+/** Shell preparation can restore ambient state, so pane isolation is enforced again here. */
 export function finalizeDaemonPtyEnvironment(
   env: Record<string, string>,
   requestedEnv: Record<string, string> | undefined

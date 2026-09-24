@@ -23,6 +23,7 @@ import { getStartupTerminalIngressIntent } from '../../terminal-startup-color-qu
 import { resolveConfiguredTerminalShellArgs } from '../configured-terminal-shell-args'
 import type { PtyIpcSpawnState } from './spawn-state'
 
+/** Carries deletions to provider-owned environments, including persistent older daemons. */
 export async function buildPtyIpcSpawnOptions(
   ctx: PtyIpcSpawnState
 ): Promise<{ isReattach: true } | null> {

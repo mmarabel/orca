@@ -30,8 +30,7 @@ export function useSidebarFeedbackImages(params: {
   const liveImageDraftsRef = useRef<FeedbackImageDraft[]>([])
   // Why: committed state lags in-flight reads, so batches still being read count
   // against capacity — otherwise two quick pastes both see room for four.
-  const pendingImageReadsRef = useRef(0)
-  const pendingImageReadBytesRef = useRef(0)
+  const pendingImageReadsRef = useRef({ count: 0, bytes: 0 })
 
   const clearImages = useCallback(() => {
     liveImageDraftsRef.current.forEach(releaseFeedbackImageDraft)
@@ -65,18 +64,18 @@ export function useSidebarFeedbackImages(params: {
       // Why: a read's callback moves its batch from pending to the live ref in one
       // step, but rendered state lags a render, so only the ref covers that gap.
       const liveDrafts = liveImageDraftsRef.current
-      const existingCount = liveDrafts.length + pendingImageReadsRef.current
+      const pendingReads = pendingImageReadsRef.current
+      const existingCount = liveDrafts.length + pendingReads.count
       const existingBytes =
-        liveDrafts.reduce((total, image) => total + image.bytes, 0) +
-        pendingImageReadBytesRef.current
+        liveDrafts.reduce((total, image) => total + image.bytes, 0) + pendingReads.bytes
       const batchBytes = files.reduce((total, file) => total + file.size, 0)
-      pendingImageReadsRef.current += files.length
-      pendingImageReadBytesRef.current += batchBytes
+      pendingReads.count += files.length
+      pendingReads.bytes += batchBytes
       setPendingImageReadCount((current) => current + files.length)
       void readFeedbackImageFiles(files, existingCount, existingBytes).then(
         ({ images: added, errors }) => {
-          pendingImageReadsRef.current -= files.length
-          pendingImageReadBytesRef.current -= batchBytes
+          pendingReads.count -= files.length
+          pendingReads.bytes -= batchBytes
           if (!params.mountedRef.current) {
             added.forEach(releaseFeedbackImageDraft)
             return
@@ -90,8 +89,8 @@ export function useSidebarFeedbackImages(params: {
           errors.forEach((error) => toast.warning(error))
         },
         (error: unknown) => {
-          pendingImageReadsRef.current -= files.length
-          pendingImageReadBytesRef.current -= batchBytes
+          pendingReads.count -= files.length
+          pendingReads.bytes -= batchBytes
           console.error('Failed to read feedback image attachments:', error)
           if (params.mountedRef.current) {
             setPendingImageReadCount((current) => Math.max(0, current - files.length))
@@ -131,7 +130,8 @@ export function useSidebarFeedbackImages(params: {
     handleAddFiles,
     handleRemoveImage,
     clearImages,
-    hasPendingImageReads: () => pendingImageReadsRef.current > 0,
-    getReservedImageSlots: () => liveImageDraftsRef.current.length + pendingImageReadsRef.current
+    hasPendingImageReads: () => pendingImageReadsRef.current.count > 0,
+    getReservedImageSlots: () =>
+      liveImageDraftsRef.current.length + pendingImageReadsRef.current.count
   }
 }

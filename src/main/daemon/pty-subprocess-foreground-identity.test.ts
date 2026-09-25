@@ -50,8 +50,10 @@ vi.mock('../providers/local-pty-utils', async (importOriginal) => {
   const actual = await importOriginal<typeof LocalPtyUtils>()
   return {
     ...actual,
+    getNodePtySpawnHelperCandidates: () => [import.meta.filename],
     resolveUnixShellPath: resolveUnixShellPathMock,
-    validateWorkingDirectory: validateWorkingDirectoryMock
+    validateWorkingDirectory: validateWorkingDirectoryMock,
+    validateWorkingDirectoryAsync: validateWorkingDirectoryMock
   }
 })
 
@@ -68,8 +70,9 @@ vi.mock('../providers/agent-foreground-process', () => ({
 // fake timers; default to "shell-only" so the degraded-scan guard falls through
 // to its existing retirement logic (the degraded-scan behavior itself is
 // covered in pty-subprocess-foreground-degraded-scan.test.ts).
-vi.mock('../providers/windows-conpty-process-membership', () => ({
-  readWindowsConptyProcessIds: () => Promise.resolve(new Set([12345]))
+vi.mock('../providers/windows-pty-job-membership', () => ({
+  readWindowsPtyJobProcessIds: () => new Set([12345]),
+  isWindowsPtyJobReadable: () => true
 }))
 
 import { createPtySubprocess } from './pty-subprocess'
@@ -84,12 +87,12 @@ describe('createPtySubprocess', () => {
     validateWorkingDirectoryMock
   })
 
-  it('normalizes foreground process names from node-pty', () => {
+  it('normalizes foreground process names from node-pty', async () => {
     const proc = mockPtyProcess()
     proc.process = '/opt/homebrew/bin/codex'
     spawnMock.mockReturnValue(proc)
 
-    const handle = createPtySubprocess({
+    const handle = await createPtySubprocess({
       sessionId: 'test',
       cols: 80,
       rows: 24
@@ -112,7 +115,7 @@ describe('createPtySubprocess', () => {
     )
 
     try {
-      const handle = createPtySubprocess({
+      const handle = await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24
@@ -145,7 +148,7 @@ describe('createPtySubprocess', () => {
     resolveAgentForegroundProcessMock.mockResolvedValue('grok')
 
     try {
-      const handle = createPtySubprocess({
+      const handle = await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24
@@ -179,7 +182,7 @@ describe('createPtySubprocess', () => {
     resolveAgentForegroundProcessMock.mockResolvedValueOnce('grok').mockResolvedValue('node')
 
     try {
-      const handle = createPtySubprocess({
+      const handle = await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24
@@ -223,7 +226,7 @@ describe('createPtySubprocess', () => {
     )
 
     try {
-      const handle = createPtySubprocess({
+      const handle = await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24
@@ -259,7 +262,7 @@ describe('createPtySubprocess', () => {
     )
 
     try {
-      const handle = createPtySubprocess({
+      const handle = await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24
@@ -293,7 +296,7 @@ describe('createPtySubprocess', () => {
     })
 
     try {
-      const handle = createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24 })
+      const handle = await createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24 })
 
       expect(handle.getForegroundProcess()).toBe('powershell.exe')
       await Promise.resolve()
@@ -321,7 +324,7 @@ describe('createPtySubprocess', () => {
     )
 
     try {
-      const handle = createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24 })
+      const handle = await createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24 })
       const confirmation = handle.confirmForegroundProcess!()
       let settled = false
       void confirmation.then(() => {
@@ -356,7 +359,7 @@ describe('createPtySubprocess', () => {
     })
 
     try {
-      const handle = createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24 })
+      const handle = await createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24 })
       await expect(handle.confirmForegroundProcess!()).resolves.toBeNull()
     } finally {
       if (platform) {
@@ -377,7 +380,7 @@ describe('createPtySubprocess', () => {
     })
 
     try {
-      const handle = createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24 })
+      const handle = await createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24 })
       await expect(handle.confirmForegroundProcess!()).resolves.toBeNull()
     } finally {
       if (platform) {
@@ -400,7 +403,7 @@ describe('createPtySubprocess', () => {
     )
 
     try {
-      const handle = createPtySubprocess({
+      const handle = await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24
@@ -436,7 +439,7 @@ describe('createPtySubprocess', () => {
     )
 
     try {
-      const handle = createPtySubprocess({
+      const handle = await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24
@@ -470,7 +473,7 @@ describe('createPtySubprocess', () => {
     resolveAgentForegroundProcessMock.mockResolvedValue('powershell.exe')
 
     try {
-      const handle = createPtySubprocess({
+      const handle = await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24,
@@ -517,7 +520,7 @@ describe('createPtySubprocess', () => {
     )
 
     try {
-      const handle = createPtySubprocess({
+      const handle = await createPtySubprocess({
         sessionId: 'repo::C:\\repo\\orca@@deadbeef',
         cols: 80,
         rows: 24,
@@ -556,7 +559,7 @@ describe('createPtySubprocess', () => {
     resolveAgentForegroundProcessMock.mockResolvedValue('codex')
 
     try {
-      const handle = createPtySubprocess({
+      const handle = await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24,
@@ -578,7 +581,7 @@ describe('createPtySubprocess', () => {
     }
   })
 
-  it('does not schedule foreground enrichment for arbitrary Windows TUIs', () => {
+  it('does not schedule foreground enrichment for arbitrary Windows TUIs', async () => {
     const proc = mockPtyProcess()
     proc.process = 'vim.exe'
     spawnMock.mockReturnValue(proc)
@@ -586,7 +589,7 @@ describe('createPtySubprocess', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' })
 
     try {
-      const handle = createPtySubprocess({
+      const handle = await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24
@@ -601,7 +604,7 @@ describe('createPtySubprocess', () => {
     }
   })
 
-  it('treats node-pty terminal name as inconclusive foreground process', () => {
+  it('treats node-pty terminal name as inconclusive foreground process', async () => {
     const proc = mockPtyProcess()
     proc.process = 'xterm-256color'
     spawnMock.mockReturnValue(proc)
@@ -609,7 +612,7 @@ describe('createPtySubprocess', () => {
     Object.defineProperty(process, 'platform', { value: 'linux' })
 
     try {
-      const handle = createPtySubprocess({
+      const handle = await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24

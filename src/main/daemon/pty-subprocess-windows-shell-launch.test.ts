@@ -51,7 +51,8 @@ vi.mock('../providers/local-pty-utils', async (importOriginal) => {
   return {
     ...actual,
     resolveUnixShellPath: resolveUnixShellPathMock,
-    validateWorkingDirectory: validateWorkingDirectoryMock
+    validateWorkingDirectory: validateWorkingDirectoryMock,
+    validateWorkingDirectoryAsync: validateWorkingDirectoryMock
   }
 })
 
@@ -68,8 +69,9 @@ vi.mock('../providers/agent-foreground-process', () => ({
 // fake timers; default to "shell-only" so the degraded-scan guard falls through
 // to its existing retirement logic (the degraded-scan behavior itself is
 // covered in pty-subprocess-foreground-degraded-scan.test.ts).
-vi.mock('../providers/windows-conpty-process-membership', () => ({
-  readWindowsConptyProcessIds: () => Promise.resolve(new Set([12345]))
+vi.mock('../providers/windows-pty-job-membership', () => ({
+  readWindowsPtyJobProcessIds: () => new Set([12345]),
+  isWindowsPtyJobReadable: () => true
 }))
 
 import { createPtySubprocess } from './pty-subprocess'
@@ -87,7 +89,7 @@ describe('createPtySubprocess', () => {
     validateWorkingDirectoryMock
   })
 
-  it('keeps powershell.exe when the inbox PowerShell implementation is selected on Windows', () => {
+  it('keeps powershell.exe when the inbox PowerShell implementation is selected on Windows', async () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
@@ -96,7 +98,7 @@ describe('createPtySubprocess', () => {
     isPwshAvailableMock.mockReturnValue(true)
 
     try {
-      createPtySubprocess({
+      await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24,
@@ -116,7 +118,7 @@ describe('createPtySubprocess', () => {
     )
   })
 
-  it('spawns pwsh.exe when PowerShell 7 is selected and available on Windows', () => {
+  it('spawns pwsh.exe when PowerShell 7 is selected and available on Windows', async () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
@@ -125,7 +127,7 @@ describe('createPtySubprocess', () => {
     isPwshAvailableMock.mockReturnValue(true)
 
     try {
-      createPtySubprocess({
+      await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24,
@@ -145,7 +147,7 @@ describe('createPtySubprocess', () => {
     )
   })
 
-  it('keeps PowerShell 7 selected when the pwsh availability probe is cold-false on Windows', () => {
+  it('keeps PowerShell 7 selected when the pwsh availability probe is cold-false on Windows', async () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
@@ -154,7 +156,7 @@ describe('createPtySubprocess', () => {
     isPwshAvailableMock.mockReturnValue(false)
 
     try {
-      createPtySubprocess({
+      await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24,
@@ -175,7 +177,7 @@ describe('createPtySubprocess', () => {
     expect(isPwshAvailableMock).not.toHaveBeenCalled()
   })
 
-  it('keeps a pwsh.exe shellOverride when the pwsh availability probe is cold-false on Windows', () => {
+  it('keeps a pwsh.exe shellOverride when the pwsh availability probe is cold-false on Windows', async () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
@@ -184,7 +186,7 @@ describe('createPtySubprocess', () => {
     isPwshAvailableMock.mockReturnValue(false)
 
     try {
-      createPtySubprocess({
+      await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24,
@@ -205,7 +207,7 @@ describe('createPtySubprocess', () => {
     expect(isPwshAvailableMock).not.toHaveBeenCalled()
   })
 
-  it('ignores the PowerShell implementation setting for cmd.exe on Windows', () => {
+  it('ignores the PowerShell implementation setting for cmd.exe on Windows', async () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
@@ -214,7 +216,7 @@ describe('createPtySubprocess', () => {
     isPwshAvailableMock.mockReturnValue(true)
 
     try {
-      createPtySubprocess({
+      await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24,
@@ -240,16 +242,16 @@ describe('createPtySubprocess', () => {
     )
   })
 
-  it('embeds short PowerShell startup commands in the Windows shell launch', () => {
+  it('embeds short PowerShell startup commands in the Windows shell launch', async () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
 
     Object.defineProperty(process, 'platform', { value: 'win32' })
 
-    let handle: ReturnType<typeof createPtySubprocess>
+    let handle: Awaited<ReturnType<typeof createPtySubprocess>>
     try {
-      handle = createPtySubprocess({
+      handle = await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24,
@@ -270,16 +272,16 @@ describe('createPtySubprocess', () => {
     expect(handle!.startupCommandDeliveredInShellArgs).toBe(true)
   })
 
-  it('keeps oversized Windows startup commands on PTY stdin delivery', () => {
+  it('keeps oversized Windows startup commands on PTY stdin delivery', async () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
 
     Object.defineProperty(process, 'platform', { value: 'win32' })
 
-    let handle: ReturnType<typeof createPtySubprocess>
+    let handle: Awaited<ReturnType<typeof createPtySubprocess>>
     try {
-      handle = createPtySubprocess({
+      handle = await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24,
@@ -305,7 +307,7 @@ describe('createPtySubprocess', () => {
     expect(handle!.startupCommandDeliveredInShellArgs).toBeUndefined()
   })
 
-  it('launches Git Bash with login args and CHERE_INVOKING on Windows', () => {
+  it('launches Git Bash with login args and CHERE_INVOKING on Windows', async () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
@@ -313,7 +315,7 @@ describe('createPtySubprocess', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' })
 
     try {
-      createPtySubprocess({
+      await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24,
@@ -345,12 +347,12 @@ describe('createPtySubprocess', () => {
     )
   })
 
-  it('rejects a missing explicit native Windows cwd before node-pty spawn', () => {
+  it('rejects a missing explicit native Windows cwd before node-pty spawn', async () => {
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
     Object.defineProperty(process, 'platform', { value: 'win32' })
 
     try {
-      expect(() =>
+      await expect(
         createPtySubprocess({
           sessionId: 'test',
           cols: 80,
@@ -358,7 +360,7 @@ describe('createPtySubprocess', () => {
           cwd: 'C:\\definitely-missing-orca-cwd',
           shellOverride: 'powershell.exe'
         })
-      ).toThrow(/Working directory "C:\\definitely-missing-orca-cwd" does not exist/)
+      ).rejects.toThrow(/Working directory "C:\\definitely-missing-orca-cwd" does not exist/)
     } finally {
       if (platform) {
         Object.defineProperty(process, 'platform', platform)
@@ -368,7 +370,7 @@ describe('createPtySubprocess', () => {
     expect(spawnMock).not.toHaveBeenCalled()
   })
 
-  it('normalizes MSYS drive cwd before spawning daemon PowerShell on Windows', () => {
+  it('normalizes MSYS drive cwd before spawning daemon PowerShell on Windows', async () => {
     const proc = mockPtyProcess()
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
     Object.defineProperty(process, 'platform', { value: 'win32' })
@@ -380,7 +382,7 @@ describe('createPtySubprocess', () => {
     })
 
     try {
-      createPtySubprocess({
+      await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24,
@@ -400,7 +402,7 @@ describe('createPtySubprocess', () => {
     )
   })
 
-  it('adds shell and cwd context when node-pty reports File not found on Windows', () => {
+  it('adds shell and cwd context when node-pty reports File not found on Windows', async () => {
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
     Object.defineProperty(process, 'platform', { value: 'win32' })
     spawnMock.mockImplementation(() => {
@@ -410,14 +412,14 @@ describe('createPtySubprocess', () => {
     process.env.ORCA_APP_VERSION = '1.4.178-test'
 
     try {
-      expect(() =>
+      await expect(
         createPtySubprocess({
           sessionId: 'test',
           cols: 80,
           rows: 24,
           shellOverride: 'not-a-real-shell.exe'
         })
-      ).toThrow(
+      ).rejects.toThrow(
         /Daemon failed to spawn shell "not-a-real-shell\.exe" with cwd ".+": File not found:.*orca: 1\.4\.178-test/
       )
     } finally {

@@ -31,6 +31,7 @@ export type AgentStatusSetData = {
   lastAssistantMessage?: string
   interrupted?: boolean
   sessionBoundary?: boolean
+  turnCompletedAt?: number
   terminalHandle?: string
   launchToken?: string
   providerSession?: { key: 'session_id'; id: string }
@@ -166,11 +167,14 @@ export function buildStoreState(overrides: StoreLike): StoreLike {
     updateTabTitles: vi.fn(),
     runtimePaneTitlesByTabId: {},
     terminalLayoutsByTabId: {},
+    ptyIdsByTabId: {},
+    suppressedPtyExitIds: {},
+    markWorktreeUnread: vi.fn(),
+    markAgentCompletionPaneUnread: vi.fn(),
     agentStatusByPaneKey: {},
     setAgentStatuses: vi.fn(() => []),
     recordAgentProviderSession: vi.fn(),
     clearTransientAgentStatuses: vi.fn(),
-    getAgentLaunchConfigForStatusMetadata: vi.fn(() => undefined),
     recentlyClosedAgentStatusTabIds: {},
     repos: [],
     worktreesByRepo: {},

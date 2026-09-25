@@ -1,29 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Repo } from '../../../../shared/repo-types'
-import type { Worktree } from '../../../../shared/worktree/types'
+import { makeWorktree } from '../../store/slices/store-test-helpers'
 import WorkspaceKanbanCard from './WorkspaceKanbanCard'
 import WorktreeCard from './WorktreeCard'
 
 vi.mock('./WorktreeCard', () => ({ default: vi.fn(() => null) }))
-
-function makeWorktree(): Worktree {
-  return {
-    id: 'repo-1::/workspaces/orca-feature',
-    repoId: 'repo-1',
-    displayName: 'same-branch',
-    comment: '',
-    linkedIssue: null,
-    linkedPR: null,
-    createdAt: 0,
-    isMainWorktree: false,
-    path: '/workspaces/orca-feature',
-    branch: 'same-branch',
-    isBare: false,
-    isPinned: false,
-    isUnread: false
-  } as Worktree
-}
 
 function makeRepo(): Repo {
   return {
@@ -40,7 +22,13 @@ function makeRepo(): Repo {
 function renderCard(): void {
   renderToStaticMarkup(
     <WorkspaceKanbanCard
-      worktree={makeWorktree()}
+      worktree={makeWorktree({
+        id: 'repo-1::/workspaces/orca-feature',
+        repoId: 'repo-1',
+        displayName: 'same-branch',
+        path: '/workspaces/orca-feature',
+        branch: 'same-branch'
+      })}
       laneIndex={0}
       repo={makeRepo()}
       isActive={false}

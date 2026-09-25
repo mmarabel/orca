@@ -14,13 +14,18 @@ const {
   (await import('./daemon-init-test-harness')).createDaemonInitMocks()
 )
 
-vi.mock('electron', () => moduleFactories.electron())
 vi.mock('fs', () => moduleFactories.fs())
 vi.mock('child_process', async (importOriginal) =>
   moduleFactories.childProcess(await importOriginal<Record<string, unknown>>())
 )
 vi.mock('net', () => moduleFactories.net())
 vi.mock('./daemon-health', () => moduleFactories.daemonHealth())
+vi.mock('./daemon-pid-identity', () => moduleFactories.daemonPidIdentity())
+vi.mock('./daemon-tcc-attribution', () => moduleFactories.daemonTccAttribution())
+vi.mock('./daemon-bundle-staleness', () => moduleFactories.daemonBundleStaleness())
+vi.mock('./daemon-stale-kill', () => moduleFactories.daemonStaleKill())
+vi.mock('./daemon-process-start-time', () => moduleFactories.daemonProcessStartTime())
+vi.mock('./daemon-pid-file-parse', () => moduleFactories.daemonPidFileParse())
 vi.mock('./client', () => moduleFactories.client())
 vi.mock('./daemon-lifecycle-event', () => moduleFactories.daemonLifecycleEvent())
 vi.mock('./daemon-spawner', () => moduleFactories.daemonSpawner())
@@ -55,6 +60,7 @@ describe('daemon-init: runRestartDaemon (7-step sequence)', () => {
     function basicClient() {
       return {
         ensureConnected: vi.fn(async () => {}),
+        ensureConnectedWithin: vi.fn(async () => {}),
         request: vi.fn(async () => ({ sessions: [] })),
         disconnect: vi.fn()
       }
@@ -80,7 +86,7 @@ describe('daemon-init: runRestartDaemon (7-step sequence)', () => {
       on(event: string, callback: (arg?: unknown) => void) {
         handlers[event]?.push(callback)
         if (event === 'message') {
-          queueMicrotask(() => callback({ type: 'ready', startedAtMs: 1_000_000 }))
+          queueMicrotask(() => callback({ type: 'ready', pid: 12345, startedAtMs: 1_000_000 }))
         }
         return this
       },
@@ -139,6 +145,9 @@ describe('daemon-init: runRestartDaemon (7-step sequence)', () => {
         ensureConnected: vi.fn(async () => {
           throw new Error('adoption unavailable')
         }),
+        ensureConnectedWithin: vi.fn(async () => {
+          throw new Error('adoption unavailable')
+        }),
         request: vi.fn(),
         disconnect
       }
@@ -159,7 +168,7 @@ describe('daemon-init: runRestartDaemon (7-step sequence)', () => {
       on(event: string, callback: (arg?: unknown) => void) {
         handlers[event]?.push(callback)
         if (event === 'message') {
-          queueMicrotask(() => callback({ type: 'ready', startedAtMs: 1_000_000 }))
+          queueMicrotask(() => callback({ type: 'ready', pid: 12345, startedAtMs: 1_000_000 }))
         }
         return this
       },
@@ -219,7 +228,7 @@ describe('daemon-init: runRestartDaemon (7-step sequence)', () => {
       pid: 12345,
       on(event: string, cb: (arg?: unknown) => void) {
         if (event === 'message') {
-          queueMicrotask(() => cb({ type: 'ready' }))
+          queueMicrotask(() => cb({ type: 'ready', pid: 12345 }))
         }
         return this
       },

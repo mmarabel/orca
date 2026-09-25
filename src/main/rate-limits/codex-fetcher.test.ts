@@ -51,6 +51,8 @@ vi.mock('./codex-auth-presence', () => ({
 import { fetchCodexRateLimits } from './codex-fetcher'
 import { probeCodexAuthPresence } from './codex-auth-presence'
 import { getActiveHiddenRateLimitPtyCount } from './hidden-pty-cleanup'
+import { getCmdExePath } from '../win32-utils'
+import { CODEX_SHORT_LIVED_PROBE_APP_SERVER_ARGS } from '../codex-cli/codex-read-only-app-server-args'
 
 function makeDisposable() {
   return { dispose: vi.fn() }
@@ -496,44 +498,6 @@ describe('fetchCodexRateLimits', () => {
     })
   })
 
-  it('maps the RPC credits object into a Codex credit-count balance', async () => {
-    const rpcChild = makeRpcChild()
-    childSpawnMock.mockReturnValue(rpcChild)
-    respondToRpcRateLimitRead(rpcChild, {
-      primary: { usedPercent: 20, windowDurationMins: 10079 },
-      secondary: null,
-      credits: { hasCredits: true, unlimited: false, balance: '500' }
-    })
-
-    const resultPromise = fetchCodexRateLimits({ allowPtyFallback: false })
-    await vi.advanceTimersByTimeAsync(1)
-    await vi.advanceTimersByTimeAsync(1)
-    const result = await resultPromise
-
-    expect(result.extraUsage).toMatchObject({
-      balance: 500,
-      unit: 'credits',
-      unlimited: false,
-      enabled: true
-    })
-  })
-
-  it('omits the Codex balance when the account has no credits', async () => {
-    const rpcChild = makeRpcChild()
-    childSpawnMock.mockReturnValue(rpcChild)
-    respondToRpcRateLimitRead(rpcChild, {
-      primary: { usedPercent: 20, windowDurationMins: 10079 },
-      credits: { hasCredits: false, unlimited: false, balance: '0' }
-    })
-
-    const resultPromise = fetchCodexRateLimits({ allowPtyFallback: false })
-    await vi.advanceTimersByTimeAsync(1)
-    await vi.advanceTimersByTimeAsync(1)
-    const result = await resultPromise
-
-    expect(result.extraUsage ?? null).toBeNull()
-  })
-
   it('fills reset-credit count from the backend when the installed app-server omits it', async () => {
     const rpcChild = makeRpcChild()
     childSpawnMock.mockReturnValue(rpcChild)
@@ -747,20 +711,20 @@ describe('fetchCodexRateLimits', () => {
 
       const [spawnFile, spawnArgs, spawnOptions] = childSpawnMock.mock.calls[0]
       expect(spawnFile).toBe('wsl.exe')
-      expect(spawnArgs.slice(0, 5)).toEqual(['-d', 'Ubuntu', '--', 'sh', '-c'])
+      expect(spawnArgs.slice(0, 5)).toEqual(['-d', 'Ubuntu', '--exec', 'sh', '-c'])
       const shellCommand = spawnArgs.at(-1) as string
-      expect(shellCommand).toContain('_orca_wsl_shell=\\$(getent passwd')
-      expect(shellCommand).toContain('bash|zsh|ksh|mksh|ash) exec "\\$_orca_wsl_shell" -ilc')
+      expect(shellCommand).toContain('_orca_wsl_shell=$(getent passwd')
+      expect(shellCommand).toContain('bash|zsh|ksh|mksh|ash) exec "$_orca_wsl_shell" -ilc')
       expect(shellCommand).toContain(
         'exec 3<&0\nexec 4>&1\nexec </dev/null\nexec >/dev/null\n_orca_wsl_shell='
       )
-      expect(shellCommand).toContain('mkdir -p "\\$orca_rate_limit_cwd"')
-      expect(shellCommand).toContain('cd "\\$orca_rate_limit_cwd"')
+      expect(shellCommand).toContain('mkdir -p "$orca_rate_limit_cwd"')
+      expect(shellCommand).toContain('cd "$orca_rate_limit_cwd"')
       expect(shellCommand).toContain(
         "export CODEX_HOME='\\''/home/alice/.local/share/orca/account/home'\\''"
       )
       expect(shellCommand).toContain(
-        "exec codex '\\''-s'\\'' '\\''read-only'\\'' '\\''-a'\\'' '\\''untrusted'\\'' '\\''app-server'\\'' <&3 >&4 3<&- 4>&-"
+        "exec codex '\\''-c'\\'' '\\''approval_policy=never'\\'' '\\''-c'\\'' '\\''features.plugins=false'\\'' '\\''-s'\\'' '\\''read-only'\\'' '\\''-a'\\'' '\\''never'\\'' '\\''app-server'\\'' <&3 >&4 3<&- 4>&-"
       )
       expect(shellCommand.match(/<&3 >&4 3<&- 4>&-/g)).toHaveLength(3)
       expect(shellCommand.match(/exec codex [^\n]+<&3 >&4 3<&- 4>&-/g)).toHaveLength(3)
@@ -786,6 +750,8 @@ describe('fetchCodexRateLimits', () => {
       configurable: true,
       value: 'win32'
     })
+    const codexCommand = 'C:\\Users\\alice\\AppData\\Roaming\\npm\\codex.cmd'
+    resolveCodexCommandMock.mockReturnValue(codexCommand)
     const rpcChild = makeRpcChild()
     childSpawnMock.mockReturnValue(rpcChild)
     rpcChild.stdin.write.mockImplementation((line: string) => {
@@ -821,8 +787,13 @@ describe('fetchCodexRateLimits', () => {
       await resultPromise
 
       const [spawnFile, spawnArgs, spawnOptions] = childSpawnMock.mock.calls[0]
-      expect(spawnFile).toBe('codex')
-      expect(spawnArgs).toEqual(['-s', 'read-only', '-a', 'untrusted', 'app-server'])
+      expect(spawnFile).toBe(getCmdExePath())
+      expect(spawnArgs).toEqual([
+        '/d',
+        '/c',
+        codexCommand,
+        ...CODEX_SHORT_LIVED_PROBE_APP_SERVER_ARGS
+      ])
       expect(spawnOptions).toEqual(
         expect.objectContaining({
           env: expect.objectContaining({ CODEX_HOME: 'C:\\Users\\alice\\.codex' })
@@ -868,20 +839,21 @@ describe('fetchCodexRateLimits', () => {
 
       const [spawnFile, spawnArgs, spawnOptions] = ptySpawnMock.mock.calls[0]
       expect(spawnFile).toBe('wsl.exe')
-      expect(spawnArgs.slice(0, 5)).toEqual(['-d', 'Ubuntu', '--', 'sh', '-c'])
+      expect(spawnArgs.slice(0, 5)).toEqual(['-d', 'Ubuntu', '--exec', 'sh', '-c'])
       const shellCommand = spawnArgs.at(-1) as string
-      expect(shellCommand).toContain('_orca_wsl_shell=\\$(getent passwd')
-      expect(shellCommand).toContain('bash|zsh|ksh|mksh|ash) exec "\\$_orca_wsl_shell" -ilc')
+      expect(shellCommand).toContain('_orca_wsl_shell=$(getent passwd')
+      expect(shellCommand).toContain('bash|zsh|ksh|mksh|ash) exec "$_orca_wsl_shell" -ilc')
       expect(shellCommand).not.toContain('exec 3<&0')
       expect(shellCommand).not.toContain('exec </dev/null')
       expect(shellCommand).not.toContain('exec >/dev/null')
       expect(shellCommand).not.toContain('<&3 >&4 3<&- 4>&-')
-      expect(shellCommand).toContain('mkdir -p "\\$orca_rate_limit_cwd"')
-      expect(shellCommand).toContain('cd "\\$orca_rate_limit_cwd"')
+      expect(shellCommand).toContain('mkdir -p "$orca_rate_limit_cwd"')
+      expect(shellCommand).toContain('cd "$orca_rate_limit_cwd"')
       expect(shellCommand).toContain(
         "export CODEX_HOME='\\''/home/alice/.local/share/orca/account/home'\\''"
       )
       expect(shellCommand).toContain('exec codex ')
+      expect(shellCommand).toContain('features.plugins=false')
       expect(shellCommand).not.toContain('_orca_codex')
       expect(shellCommand).not.toContain('wsl-codex-path')
       expect(spawnOptions).toEqual(

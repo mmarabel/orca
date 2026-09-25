@@ -1,3 +1,4 @@
+import { resolveGitAdmissionTier } from '../git/command-runner/git-operation-executor'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CreateWorktreeResult } from '../../shared/worktree/create-types'
 import {
@@ -43,7 +44,30 @@ vi.mock('./worktree-symlinks', async () =>
   (await import('./worktrees-test-module-mocks')).worktreeSymlinksModuleMock()
 )
 vi.mock('./ssh', async () => (await import('./worktrees-test-module-mocks')).sshModuleMock())
+vi.mock('../ssh/ssh-target-registry', async () =>
+  (await import('./worktrees-test-module-mocks')).sshTargetRegistryModuleMock()
+)
 vi.mock('../hooks', async () => (await import('./worktrees-test-module-mocks')).hooksModuleMock())
+vi.mock('../setup-runner-script-text', async (importOriginal) =>
+  (await import('./worktrees-test-module-mocks')).setupRunnerScriptTextModuleMock(
+    (await importOriginal()) as Record<string, unknown>
+  )
+)
+vi.mock('../worktree-runner-script', async (importOriginal) =>
+  (await import('./worktrees-test-module-mocks')).worktreeRunnerScriptModuleMock(
+    (await importOriginal()) as Record<string, unknown>
+  )
+)
+vi.mock('../effective-hook-config', async (importOriginal) =>
+  (await import('./worktrees-test-module-mocks')).effectiveHookConfigModuleMock(
+    (await importOriginal()) as Record<string, unknown>
+  )
+)
+vi.mock('../setup-hook-env-vars', async (importOriginal) =>
+  (await import('./worktrees-test-module-mocks')).setupHookEnvVarsModuleMock(
+    (await importOriginal()) as Record<string, unknown>
+  )
+)
 vi.mock('./worktree-logic', async (importOriginal) =>
   (await import('./worktrees-test-module-mocks')).worktreeLogicModuleMock(
     (await importOriginal()) as Record<string, unknown>
@@ -89,7 +113,10 @@ describe('registerWorktreeHandlers', () => {
     })
     runtimeStub.resolveRemoteTrackingBase.mockResolvedValue(remoteBase)
     runtimeStub.hasRemoteTrackingRef.mockResolvedValue(true)
-    runtimeStub.getOrStartRemoteTrackingBaseRefresh.mockReturnValue(pendingFetch)
+    runtimeStub.getOrStartRemoteTrackingBaseRefresh.mockImplementation(() => {
+      expect(resolveGitAdmissionTier()).toBe('interactive')
+      return pendingFetch
+    })
     listWorktreesMock.mockResolvedValue([
       {
         path: '/workspace/improve-dashboard',
@@ -247,7 +274,9 @@ describe('registerWorktreeHandlers', () => {
       '/workspace/improve-dashboard',
       'improve-dashboard',
       'develop',
-      false
+      false,
+      false,
+      {}
     )
   })
 
@@ -308,7 +337,9 @@ describe('registerWorktreeHandlers', () => {
       '/workspace/slash-local-base',
       'slash-local-base',
       'team/feature',
-      false
+      false,
+      false,
+      {}
     )
   })
 
@@ -360,7 +391,9 @@ describe('registerWorktreeHandlers', () => {
       '/workspace/offline-local-main',
       'offline-local-main',
       'main',
-      false
+      false,
+      false,
+      {}
     )
   })
 

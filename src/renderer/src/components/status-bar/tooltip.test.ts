@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { createElement } from 'react'
 import type * as ReactModule from 'react'
 import type { ProviderRateLimits } from '../../../../shared/rate-limit-types'
 

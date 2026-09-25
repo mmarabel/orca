@@ -65,6 +65,9 @@ export function useBrowserPageChromeFocus({
       if (!input) {
         return false
       }
+      // Why: the chord and IPC land here directly, and a pending guest retry would otherwise pull
+      // focus back off the bar the moment the guest attaches.
+      cancelGuestFocusRetry()
       guestFocus.blur()
       input.focus()
       if (selection) {
@@ -76,7 +79,7 @@ export function useBrowserPageChromeFocus({
       }
       return document.activeElement === input
     },
-    [addressBarInputRef, guestFocus]
+    [addressBarInputRef, cancelGuestFocusRetry, guestFocus]
   )
 
   const focusGuestNow = useCallback(() => {

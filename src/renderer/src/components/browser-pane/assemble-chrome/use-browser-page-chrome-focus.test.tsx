@@ -329,6 +329,21 @@ describe('useBrowserPageChromeFocus', () => {
     expect(document.activeElement).toBe(guest())
   })
 
+  it.each([
+    ['the chord', (): void => pressFocusAddressBarChord(true)],
+    ['IPC', (): void => act(() => focusAddressBarFromIpc.emit({ browserPageId: PAGE_ID }))]
+  ])('keeps the address bar taken over %s while a guest retry is pending', (_, focusBar) => {
+    const view = render(<ChromeHarness hasGuest={false} />)
+    act(() => flushFrames())
+    act(() => requestBrowserFocus({ pageId: PAGE_ID, target: 'webview' }))
+
+    focusBar()
+    view.rerender(<ChromeHarness />)
+    act(() => flushFrames())
+
+    expectAddressBarFocusedAndSelected()
+  })
+
   it('drops a guest retry in flight when the pane stops being the active surface', () => {
     const view = render(
       <>

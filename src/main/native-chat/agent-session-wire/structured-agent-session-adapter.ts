@@ -14,6 +14,7 @@ import type {
   AgentJournalItemIdentity,
   AgentJournalItemBody,
   AgentJournalMessageItem,
+  AgentJournalDispatchState,
   AgentSessionJournalIdentity
 } from '../../../shared/agent-session-journal-types'
 import type { AgentSessionProviderHandleLink } from '../../../shared/agent-session-provider-handle'
@@ -26,10 +27,13 @@ import type {
   AgentSessionBackgroundTaskState,
   AgentSessionOptionsResult,
   AgentSessionSlashCommand,
+  AgentSessionThreadGoalChange,
   AgentSessionWireRefusalCode
 } from '../../../shared/agent-session-wire'
+import { isAgentSessionWireRefusalCode } from '../../../shared/agent-session-wire-refusals'
 import type { ProviderHistoryWindow } from '../agent-session-journal/journal-submission-reconciler'
 import type { StructuredAgentSessionEventSink } from './structured-agent-session-event-sink'
+import type { AgentSessionCreatePhaseRecorder } from '../../observability/agent-session-instrumentation'
 
 export class AgentSessionAcquisitionRefusal extends Error {
   constructor(
@@ -38,12 +42,6 @@ export class AgentSessionAcquisitionRefusal extends Error {
   ) {
     super(message)
     this.name = 'AgentSessionAcquisitionRefusal'
-  }
-}
-
-export class AgentSessionRewindRefusal extends AgentSessionAcquisitionRefusal {
-  constructor(readonly rewindReason: AgentSessionRewindReason) {
-    super(`agent_session_rewind:${rewindReason}`)
   }
 }
 
@@ -68,6 +66,15 @@ export class AgentSessionAcquisitionRootExitObservedError extends Error {
   }
 }
 
+/** The provider child failed and cleanup proved its whole tree gone. As with a root exit, the
+ *  provider's own diagnostic is the message. */
+export class AgentSessionAcquisitionExitProvenError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause })
+    this.name = 'AgentSessionAcquisitionExitProvenError'
+  }
+}
+
 export class AgentSessionAcquisitionExitUnprovenError extends Error {
   constructor(cause: unknown) {
     super('agent_session_acquisition_exit_unproven', { cause })
@@ -83,6 +90,8 @@ export type AgentSessionAcquisition = {
   /** Host-local identity for this exact provider child, distinct even when the durable fence is
    *  reused by a superseding acquisition. */
   acquisitionGeneration?: string
+  /** Absent means `ready`: the adapter proved startup before answering. */
+  providerChildPhase?: StructuredAgentSessionProviderChildPhase
 }
 
 /** Acquisition failed with first-hand proof that no provider process existed. */
@@ -111,7 +120,7 @@ export type AgentSessionDispatchOutcome =
   /** The call did not settle. Never re-send on the user's behalf. */
   | { state: 'unknown'; reason: string }
 
-export type StructuredAgentSessionLifecycleEvent = {
+export type StructuredAgentSessionEndedEvent = {
   type: 'ended'
   sessionId: string
   reason: string
@@ -122,23 +131,40 @@ export type StructuredAgentSessionLifecycleEvent = {
   observedAt?: number
   /** Translator could not admit terminal rows; host recovery must append its bounded fallback. */
   settlementRetryRequired?: boolean
+  /** The provider ended before it finished starting, so resuming it would repeat the failure. */
+  startupUnproven?: true
 }
+
+/** The child a publish-first acquire handed over has now proven its start: startup facts applied
+ *  and saved options restored. What it reports from here on is fact, not a catalog guess. */
+export type StructuredAgentSessionStartedEvent = {
+  type: 'started'
+  sessionId: string
+  fence: number
+  acquisitionGeneration: string
+  /** What the child proved, snapshotted by the adapter from what startup already read. The host
+   *  handles this inside the session's serialized step, so it must not ask the CLI. */
+  reportedOptions: AgentSessionOptionsResult['current']
+  /** Saved options the restore could not apply; the host drops them rather than persist them. */
+  restoreSkippedOptions: readonly string[]
+}
+
+export type StructuredAgentSessionLifecycleEvent =
+  | StructuredAgentSessionEndedEvent
+  | StructuredAgentSessionStartedEvent
+
+/** Whether the provider child behind an acquisition has proven its start. A publish-first
+ *  acquire hands over a `starting` child and the `started` lifecycle event flips it. */
+export type StructuredAgentSessionProviderChildPhase = 'starting' | 'ready'
 
 export type StructuredAgentSessionAcquireInput = {
   identity: AgentSessionJournalIdentity
-  rewind?: {
-    targetUuid: string
-    previousLeafUuid: string
-    dropsTurn?: string
-    onProved?: (leafUuid: string) => Promise<void>
-  }
-  /** Recovery restores an unproved rewind's original cursor with ordinary branch proof. */
-  rewindRecovery?: { leafUuid: string; onProved: () => Promise<void> }
   fence: number
   spawnToken: string
   options?: Readonly<Record<string, string>>
   /** Provider events may begin before acquisition returns. */
   events?: StructuredAgentSessionEventSink
+  recordPhase?: AgentSessionCreatePhaseRecorder
 }
 
 export type StructuredAgentSessionSetOptionInput = {
@@ -167,6 +193,11 @@ export type StructuredAgentSessionAdapter = {
     clientMessageId: string
     body: AgentJournalMessageItem
     fence: number
+    /** Host clock on the submission row this send came from; the origin the turn
+     *  it opens records as `requestedAt`. */
+    requestedAt?: number
+    /** Revalidate after preparation, immediately before writing to the provider. */
+    beforeDispatch?: () => Promise<void>
   }): Promise<AgentSessionDispatchOutcome>
   rewindSupport?(sessionId: string): AgentSessionRewindSupport
   recoverRewind?(input: {
@@ -202,7 +233,27 @@ export type StructuredAgentSessionAdapter = {
     turnId: string
     fence: number
     prompt?: { itemId: string }
+    /** Latest journal submission for this fence, when the host has one. */
+    dispatchStatus?: { state: AgentJournalDispatchState; recovered: boolean } | null
+    /** Re-reads the turn the published journal says is running — the only turn a client
+     *  could have named. A function, not a value, because the guard re-checks after the
+     *  delivery fence may have waited. Absent for direct callers with no journal. */
+    resolveLiveTurnId?: () => string | null
   }): Promise<{ cancelled: boolean }>
+  /** Changes the provider thread's goal. `rejected` is the provider refusing the
+   *  change; a throw leaves its effect unknown. Absent where no goal exists. */
+  changeThreadGoal?(input: {
+    sessionId: string
+    fence: number
+    change: AgentSessionThreadGoalChange
+    /** True when the journal records a goal, whatever its status: a `set` must
+     *  start a new goal rather than rewrite that one's objective in place. */
+    replacesGoal: boolean
+  }): Promise<{ ok: true } | { ok: false; rejected: string }>
+  /** Whether this live session can change its goal. */
+  supportsThreadGoal?(sessionId: string): boolean
+  /** Whether this live session writes context facts to its turn rows. */
+  recordsContextUsage?(sessionId: string): boolean
   stopBackgroundTasks?(input: {
     sessionId: string
     fence: number
@@ -225,6 +276,8 @@ export type StructuredAgentSessionAdapter = {
   setOption(
     input: StructuredAgentSessionSetOptionInput
   ): Promise<void | Readonly<Record<string, string>>>
+  /** Resolves once a live session can take an option write, or after a bound; never rejects. */
+  awaitOptionWritable?(sessionId: string): Promise<void>
   readOptions?(input: { sessionId: string; fence: number }): Promise<AgentSessionOptionsResult>
   /** Option keys skipped after a provider rejected their persisted restore value. */
   readOptionRestoreFailures?(sessionId: string): readonly string[]
@@ -271,7 +324,19 @@ export async function rethrowAfterAgentSessionAcquisitionCleanup(
         )
   }
   if (released) {
-    throw cause
+    throw provenExitAcquisitionFailure(cause)
   }
   throw new AgentSessionAcquisitionExitUnprovenError(cause)
+}
+
+/** A failure whose child cleanup proved gone. One that already names its own verdict — a
+ *  refusal, a typed exit proof, or a host store code — keeps it. */
+function provenExitAcquisitionFailure(cause: unknown): unknown {
+  const classified =
+    cause instanceof AgentSessionAcquisitionRefusal ||
+    cause instanceof AgentSessionAcquisitionRootExitObservedError ||
+    cause instanceof AgentSessionAcquisitionExitUnprovenError ||
+    isAgentSessionPreSpawnError(cause) ||
+    (cause instanceof Error && isAgentSessionWireRefusalCode(cause.message))
+  return classified ? cause : new AgentSessionAcquisitionExitProvenError(cause)
 }

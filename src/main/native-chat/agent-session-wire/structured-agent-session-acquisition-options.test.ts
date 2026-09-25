@@ -16,6 +16,7 @@ import {
   type AgentSessionAttachParams
 } from './structured-agent-session-attach'
 import { performAttach } from './structured-agent-session-attach-flow'
+import type { AgentSessionCreatePhaseRecorder } from '../../observability/agent-session-instrumentation'
 
 const NOW = 1_800_000_000_000
 const SESSION = 'legacy-session'
@@ -221,6 +222,7 @@ describe('structured session acquisition options', () => {
     })
     const sessionAdapter = adapter({ origin: 'created' })
     const options = { model: 'gpt-5.6-sol', effort: 'medium', fastMode: 'false' }
+    const recordPhase = vi.fn<AgentSessionCreatePhaseRecorder>()
 
     const created = await performAttach({
       store,
@@ -235,11 +237,14 @@ describe('structured session acquisition options', () => {
       callerKey: 'client-1',
       params: attachParams(CREATE_OPERATION, null, options),
       now: () => NOW,
+      recordPhase,
       onAttached: () => {}
     })
 
     expect(created).toMatchObject({ ok: true })
-    expect(sessionAdapter.acquire).toHaveBeenCalledWith(expect.objectContaining({ options }))
+    expect(sessionAdapter.acquire).toHaveBeenCalledWith(
+      expect.objectContaining({ options, recordPhase })
+    )
     expect(store.getRecord(SESSION)?.options).toEqual(options)
   })
 
@@ -414,7 +419,10 @@ describe('structured session acquisition options', () => {
         now: () => NOW,
         onAttached: () => {}
       })
-    ).rejects.toThrow('model list unavailable')
+    ).resolves.toEqual({
+      ok: false,
+      refusal: { code: 'agent_session_operation_invalid', message: 'model list unavailable' }
+    })
     expect(releaseAcquisition).toHaveBeenCalledOnce()
     expect(store.getRecord(SESSION)?.lease.ownerProcess).toBeNull()
   })
@@ -503,9 +511,16 @@ describe('structured session acquisition options', () => {
           onAttached: () => {}
         })
 
-      await expect(perform(store, CREATE_OPERATION, null)).rejects.toThrow(
-        exitProven ? injected.message : 'agent_session_acquisition_exit_unproven'
-      )
+      // A proven exit before the journal opens is answered once, as the refusal its replay gives.
+      const failed = perform(store, CREATE_OPERATION, null)
+      await (exitProven && failurePoint !== 'journal'
+        ? expect(failed).resolves.toEqual({
+            ok: false,
+            refusal: { code: 'agent_session_operation_invalid', message: injected.message }
+          })
+        : expect(failed).rejects.toThrow(
+            exitProven ? injected.message : 'agent_session_acquisition_exit_unproven'
+          ))
 
       const reopened = await AgentSessionRecordStore.open({
         directory: storeDir,
@@ -556,5 +571,62 @@ describe('structured session acquisition options', () => {
         })
       }
     })
+  })
+})
+
+describe('the tab id a create records', () => {
+  async function openStore() {
+    root = await mkdtemp(join(tmpdir(), 'orca-surface-tab-id-'))
+    return AgentSessionRecordStore.open({ directory: join(root, 'store'), hostId: 'local' })
+  }
+
+  function attachWith(store: AgentSessionRecordStore, surfaceTabId?: string) {
+    return performAttach({
+      store,
+      adapter: adapter({ origin: 'created' }),
+      journalRoot: root!,
+      authority: {
+        spawnToken: 'spawn-a',
+        claimKeyId: 'key-1',
+        handoffOperationId: CREATE_OPERATION,
+        probe: { outcome: 'reservation-unused' }
+      },
+      callerKey: 'client-1',
+      // Beside the fingerprinted fields, like `options`: which tab shows the chat is not which
+      // conversation this attaches to.
+      params: {
+        ...attachParams(CREATE_OPERATION, null),
+        ...(surfaceTabId ? { surfaceTabId } : {})
+      },
+      now: () => NOW,
+      onAttached: () => {}
+    })
+  }
+
+  it('pins the id the caller reserved on the record and answers with it', async () => {
+    const store = await openStore()
+    const result = await attachWith(store, 'chat-tab-1')
+
+    expect(result).toMatchObject({ ok: true, value: { tabId: 'chat-tab-1' } })
+    expect(store.getRecord(SESSION)?.surfaceTabId).toBe('chat-tab-1')
+  })
+
+  it('records the id clients derive when the caller reserved none', async () => {
+    const store = await openStore()
+    const result = await attachWith(store)
+
+    // Every reader still keys by the derived id, so an unreserved chat must not record another.
+    const derived = `structured-agent-session-${SESSION}`
+    expect(result).toMatchObject({ ok: true, value: { tabId: derived } })
+    expect(store.getRecord(SESSION)?.surfaceTabId).toBe(derived)
+  })
+
+  it('answers a retry that names another tab with the one the record holds', async () => {
+    const store = await openStore()
+    await attachWith(store, 'chat-tab-1')
+    const retried = await attachWith(store, 'chat-tab-2')
+
+    expect(retried).toMatchObject({ ok: true, value: { tabId: 'chat-tab-1' } })
+    expect(store.getRecord(SESSION)?.surfaceTabId).toBe('chat-tab-1')
   })
 })

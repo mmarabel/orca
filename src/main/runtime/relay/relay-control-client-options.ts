@@ -21,5 +21,6 @@ export type RelayControlClientOptions = {
   /** The app-proxy agent for the control socket; absent once a factory is injected. */
   socketAgent?: Agent
   connectDeadlineMs?: number
-  silenceLimitMs?: number
+  // Test seam: deterministic probe jitter.
+  livenessRandom?: () => number
 }

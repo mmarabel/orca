@@ -14,6 +14,7 @@ import {
   removeWorktreeLinkedPaths
 } from '../ipc/worktree-symlinks'
 import { cleanupUnusedWorktreePushTargetRemote } from '../ipc/worktree-remote'
+import { runWorktreeChangeInvalidators } from '../ipc/worktree-change-invalidators'
 import {
   formatWorktreeRemovalError,
   isOrphanCompatiblePreflightError,
@@ -29,6 +30,7 @@ import {
   canSafelyRemoveOrphanedWorktreeDirectory,
   findRegisteredDeletableWorktree
 } from '../worktree-removal-safety'
+import { CLIENT_REMOVAL_HOME } from '../worktree-removal-home-guard'
 import type { RuntimeStore } from './runtime-store-contract'
 import type { RuntimeWorktreeRemovalTarget } from './runtime-worktree-selection'
 
@@ -88,7 +90,12 @@ export async function removeRuntimeRegisteredLocalWorktree(args: {
   const refreshedWorktrees = args.hasLocalOptions
     ? await listWorktreesStrict(repo.path, localOptions)
     : await listWorktreesStrict(repo.path)
-  const refreshed = findRegisteredDeletableWorktree(repo.path, canonicalPath, refreshedWorktrees)
+  const refreshed = findRegisteredDeletableWorktree(
+    repo.path,
+    canonicalPath,
+    refreshedWorktrees,
+    CLIENT_REMOVAL_HOME
+  )
   if (!refreshed) {
     throw new Error(
       `Worktree registration changed during deletion: ${canonicalPath}. Retry deletion.`
@@ -168,6 +175,8 @@ export async function removeRuntimeRegisteredLocalWorktree(args: {
         throw new Error(formatWorktreeRemovalError(error, canonicalPath, args.force))
       }
     }
+    // Why: the worktree is unlisted from here on; a scan that began before the removal is overtaken.
+    runWorktreeChangeInvalidators(repo.id)
     completed = true
   } finally {
     await gate.finish(completed)
@@ -192,6 +201,7 @@ async function cleanupOrphanedDirectory(
     await canSafelyRemoveOrphanedWorktreeDirectory(
       toLocalWorktreeRuntimePath(path, options),
       toLocalWorktreeRuntimePath(repo.path, options),
+      CLIENT_REMOVAL_HOME,
       access.statPath,
       access.readPath
     )

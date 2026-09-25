@@ -20,8 +20,7 @@ const REPRESENTATIVE_CWD_LINE_LIMIT = 200
 const REPRESENTATIVE_FILE_LIMIT = 3
 const TRANSCRIPT_EXTENSIONS = new Set(['.jsonl'])
 
-// A cwd-bucket dir (Claude, Pi) encodes exactly one cwd, so a resolved cwd never
-// changes; caching it spares each rescan the transcript-head reads.
+// Cache the existing Claude bucket probe; Pi verifies each transcript because cwd encodings collide.
 const PROJECT_DIR_CWD_CACHE_MAX = 2048
 const projectDirCwdCache = new Map<string, string>()
 
@@ -101,12 +100,15 @@ export async function discoverInScopeCwdBucketFiles(
       scopeProjectPrefixes,
       args.issues
     )) {
-      const cwd = await cachedProjectDirCwd(projectDir, args.issues, layout.agent)
-      if (!cwd || !args.scopePaths.some((scopePath) => isCwdInsideScopePath(scopePath, cwd))) {
-        continue
+      if (layout.agent === 'claude') {
+        const cwd = await cachedProjectDirCwd(projectDir, args.issues, layout.agent)
+        if (!cwd || !args.scopePaths.some((scopePath) => isCwdInsideScopePath(scopePath, cwd))) {
+          continue
+        }
       }
       await collectBucketFiles({
         agent: layout.agent,
+        scopePaths: layout.agent === 'pi' ? args.scopePaths : undefined,
         projectDir,
         issues: args.issues,
         collected,
@@ -250,6 +252,7 @@ async function readFirstCwd(
 
 async function collectBucketFiles(args: {
   agent: AiVaultAgent
+  scopePaths?: readonly string[]
   projectDir: string
   issues: AiVaultScanIssue[]
   collected: Map<string, FileWithMtime>
@@ -272,6 +275,12 @@ async function collectBucketFiles(args: {
       continue
     }
     try {
+      if (args.scopePaths) {
+        const cwd = await readFirstCwd(path, args.issues, args.agent)
+        if (!cwd || !args.scopePaths.some((scope) => isCwdInsideScopePath(scope, cwd))) {
+          continue
+        }
+      }
       const fileStat = await wslGatedStat(path, 'scan')
       addBoundedFile(args.collected, args.limit, {
         path,

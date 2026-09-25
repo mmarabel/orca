@@ -87,6 +87,27 @@ describe('scanAiVaultSessions — Pi scope discovery', () => {
     )
   })
 
+  it('finds an older session when another cwd shares its encoded bucket', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'orca-pi-collision-'))
+    tempRoots.push(root)
+    const roots = isolatedScanRoots(root)
+    for (const [cwd, id, timestamp] of [
+      ['/home/ada/repo/app', 'in-scope', '2026-04-01T10:00:00.000Z'],
+      ['/home/ada/repo-app', 'collision', '2026-05-01T10:00:00.000Z'],
+      ['/home/ada/elsewhere', 'recent', '2026-06-01T10:00:00.000Z']
+    ]) {
+      await writePiSession({ sessionsDir: roots.piSessionsDir, cwd, id, timestamp })
+    }
+    const result = await scanAiVaultSessions({
+      ...roots,
+      platform: 'linux',
+      limit: 1,
+      scopePaths: ['/home/ada/repo/app']
+    })
+    expect(result.sessions.map((session) => session.sessionId)).toContain('in-scope')
+    expect(result.sessions.map((session) => session.sessionId)).not.toContain('collision')
+  })
+
   it('adds nothing when no scope is requested', async () => {
     const root = await mkdtemp(join(tmpdir(), 'orca-ai-vault-pi-noscope-'))
     tempRoots.push(root)

@@ -77,7 +77,7 @@ export function SidebarFeedbackDialog({
     handleRemoveImage,
     clearImages,
     hasPendingImageReads,
-    getReservedImageSlots
+    getReservedImageCapacity
   } = useSidebarFeedbackImages({ open, isSubmitting, mountedRef })
 
   useSidebarFeedbackEnvironmentPrefill({
@@ -159,13 +159,14 @@ export function SidebarFeedbackDialog({
       }
 
       if (mountedRef.current) {
-        // Why: the text reached us but the screenshots did not, so say that
-        // plainly instead of a blanket success the user would misread.
+        // Why: the text reached us but the screenshots did not. The dialog
+        // closes either way, so the copy states the outcome rather than
+        // implying the screenshots are still recoverable from here.
         if (result.imagesFailure) {
           toast.warning(
             translate(
               'auto.components.sidebar.SidebarFeedbackDialog.imagesRejected',
-              "Feedback sent without your screenshots. They couldn't be uploaded."
+              'Feedback sent. Your screenshots were too large to upload and were not included.'
             )
           )
         } else if (result.imagesDelivered === false) {
@@ -224,7 +225,8 @@ export function SidebarFeedbackDialog({
           // Why: consume the paste only when something is actually attachable.
           // An unsupported image still routes through for its rejection toast,
           // but preventing default there would silently eat co-pasted text.
-          if (hasAttachableFeedbackImage(pasted, getReservedImageSlots())) {
+          const reserved = getReservedImageCapacity()
+          if (hasAttachableFeedbackImage(pasted, reserved.count, reserved.bytes)) {
             event.preventDefault()
           }
           handleAddFiles(pasted)

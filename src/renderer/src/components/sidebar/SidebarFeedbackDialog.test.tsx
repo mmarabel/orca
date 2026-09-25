@@ -316,7 +316,7 @@ describe('SidebarFeedbackDialog image submission', () => {
 
     await waitFor(() =>
       expect(mocks.toastWarning).toHaveBeenCalledWith(
-        "Feedback sent without your screenshots. They couldn't be uploaded."
+        'Feedback sent. Your screenshots were too large to upload and were not included.'
       )
     )
     expect(mocks.toastWarning).toHaveBeenCalledTimes(1)
@@ -367,6 +367,66 @@ describe('SidebarFeedbackDialog image submission', () => {
 
     expect(paste.defaultPrevented).toBe(false)
     expect(mocks.readFeedbackImageFiles).toHaveBeenCalledWith([file], 0, 0)
+  })
+
+  // Why: the byte budget, not the count, is what binds after one full-screen
+  // screenshot. A gate that only knows the count prevents default on a paste
+  // readFeedbackImageFiles is about to reject, eating the co-pasted text.
+  it('does not consume text when the attachment budget is already spent', async () => {
+    mocks.readFeedbackImageFiles.mockResolvedValue({
+      images: [
+        {
+          id: 'full',
+          name: 'full.png',
+          contentType: 'image/png',
+          bytes: 4 * 1024 * 1024,
+          data: new Uint8Array([1]),
+          previewUrl: 'blob:full'
+        }
+      ],
+      errors: []
+    })
+    const { container } = render(<SidebarFeedbackDialog open onOpenChange={vi.fn()} />)
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')
+    fireEvent.change(input!, {
+      target: { files: [new File(['x'], 'full.png', { type: 'image/png' })] }
+    })
+    await screen.findByRole('button', { name: 'Remove full.png' })
+
+    const small = new File(['x'], 'small.png', { type: 'image/png' })
+    Object.defineProperty(small, 'size', { value: 1024 })
+    const paste = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(paste, 'clipboardData', { value: { files: [small] } })
+    fireEvent(screen.getByPlaceholderText('What could we improve?'), paste)
+
+    expect(paste.defaultPrevented).toBe(false)
+  })
+
+  it('stops offering Attach once the byte budget is spent, below the count limit', async () => {
+    mocks.readFeedbackImageFiles.mockResolvedValue({
+      images: [
+        {
+          id: 'full',
+          name: 'full.png',
+          contentType: 'image/png',
+          bytes: 4 * 1024 * 1024,
+          data: new Uint8Array([1]),
+          previewUrl: 'blob:full'
+        }
+      ],
+      errors: []
+    })
+    const { container } = render(<SidebarFeedbackDialog open onOpenChange={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Attach' }).hasAttribute('disabled')).toBe(false)
+    expect(screen.getByText('Attach up to 4 screenshots, 4.0 MB total')).toBeTruthy()
+
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')
+    fireEvent.change(input!, {
+      target: { files: [new File(['x'], 'full.png', { type: 'image/png' })] }
+    })
+    await screen.findByRole('button', { name: 'Remove full.png' })
+
+    expect(screen.getByRole('button', { name: 'Attach' }).hasAttribute('disabled')).toBe(true)
   })
 
   it('counts committed and in-flight image bytes against the total budget', async () => {

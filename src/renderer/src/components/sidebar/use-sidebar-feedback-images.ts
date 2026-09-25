@@ -22,8 +22,8 @@ export function useSidebarFeedbackImages(params: {
   handleRemoveImage: (id: string) => void
   clearImages: () => void
   hasPendingImageReads: () => boolean
-  /** Live committed+pending count for paste capacity checks. */
-  getReservedImageSlots: () => number
+  /** Live committed+pending count and bytes, for the paste and attach gates. */
+  getReservedImageCapacity: () => { count: number; bytes: number }
 } {
   const [images, setImages] = useState<FeedbackImageDraft[]>([])
   const [pendingImageReadCount, setPendingImageReadCount] = useState(0)
@@ -47,6 +47,17 @@ export function useSidebarFeedbackImages(params: {
     []
   )
 
+  // Why: a read's callback moves its batch from pending to the live ref in one
+  // step, but rendered state lags a render, so only the ref covers that gap.
+  const getReservedImageCapacity = useCallback((): { count: number; bytes: number } => {
+    const liveDrafts = liveImageDraftsRef.current
+    const pendingReads = pendingImageReadsRef.current
+    return {
+      count: liveDrafts.length + pendingReads.count,
+      bytes: liveDrafts.reduce((total, image) => total + image.bytes, 0) + pendingReads.bytes
+    }
+  }, [])
+
   const handleAddFiles = useCallback(
     (files: readonly File[]) => {
       if (files.length === 0) {
@@ -61,13 +72,8 @@ export function useSidebarFeedbackImages(params: {
         )
         return
       }
-      // Why: a read's callback moves its batch from pending to the live ref in one
-      // step, but rendered state lags a render, so only the ref covers that gap.
-      const liveDrafts = liveImageDraftsRef.current
+      const { count: existingCount, bytes: existingBytes } = getReservedImageCapacity()
       const pendingReads = pendingImageReadsRef.current
-      const existingCount = liveDrafts.length + pendingReads.count
-      const existingBytes =
-        liveDrafts.reduce((total, image) => total + image.bytes, 0) + pendingReads.bytes
       const batchBytes = files.reduce((total, file) => total + file.size, 0)
       pendingReads.count += files.length
       pendingReads.bytes += batchBytes
@@ -104,7 +110,7 @@ export function useSidebarFeedbackImages(params: {
         }
       )
     },
-    [params.isSubmitting, params.mountedRef]
+    [getReservedImageCapacity, params.isSubmitting, params.mountedRef]
   )
 
   const handleRemoveImage = useCallback((id: string) => {
@@ -131,7 +137,6 @@ export function useSidebarFeedbackImages(params: {
     handleRemoveImage,
     clearImages,
     hasPendingImageReads: () => pendingImageReadsRef.current.count > 0,
-    getReservedImageSlots: () =>
-      liveImageDraftsRef.current.length + pendingImageReadsRef.current.count
+    getReservedImageCapacity
   }
 }

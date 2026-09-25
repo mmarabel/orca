@@ -10,9 +10,10 @@ import { claudeRecord, claudeText } from './claude-structured-item-translation'
 export type ClaudeStreamedTextDelta = {
   identity: AgentJournalItemIdentity
   text: string
-  /** The block's own scope, which the registry already keys its map on — not a
-   *  second store. Streamed prose has no message envelope when it is persisted. */
-  producedBySubagent?: true
+  /** The block's own scope, which this registry already keys its map on. Streamed
+   *  prose has no message envelope when it is persisted, so the producer travels
+   *  with the delta rather than being re-read from a frame that is long gone. */
+  parentToolUseId: string | null
 }
 
 type StreamedMessage = {
@@ -72,9 +73,6 @@ export function createClaudeStreamedBlockRegistry(): ClaudeStreamedBlockRegistry
       }
       const parentToolUseId = claudeText(frame.parent_tool_use_id)
       const scope = scopeKey(sessionId, parentToolUseId)
-      const producer: { producedBySubagent?: true } = parentToolUseId
-        ? { producedBySubagent: true }
-        : {}
       if (event.type === 'message_start') {
         messages.set(scope, {
           messageId: claudeText(claudeRecord(event.message)?.id),
@@ -91,7 +89,7 @@ export function createClaudeStreamedBlockRegistry(): ClaudeStreamedBlockRegistry
         }
         const identity = mint(messageFor(scope), sessionId, index, uuid)
         const text = claudeText(block.text)
-        return text ? { identity, text, ...producer } : null
+        return text ? { identity, text, parentToolUseId } : null
       }
       if (event.type !== 'content_block_delta') {
         return null
@@ -103,7 +101,7 @@ export function createClaudeStreamedBlockRegistry(): ClaudeStreamedBlockRegistry
       }
       const streamed = messageFor(scope)
       const identity = streamed.blocks.get(index) ?? mint(streamed, sessionId, index, uuid)
-      return { identity, text, ...producer }
+      return { identity, text, parentToolUseId }
     },
     reconcile: (frame) => {
       const streamed = messages.get(scopeKey(frame.sessionId, frame.parentToolUseId))

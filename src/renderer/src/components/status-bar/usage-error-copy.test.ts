@@ -56,3 +56,25 @@ describe('getProviderDisplayName', () => {
     expect(getProviderDisplayName('unknown-provider' as never)).toBe('unknown-provider')
   })
 })
+
+describe('unsubscribed OpenCode Go accounts', () => {
+  const noSubscription = {
+    provider: 'opencode-go',
+    session: null,
+    weekly: null,
+    monthly: null,
+    updatedAt: 0,
+    error:
+      'This OpenCode account has no OpenCode Go subscription. Subscribe at opencode.ai to see Go usage.',
+    status: 'error',
+    usageMetadata: { failureKind: 'no-subscription' }
+  } as const
+
+  it('labels the entitlement verdict instead of a refresh failure', () => {
+    expect(getProviderUsageStatusLabel(noSubscription)).toBe('No subscription')
+  })
+
+  it('keeps the specific message rather than the generic auth copy', () => {
+    expect(getProviderUsageErrorMessage(noSubscription)).toBe(noSubscription.error)
+  })
+})

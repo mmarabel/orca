@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentJournalRenderItem } from './agent-session-journal-types'
 import {
-  activeStructuredAgentSessionToolCall,
+  statusStructuredAgentSessionToolCall,
   isStructuredAgentSessionThinking
 } from './structured-agent-session-live-turn'
 
@@ -115,7 +115,7 @@ describe('isStructuredAgentSessionThinking', () => {
   })
 })
 
-describe('producer attribution in the live-turn readers', () => {
+describe("the live-turn readers answer for the session's own agent", () => {
   const turnStart = item('turn-start', 1, {
     kind: 'status',
     text: 'Working',
@@ -130,8 +130,9 @@ describe('producer attribution in the live-turn readers', () => {
   const child = (
     itemId: string,
     sequence: number,
-    body: AgentJournalRenderItem['body']
-  ): AgentJournalRenderItem => ({ ...item(itemId, sequence, body), producedBySubagent: true })
+    body: AgentJournalRenderItem['body'],
+    agentId = 'task-1'
+  ): AgentJournalRenderItem => ({ ...item(itemId, sequence, body), agentId })
 
   it('does not report the parent as thinking because a subagent is reasoning', () => {
     const childReasoning = child('child-reasoning', 3, {
@@ -158,7 +159,7 @@ describe('producer attribution in the live-turn readers', () => {
       input: { pattern: 'x' },
       state: 'running'
     })
-    expect(activeStructuredAgentSessionToolCall([turnStart, spawnCall, childCall])?.name).toBe(
+    expect(statusStructuredAgentSessionToolCall([turnStart, spawnCall, childCall])?.name).toBe(
       'Task'
     )
   })
@@ -170,6 +171,33 @@ describe('producer attribution in the live-turn readers', () => {
       input: { pattern: 'x' },
       state: 'running'
     })
-    expect(activeStructuredAgentSessionToolCall([turnStart, childCall])).toBeNull()
+    expect(statusStructuredAgentSessionToolCall([turnStart, childCall])).toBeNull()
+  })
+
+  it('treats an agent id that failed to resolve as a child, not as the parent', () => {
+    // Presence, not truthiness. A truthy test would read the empty id as root
+    // and put the child's tool call straight back on the parent's row — the
+    // exact defect this attribution exists to remove.
+    const unresolved = child(
+      'child-grep',
+      3,
+      { kind: 'tool-call', name: 'Grep', input: { pattern: 'x' }, state: 'running' },
+      ''
+    )
+    expect(statusStructuredAgentSessionToolCall([turnStart, spawnCall, unresolved])?.name).toBe(
+      'Task'
+    )
+  })
+
+  it("reads a row written before linkage existed as the parent's own", () => {
+    const legacyChildCall = item('legacy-call', 3, {
+      kind: 'tool-call',
+      name: 'Grep',
+      input: { pattern: 'x' },
+      state: 'running'
+    })
+    expect(
+      statusStructuredAgentSessionToolCall([turnStart, spawnCall, legacyChildCall])?.name
+    ).toBe('Grep')
   })
 })

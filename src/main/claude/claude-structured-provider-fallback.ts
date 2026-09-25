@@ -15,6 +15,7 @@ import {
   type ClaudeMessageEnvelope
 } from './claude-structured-item-translation'
 import { claudeResultOutcome } from './claude-result-outcome'
+import { rootClaudeRowStamp, type ClaudeRowStamp } from './claude-provisional-row-corrections'
 
 export function claudeProviderFrameKind(message: Record<string, unknown>): string {
   const type = claudeText(message.type) ?? 'unknown'
@@ -113,12 +114,15 @@ export function createClaudeProviderFrameFallback(
     /** Runs only when a row is actually going to be written, so a frame that
      *  translates to nothing never opens a turn. */
     beforeAppend?: () => void,
-    options?: UnhandledProviderFrameJournalItemOptions & { producedBySubagent?: true }
+    options?: UnhandledProviderFrameJournalItemOptions,
+    /** Attributes the row to the agent that produced the frame. Omitted for a
+     *  frame the session's own agent produced. */
+    stamp?: ClaudeRowStamp
   ) => boolean
 } {
   let sequence = 0
   return {
-    append: (kind, payload, displayText, beforeAppend, options) => {
+    append: (kind, payload, displayText, beforeAppend, options, stamp) => {
       sequence += 1
       const translated = unhandledProviderFrameJournalItem(
         'claude',
@@ -134,14 +138,12 @@ export function createClaudeProviderFrameFallback(
       const bounded = displayText
         ? boundInlineText(displayText, DEFAULT_JOURNAL_PAYLOAD_LIMITS).text
         : null
-      sink.appendItem(
-        {
-          provider: 'orca',
-          clientMessageId: `provider-frame:claude:${acquisitionId}:${sequence}`
-        },
-        bounded ? { ...translated.body, text: bounded } : translated.body,
-        options?.producedBySubagent ? { producedBySubagent: true } : undefined
-      )
+      const identity = {
+        provider: 'orca',
+        clientMessageId: `provider-frame:claude:${acquisitionId}:${sequence}`
+      } as const
+      const body = bounded ? { ...translated.body, text: bounded } : translated.body
+      sink.appendItem(identity, body, (stamp ?? rootClaudeRowStamp)(identity, body))
       sink.publish()
       return true
     }
@@ -158,7 +160,7 @@ export function appendUnmodeledContent(
   envelope: ClaudeMessageEnvelope,
   message: Record<string, unknown>,
   beforeAppend: () => void,
-  producer: { producedBySubagent?: true } = {}
+  stamp: ClaudeRowStamp
 ): boolean {
   let changed = false
   for (const part of envelope.content.filter((part) => !isModeledClaudeContent(part))) {
@@ -169,15 +171,22 @@ export function appendUnmodeledContent(
         part,
         readableProviderFrameText(part) ?? CLAUDE_UNRENDERABLE_CONTENT_TEXT,
         beforeAppend,
-        producer
+        undefined,
+        stamp
       ) || changed
   }
   if (envelope.content.length === 0 && envelope.role === 'assistant') {
     // Empty provider placeholders do not prove work began, and may have no
     // later result capable of closing a turn.
     changed =
-      fallback.append(`message:${envelope.role}:empty`, message, undefined, undefined, producer) ||
-      changed
+      fallback.append(
+        `message:${envelope.role}:empty`,
+        message,
+        undefined,
+        undefined,
+        undefined,
+        stamp
+      ) || changed
   }
   return changed
 }

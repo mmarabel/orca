@@ -5,19 +5,24 @@
 // Rules: highest revision wins, a tombstone removes, a late lower revision is
 // dropped rather than resurrecting stale content, and ordering is by the
 // sequence of the row that CREATED an item (a later revision updates the body,
-// it does not move the bubble).
+// it does not move the bubble). Producer linkage is likewise the creating
+// write's: a revision naming no producer keeps it, one naming any replaces it.
 
 import type {
   AgentJournalAcceptanceReceipt,
-  AgentJournalItemBody,
   AgentJournalRenderItem,
   AgentJournalSnapshot,
   AgentJournalSubmission
 } from '../../../shared/agent-session-journal-types'
+import { journalBatchMutationProducer, journalRenderItem } from './journal-render-item'
 import {
   agentJournalSubmissionKey,
   parseAgentJournalItemKey
 } from '../../../shared/agent-session-journal-item-key'
+import {
+  agentJournalLinkageFields,
+  namesAgentJournalProducer
+} from '../../../shared/agent-session-journal-producer'
 import { structuredAgentSessionPayloadFingerprint } from '../../../shared/structured-agent-session-mutation'
 import { journalItemRevisionIsStale } from './journal-item-revision'
 import type { JournalRow } from './journal-row-schema'
@@ -74,7 +79,7 @@ export function applyJournalRow(state: JournalReducerState, row: JournalRow): vo
     }
     const itemId = resolveJournalItemId(state, row.itemId, row.body)
     acceptSubmissionFromProviderItem(state, row.itemId, itemId, row)
-    upsertItem(state, itemId, row.revision, renderedItem(itemId, row.revision, row.body, row))
+    upsertItem(state, itemId, row.revision, journalRenderItem(itemId, row.revision, row.body, row))
     return
   }
   if (row.kind === 'tombstone') {
@@ -92,8 +97,18 @@ export function applyJournalRow(state: JournalReducerState, row: JournalRow): vo
         }
         const itemId = resolveJournalItemId(state, mutation.itemId, mutation.body)
         acceptSubmissionFromProviderItem(state, mutation.itemId, itemId, row)
-        const next = renderedItem(itemId, mutation.revision, mutation.body, row)
-        upsertItem(state, itemId, mutation.revision, next)
+        upsertItem(
+          state,
+          itemId,
+          mutation.revision,
+          journalRenderItem(
+            itemId,
+            mutation.revision,
+            mutation.body,
+            row,
+            journalBatchMutationProducer(row, mutation)
+          )
+        )
       } else {
         removeItem(state, resolveItemId(state, mutation.itemId), mutation.revision)
       }
@@ -173,27 +188,6 @@ function resolveItemId(state: JournalReducerState, itemId: string): string {
   return state.aliases.get(itemId) ?? itemId
 }
 
-/** One render item, built the same way by every upsert path. Both row-level markers
- *  are copied here rather than at each call site: they used to be two spreads that
- *  had to stay in sync, and absence is the claim in both cases — appended live, and
- *  produced by the session's own agent. */
-function renderedItem(
-  itemId: string,
-  revision: number,
-  body: AgentJournalItemBody,
-  row: JournalRow
-): AgentJournalRenderItem {
-  return {
-    itemId,
-    revision,
-    body,
-    sequence: row.seq,
-    observedAt: row.ts,
-    ...(row.recovered ? { recovered: row.recovered } : {}),
-    ...(row.producedBySubagent ? { producedBySubagent: row.producedBySubagent } : {})
-  }
-}
-
 function upsertItem(
   state: JournalReducerState,
   itemId: string,
@@ -224,6 +218,9 @@ function upsertItem(
     parseAgentJournalItemKey(itemId)?.provider === 'orca'
   state.items.set(itemId, {
     ...next,
+    // Settlements, prompt answers and reopen sweeps revise rows any agent wrote
+    // without naming one; each would otherwise hand a subagent's row to the session.
+    ...(namesAgentJournalProducer(next) ? {} : agentJournalLinkageFields(existing)),
     // Provider history may normalize text or omit local attachments from the original send.
     body: submitted ? existing.body : next.body,
     sequence: existing.sequence,
@@ -260,7 +257,7 @@ function applySubmission(
     resolvedAt: null
   })
   const itemId = agentJournalSubmissionKey(row.clientMessageId)
-  upsertItem(state, itemId, 0, renderedItem(itemId, 0, row.body, row))
+  upsertItem(state, itemId, 0, journalRenderItem(itemId, 0, row.body, row))
 }
 
 function applyDispatch(

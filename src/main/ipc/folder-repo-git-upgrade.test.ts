@@ -47,10 +47,10 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 vi.mock('./worktree-remote', () => ({
   notifyWorktreesChanged: vi.fn()
 }))
-vi.mock('./repos', () => ({
+vi.mock('./repos/repos-changed-notification', () => ({
   notifyReposChanged: vi.fn()
 }))
-vi.mock('./filesystem-auth', () => ({
+vi.mock('./registered-worktree-roots-cache', () => ({
   invalidateAuthorizedRootsCache: vi.fn()
 }))
 vi.mock('../worktree-root-preparation', () => ({
@@ -58,8 +58,8 @@ vi.mock('../worktree-root-preparation', () => ({
 }))
 
 import { notifyWorktreesChanged } from './worktree-remote'
-import { notifyReposChanged } from './repos'
-import { invalidateAuthorizedRootsCache } from './filesystem-auth'
+import { notifyReposChanged } from './repos/repos-changed-notification'
+import { invalidateAuthorizedRootsCache } from './registered-worktree-roots-cache'
 import { prepareLocalWorktreeRootForRepo } from '../worktree-root-preparation'
 import { notifyMainWindowBecameVisible } from '../window/main-window-visibility'
 import {
@@ -183,6 +183,7 @@ describe('folder repo git upgrade watch', () => {
 
     expect(store.updateRepo).toHaveBeenCalledWith('folder-repo', {
       kind: 'git',
+      folderUpgradeGitRootPath: repoPath.replaceAll('\\', '/'),
       externalWorktreeVisibility: 'hide'
     })
     expect(prepareLocalWorktreeRootForRepo).toHaveBeenCalledTimes(1)
@@ -206,7 +207,10 @@ describe('folder repo git upgrade watch', () => {
     })
     await tick()
 
-    expect(store.updateRepo).toHaveBeenCalledWith('folder-repo', { kind: 'git' })
+    expect(store.updateRepo).toHaveBeenCalledWith('folder-repo', {
+      kind: 'git',
+      folderUpgradeGitRootPath: join(root, 'symlinked-project').replaceAll('\\', '/')
+    })
   })
 
   it('refuses a project that has folder workspaces the git listing would drop', async () => {

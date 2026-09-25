@@ -1,3 +1,4 @@
+import './mock-descendant-sweep'
 /* Dead-endpoint write handling and daemon respawn after the daemon dies. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, rmSync } from 'node:fs'
@@ -13,6 +14,8 @@ import {
   waitFor
 } from './daemon-pty-adapter-test-harness'
 import type * as DaemonHealthModule from './daemon-health'
+import type * as DaemonTccAttributionModule from './daemon-tcc-attribution'
+import type * as DaemonBundleStalenessModule from './daemon-bundle-staleness'
 
 const {
   getMacDaemonSystemResolverHealthMock,
@@ -32,8 +35,22 @@ vi.mock('./daemon-health', async (importOriginal) => {
   const actual = await importOriginal<typeof DaemonHealthModule>()
   return {
     ...actual,
-    getMacDaemonSystemResolverHealth: getMacDaemonSystemResolverHealthMock,
-    getMacDaemonTccAttributionHealth: getMacDaemonTccAttributionHealthMock,
+    getMacDaemonSystemResolverHealth: getMacDaemonSystemResolverHealthMock
+  }
+})
+
+vi.mock('./daemon-tcc-attribution', async (importOriginal) => {
+  const actual = await importOriginal<typeof DaemonTccAttributionModule>()
+  return {
+    ...actual,
+    getMacDaemonTccAttributionHealth: getMacDaemonTccAttributionHealthMock
+  }
+})
+
+vi.mock('./daemon-bundle-staleness', async (importOriginal) => {
+  const actual = await importOriginal<typeof DaemonBundleStalenessModule>()
+  return {
+    ...actual,
     isDaemonStaleForCurrentBundle: isDaemonStaleForCurrentBundleMock
   }
 })

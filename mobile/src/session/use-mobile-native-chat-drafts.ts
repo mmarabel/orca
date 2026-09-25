@@ -9,6 +9,7 @@ import {
   normalizeReconcileText,
   type UnconfirmedSend
 } from './mobile-native-chat-draft-reconcile'
+import { rebaseMobileNativeChatPendingBaselines } from './mobile-native-chat-pending-baseline'
 import { retireLandedMobileNativeChatPending } from './mobile-native-chat-pending-retirement'
 import {
   appendMobileNativeChatPending,
@@ -21,6 +22,7 @@ import {
 import { mobileNativeChatScopeKey } from './mobile-native-chat-scope-key'
 import { useMobileNativeChatLaunchDraftSeed } from './use-mobile-native-chat-launch-draft-seed'
 import type { MobileNativeChatLaunchDraftSeed } from './use-mobile-native-chat-launch-draft-seed'
+import { MobileNativeChatDraftEditGenerations } from './mobile-native-chat-draft-edit-generations'
 
 export type { MobileNativeChatPendingMessage, MobileNativeChatSendOrigin }
 
@@ -46,9 +48,14 @@ export function useMobileNativeChatDrafts(args: {
    *  transcript still belongs to the previously active tab), so it cannot be
    *  trusted to decline or retire the seed. */
   transcriptLoading?: boolean
+  /** `messages` is this session's own settled history — so an empty one really
+   *  is an empty conversation, not a read that failed or never ran. Only then
+   *  does a send's captured tail describe a real boundary. */
+  transcriptSettled: boolean
 }): {
   composerText: string
   setComposerText: Dispatch<SetStateAction<string>>
+  getComposerEditGeneration: () => number
   pending: MobileNativeChatPendingMessage[]
   /** Phone-local previews rebound to the transcript message that replaced the
    *  optimistic echo, keyed by authoritative message id. */
@@ -79,7 +86,8 @@ export function useMobileNativeChatDrafts(args: {
     launchDraft,
     launchDraftCreatedAt,
     chatActive = true,
-    transcriptLoading
+    transcriptLoading,
+    transcriptSettled
   } = args
   const draftKey = mobileNativeChatScopeKey(hostId, worktreeId, tabId)
   const pendingKey = draftKey && sessionId ? `${draftKey}\0${sessionId}` : null
@@ -94,6 +102,7 @@ export function useMobileNativeChatDrafts(args: {
     Record<string, Record<string, string[]>>
   >({})
   const pendingCounterRef = useRef(0)
+  const draftEditGenerationsRef = useRef(new MobileNativeChatDraftEditGenerations())
   const messagesRef = useRef(messages)
   messagesRef.current = messages
   const activeDraftKeyRef = useRef(draftKey)
@@ -117,6 +126,7 @@ export function useMobileNativeChatDrafts(args: {
       if (!draftKey) {
         return
       }
+      draftEditGenerationsRef.current.advance(draftKey)
       setDrafts((previous) => {
         const current = previous[draftKey] ?? ''
         const next = typeof value === 'function' ? value(current) : value
@@ -125,7 +135,6 @@ export function useMobileNativeChatDrafts(args: {
     },
     [draftKey]
   )
-
   const captureSendOrigin = useCallback(
     (text: string) => {
       if (!draftKey) {
@@ -134,14 +143,18 @@ export function useMobileNativeChatDrafts(args: {
       const normalizedText = normalizeReconcileText(text)
       return {
         draftKey,
+        draftEditGeneration: draftEditGenerationsRef.current.readDraft(draftKey),
         pendingKey,
         normalizedText,
         baselineOccurrences: countUserTextOccurrences(messagesRef.current, normalizedText),
         baselineTailMessageId: messagesRef.current.at(-1)?.id ?? null,
-        glueBaselineTrusted: !transcriptLoading
+        // Only a settled read makes this a boundary. Anything else — hydrating,
+        // or a read that failed — hands back an empty list that reads as "the
+        // conversation was empty", which lets any row claim this send later.
+        baselineResolved: transcriptSettled
       }
     },
-    [draftKey, pendingKey, transcriptLoading]
+    [draftKey, pendingKey, transcriptSettled]
   )
 
   // Why: over relay the send RPC can take seconds (or lose only its ack), and a
@@ -149,7 +162,8 @@ export function useMobileNativeChatDrafts(args: {
   // send". Clear at send time; a definite rejection restores the text below.
   const clearDraftForSend = useCallback((origin: MobileNativeChatSendOrigin, text: string) => {
     setDrafts((previous) =>
-      (previous[origin.draftKey] ?? '').trim() === text.trim()
+      draftEditGenerationsRef.current.isCurrent(origin.draftKey, origin.draftEditGeneration) &&
+      (previous[origin.draftKey] ?? '') === text
         ? { ...previous, [origin.draftKey]: '' }
         : previous
     )
@@ -158,7 +172,10 @@ export function useMobileNativeChatDrafts(args: {
   const restoreRejectedDraft = useCallback((origin: MobileNativeChatSendOrigin, text: string) => {
     // Why: never clobber text the user typed while the rejection was in flight.
     setDrafts((previous) =>
-      (previous[origin.draftKey] ?? '') === '' ? { ...previous, [origin.draftKey]: text } : previous
+      draftEditGenerationsRef.current.isCurrent(origin.draftKey, origin.draftEditGeneration) &&
+      (previous[origin.draftKey] ?? '') === ''
+        ? { ...previous, [origin.draftKey]: text }
+        : previous
     )
   }, [])
 
@@ -260,9 +277,7 @@ export function useMobileNativeChatDrafts(args: {
       return
     }
     const movedIds = new Set(waitingForSession.map((item) => item.id))
-    setPendingBySession((previous) =>
-      mergeWaitingSessionPending(previous, pendingKey, waitingForSession)
-    )
+    setPendingBySession((state) => mergeWaitingSessionPending(state, pendingKey, waitingForSession))
     setPendingWaitingForSession((previous) =>
       removeWaitingSessionPending(previous, draftKey, movedIds)
     )
@@ -282,7 +297,16 @@ export function useMobileNativeChatDrafts(args: {
     if (pending.length === 0) {
       return
     }
-    const landedImagePreviews = findLandedImagePreviewEchoes(messages, pending)
+    // Only judge a send against a read known to be this session's. Note this
+    // does NOT give an image echo a boundary — the rebase deliberately leaves
+    // those on whatever they captured — so a caption-less photo sent before any
+    // read settled can still claim an older photo turn, exactly as it does on
+    // main. Fixing that needs a tail that excludes older image turns without
+    // excluding the send's own echo, which is a separate change.
+    const landedImagePreviews = findLandedImagePreviewEchoes(
+      messages,
+      pending.filter((item) => item.baselineResolved)
+    )
     const landedImagePendingIds = new Set(landedImagePreviews.map((preview) => preview.pendingId))
     if (landedImagePreviews.length > 0) {
       setImagePreviewsBySession((previous) =>
@@ -291,8 +315,13 @@ export function useMobileNativeChatDrafts(args: {
     }
     setPendingBySession((previous) => {
       const current = previous[pendingKey] ?? []
-      const next = retireLandedMobileNativeChatPending(messages, current, landedImagePendingIds)
-      if (next.length === current.length) {
+      // Rebase before retiring: a send captured before the history was known has
+      // to own a real boundary before any row can be judged against it.
+      const rebased = transcriptSettled
+        ? rebaseMobileNativeChatPendingBaselines(messages, current)
+        : current
+      const next = retireLandedMobileNativeChatPending(messages, rebased, landedImagePendingIds)
+      if (next === current) {
         return previous
       }
       if (next.length > 0) {
@@ -302,11 +331,12 @@ export function useMobileNativeChatDrafts(args: {
       delete remaining[pendingKey]
       return remaining
     })
-  }, [messages, pending, pendingKey])
+  }, [messages, pending, pendingKey, transcriptSettled])
 
   return {
     composerText: draftKey ? (drafts[draftKey] ?? '') : '',
     setComposerText,
+    getComposerEditGeneration: draftEditGenerationsRef.current.readComposer,
     pending,
     imagePreviewsByMessageId: pendingKey
       ? (imagePreviewsBySession[pendingKey] ?? NO_IMAGE_PREVIEWS)

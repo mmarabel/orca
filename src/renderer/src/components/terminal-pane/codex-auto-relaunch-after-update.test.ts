@@ -193,6 +193,78 @@ describe('codex auto relaunch after update', () => {
     expect(sendInput).toHaveBeenLastCalledWith('codex\r')
   })
 
+  it('does not relaunch into a PTY that replaced the one that printed the notice', async () => {
+    vi.useFakeTimers()
+    let now = 0
+    let ptyId = 'pty-1'
+    const sendInput = vi.fn(() => true)
+    const inspectForegroundProcess = vi.fn().mockResolvedValue('zsh')
+    const relaunch = createCodexAutoRelaunchAfterUpdate({
+      startupCommand: 'codex',
+      getPtyId: () => ptyId,
+      inspectForegroundProcess,
+      sendInput,
+      isDisposed: () => false,
+      now: () => now
+    })
+
+    relaunch.observeOutput('Update ran successfully! Please restart Codex.')
+    ptyId = 'pty-2'
+    now += 1_000
+    vi.advanceTimersByTime(1_000)
+    await flushAsyncTicks()
+
+    expect(inspectForegroundProcess).not.toHaveBeenCalled()
+    expect(sendInput).not.toHaveBeenCalled()
+  })
+
+  it('does not relaunch when the PTY is replaced during foreground inspection', async () => {
+    vi.useFakeTimers()
+    let ptyId = 'pty-1'
+    let resolveInspection: (processName: string) => void = () => {}
+    const sendInput = vi.fn(() => true)
+    const relaunch = createCodexAutoRelaunchAfterUpdate({
+      startupCommand: 'codex',
+      getPtyId: () => ptyId,
+      inspectForegroundProcess: () =>
+        new Promise<string>((resolve) => {
+          resolveInspection = resolve
+        }),
+      sendInput,
+      isDisposed: () => false
+    })
+
+    relaunch.observeOutput('Update ran successfully! Please restart Codex.')
+    vi.advanceTimersByTime(250)
+    await flushAsyncTicks()
+    ptyId = 'pty-2'
+    resolveInspection('zsh')
+    await flushAsyncTicks()
+    vi.advanceTimersByTime(1_000)
+    await flushAsyncTicks()
+
+    expect(sendInput).not.toHaveBeenCalled()
+  })
+
+  it('drops a pending relaunch when the PTY is rebound', async () => {
+    vi.useFakeTimers()
+    const sendInput = vi.fn(() => true)
+    const relaunch = createCodexAutoRelaunchAfterUpdate({
+      startupCommand: 'codex',
+      getPtyId: () => 'pty-1',
+      inspectForegroundProcess: vi.fn().mockResolvedValue('zsh'),
+      sendInput,
+      isDisposed: () => false
+    })
+
+    relaunch.observeOutput('Update ran successfully! Please restart Codex.')
+    relaunch.cancelPendingRelaunch()
+    vi.advanceTimersByTime(1_000)
+    await flushAsyncTicks()
+
+    expect(sendInput).not.toHaveBeenCalled()
+  })
+
   it('does not relaunch after disposal', async () => {
     vi.useFakeTimers()
     const sendInput = vi.fn(() => true)

@@ -20,6 +20,8 @@ type CodexAutoRelaunchAfterUpdateOptions = {
  */
 export type CodexAutoRelaunchAfterUpdate = {
   observeOutput: (data: string) => void
+  /** Drops a pending relaunch because the PTY that printed the update notice was replaced. */
+  cancelPendingRelaunch: () => void
   dispose: () => void
 }
 
@@ -52,7 +54,9 @@ export function createCodexAutoRelaunchAfterUpdate(
   let timer: ReturnType<typeof setTimeout> | null = null
   let observedSuccessfulUpdate = false
   let relaunched = false
+  let stopped = false
   let firstObservedAt = 0
+  let noticePtyId: string | null = null
 
   const clearTimer = (): void => {
     if (timer !== null) {
@@ -61,8 +65,13 @@ export function createCodexAutoRelaunchAfterUpdate(
     }
   }
 
+  const stop = (): void => {
+    stopped = true
+    clearTimer()
+  }
+
   const scheduleCheck = (delayMs: number): void => {
-    if (relaunched || options.isDisposed()) {
+    if (relaunched || stopped || options.isDisposed()) {
       return
     }
     clearTimer()
@@ -79,12 +88,18 @@ export function createCodexAutoRelaunchAfterUpdate(
   }
 
   const checkForegroundAndRelaunch = async (): Promise<void> => {
-    if (!startupCommand || relaunched || options.isDisposed()) {
+    if (!startupCommand || relaunched || stopped || options.isDisposed()) {
       return
     }
     const ptyId = options.getPtyId()
     if (!ptyId) {
       scheduleRetryIfWithinWindow()
+      return
+    }
+    noticePtyId ??= ptyId
+    if (ptyId !== noticePtyId) {
+      // Why: a replacement PTY never printed the update notice; never type into it.
+      stop()
       return
     }
 
@@ -98,7 +113,7 @@ export function createCodexAutoRelaunchAfterUpdate(
       return
     }
 
-    if (relaunched || options.isDisposed()) {
+    if (relaunched || stopped || options.isDisposed() || options.getPtyId() !== noticePtyId) {
       return
     }
 
@@ -117,7 +132,13 @@ export function createCodexAutoRelaunchAfterUpdate(
 
   return {
     observeOutput(data) {
-      if (!isEligibleStartup || observedSuccessfulUpdate || relaunched || options.isDisposed()) {
+      if (
+        !isEligibleStartup ||
+        observedSuccessfulUpdate ||
+        relaunched ||
+        stopped ||
+        options.isDisposed()
+      ) {
         return
       }
       outputTail = (outputTail + data).slice(-CODEX_UPDATE_OUTPUT_TAIL_CHARS)
@@ -126,10 +147,16 @@ export function createCodexAutoRelaunchAfterUpdate(
       }
       observedSuccessfulUpdate = true
       firstObservedAt = now()
+      noticePtyId = options.getPtyId()
       scheduleCheck(CODEX_RELAUNCH_FIRST_CHECK_MS)
     },
+    cancelPendingRelaunch() {
+      if (observedSuccessfulUpdate) {
+        stop()
+      }
+    },
     dispose() {
-      clearTimer()
+      stop()
     }
   }
 }

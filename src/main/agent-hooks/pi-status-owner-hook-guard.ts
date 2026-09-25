@@ -1,5 +1,4 @@
-import { PI_STATUS_OWNER_ENV_KEYS } from '../pty/pi-process-owner-env'
-import { WINDOWS_HOOK_STDIN_DRAIN_LABEL } from './hook-stdin-contract'
+import { PI_STATUS_OWNER_ENV_KEYS } from '../../shared/pi-status-owner-env'
 
 // Why (#22011): a child agent under Pi (`devin acp`) inherits Pi's pane key; Pi already reports its status.
 
@@ -13,11 +12,8 @@ export function buildPosixPiStatusOwnerHookGuardLines(): string[] {
   )
 }
 
-/** Must follow the Orca env guards, so the drain only runs inside a pane, which closes stdin (#11549). */
-export function buildWindowsPiStatusOwnerHookGuardLines(): string[] {
-  // Why no liveness probe: cmd has no builtin one, and tasklist per event costs time and EDR signal.
-  // Why drain, not exit: an unread payload larger than the pipe buffer fails the agent's write.
-  return PI_STATUS_OWNER_ENV_KEYS.map(
-    (key) => `if not "%${key}%"=="" goto :${WINDOWS_HOOK_STDIN_DRAIN_LABEL}`
-  )
+/** Form lines naming the owner; the listener drops the event while that PID lives (hasLivePiStatusOwner). */
+export function buildWindowsPiStatusOwnerFormLines(): string[] {
+  // Why not skip in cmd: it has no builtin liveness probe, and tasklist per event costs time and EDR signal.
+  return PI_STATUS_OWNER_ENV_KEYS.map((key) => `  --data-urlencode "${key}=%${key}%" ^`)
 }

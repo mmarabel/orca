@@ -19,7 +19,7 @@ import {
 } from '../agent-hooks/hook-stdin-contract'
 import {
   buildPosixPiStatusOwnerHookGuardLines,
-  buildWindowsPiStatusOwnerHookGuardLines
+  buildWindowsPiStatusOwnerFormLines
 } from '../agent-hooks/pi-status-owner-hook-guard'
 import {
   applyDevinManagedHooks,
@@ -50,8 +50,7 @@ function getManagedScript(target: 'local' | 'posix' = 'local'): string {
       // Why: endpoint file holds the live port/token; a PTY that outlives an Orca restart carries stale env, so `call` it to refresh (else PTY env).
       'if defined ORCA_AGENT_HOOK_ENDPOINT if exist "%ORCA_AGENT_HOOK_ENDPOINT%" call "%ORCA_AGENT_HOOK_ENDPOINT%" 2>nul',
       ...buildWindowsHookEnvironmentGuardLines(),
-      ...buildWindowsPiStatusOwnerHookGuardLines(),
-      buildWindowsAgentHookPostCommand('devin'),
+      buildWindowsAgentHookPostCommand('devin', buildWindowsPiStatusOwnerFormLines()),
       'exit /b 0',
       ...buildWindowsHookStdinDrainEpilogue(),
       ''

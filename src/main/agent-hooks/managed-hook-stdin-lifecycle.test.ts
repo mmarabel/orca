@@ -67,8 +67,7 @@ import {
   POSIX_HOOK_JSON_STDIN_PRELUDE,
   POSIX_HOOK_JSON_STDIN_READER,
   POSIX_HOOK_STDIN_READER,
-  WINDOWS_POWERSHELL_HOOK_ENVIRONMENT_GUARD,
-  buildWindowsHookEnvironmentGuardLines
+  WINDOWS_POWERSHELL_HOOK_ENVIRONMENT_GUARD
 } from './hook-stdin-contract'
 import { wrapRuntimeHomeHookCommand } from './runtime-home-hook-command'
 import { createAgentHookMemorySftp } from './agent-hook-memory-sftp.test-fixture'
@@ -290,29 +289,13 @@ describe('Windows managed hook stdin structure', () => {
           'if "%ORCA_AGENT_HOOK_TOKEN%"=="" exit /b 0'
         )
         expect(script, `${fileName} pane guard`).toContain('if "%ORCA_PANE_KEY%"=="" exit /b 0')
-        // Why: pin the rule, not today's three guards — a fourth missing-ORCA_* guard routed to
-        // the drain would reintroduce #11549 with this suite green. The pattern catches both
-        // `if "%VAR%"==""` and `if not defined VAR`; the Devin skip names no ORCA_* var.
-        expect(
-          script,
-          `${fileName} no missing-ORCA_* guard may route to the more.com drain`
-        ).not.toMatch(
-          /if (?:"%ORCA_[A-Z_]+%"==""|not defined ORCA_[A-Z_]+) goto :?orca_agent_hook_drain_stdin/
+        // Why: pin the rule, not today's three guards — a fourth ORCA_* guard routed to the
+        // drain would reintroduce #11549 with this suite green. The pattern spans the guard so
+        // it catches both `if "%VAR%"==""` and `if not defined VAR`; the Devin skip names no
+        // ORCA_* var, so it stays exempt.
+        expect(script, `${fileName} no ORCA_* guard may route to the more.com drain`).not.toMatch(
+          /ORCA_[A-Z_]+.*goto :?orca_agent_hook_drain_stdin/
         )
-        // Why: a presence guard (the Pi status-owner skip) may drain only below the missing-env
-        // guards, i.e. inside a pane, where the post itself already reads stdin to EOF.
-        const lastEnvGuard = Math.max(
-          ...buildWindowsHookEnvironmentGuardLines().map((guard) => script.indexOf(guard))
-        )
-        for (const line of script
-          .split('\r\n')
-          .filter((candidate) =>
-            /ORCA_[A-Z_]+.*goto :?orca_agent_hook_drain_stdin/.test(candidate)
-          )) {
-          expect(script.indexOf(line), `${fileName} ${line} below env guards`).toBeGreaterThan(
-            lastEnvGuard
-          )
-        }
         // Why: the epilogue stays shared — claude-hook.cmd still jumps to it from the
         // Devin-imports-.claude skip, which now sits below these guards.
         expect(script, `${fileName} drain epilogue`).toContain(

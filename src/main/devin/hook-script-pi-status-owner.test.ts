@@ -6,6 +6,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type * as osModule from 'node:os'
 import { removeTreeSync } from '../../shared/windows-transient-lock-removal'
+import { normalizeHookPayload } from '../../shared/agent-hook-listener'
+import { createHookListenerState } from '../../shared/agent-hook-listener/listener-state'
+import { parseFormEncodedBody } from '../../shared/agent-hook-listener/request-body'
 
 const { homedirMock } = vi.hoisted(() => ({
   homedirMock: vi.fn<() => string>()
@@ -18,9 +21,8 @@ vi.mock('os', async (importOriginal) => {
 
 import { DevinHookService } from './hook-service'
 import { createAgentHookMemorySftp } from '../agent-hooks/agent-hook-memory-sftp.test-fixture'
-import { buildWindowsHookEnvironmentGuardLines } from '../agent-hooks/hook-stdin-contract'
 
-type HookRun = { exitCode: number | null; posts: string[]; stdinErrors: Error[] }
+type HookRun = { exitCode: number | null; posts: string[]; bodies: string[]; stdinErrors: Error[] }
 type HookLaunch = { command: string; args: string[] }
 
 // Why large: the skip must still drain stdin, or Devin sees a broken pipe mid-write (#8110).
@@ -63,10 +65,13 @@ async function runPosixHook(env: NodeJS.ProcessEnv): Promise<HookRun> {
 
 async function runHook(launch: HookLaunch, env: NodeJS.ProcessEnv): Promise<HookRun> {
   const posts: string[] = []
+  const bodies: string[] = []
   const server = createServer((request, response) => {
-    request.resume()
+    const chunks: Buffer[] = []
+    request.on('data', (chunk: Buffer) => chunks.push(chunk))
     request.on('end', () => {
       posts.push(request.url ?? '')
+      bodies.push(Buffer.concat(chunks).toString('utf8'))
       response.writeHead(204).end()
     })
   })
@@ -93,7 +98,7 @@ async function runHook(launch: HookLaunch, env: NodeJS.ProcessEnv): Promise<Hook
       const stdinErrors: Error[] = []
       child.stdin.on('error', (error) => stdinErrors.push(error))
       child.once('error', reject)
-      child.once('close', (exitCode) => resolve({ exitCode, posts, stdinErrors }))
+      child.once('close', (exitCode) => resolve({ exitCode, posts, bodies, stdinErrors }))
       child.stdin.end(PERMISSION_REQUEST)
     })
   } finally {
@@ -144,30 +149,42 @@ describe.skipIf(process.platform === 'win32')('Devin hook under a Pi status owne
   })
 })
 
+/** Feeds a real post through the listener the hook server runs; null means the event was dropped. */
+function listenerAccepts(body: string): boolean {
+  const record = parseFormEncodedBody(body)
+  return normalizeHookPayload(createHookListenerState(), 'devin', record, record.env ?? '') !== null
+}
+
 describe.skipIf(process.platform !== 'win32')('Windows Devin hook run under a Pi owner', () => {
-  it('drains stdin and skips the post only while an owner is recorded', async () => {
+  it('lets the listener drop the event only while the recorded owner lives', async () => {
     const home = tempDir('orca-devin-win-live-')
     homedirMock.mockReturnValue(home)
     vi.stubEnv('APPDATA', join(home, 'AppData', 'Roaming'))
     expect(new DevinHookService().install().state).toBe('installed')
     const script = join(home, '.orca', 'agent-hooks', 'devin-hook.cmd')
     const launch = { command: 'cmd.exe', args: ['/d', '/c', script] }
+    const exited = spawnSync('cmd.exe', ['/d', '/c', 'exit 0'], { windowsHide: true }).pid
 
     const unowned = await runHook(launch, {})
     expect(unowned.exitCode).toBe(0)
     expect(unowned.posts).toEqual(['/hook/devin'])
+    expect(listenerAccepts(unowned.bodies[0])).toBe(true)
     for (const key of ['ORCA_PI_STATUS_OWNED', 'ORCA_PRIME_AGENT_STATUS_OWNED']) {
-      const run = await runHook(launch, { [key]: String(process.pid) })
-      expect(run.exitCode, key).toBe(0)
-      expect(run.stdinErrors, key).toEqual([])
-      expect(run.posts, key).toEqual([])
+      const live = await runHook(launch, { [key]: String(process.pid) })
+      expect(live.exitCode, key).toBe(0)
+      expect(live.stdinErrors, key).toEqual([])
+      expect(parseFormEncodedBody(live.bodies[0])[key], key).toBe(String(process.pid))
+      expect(listenerAccepts(live.bodies[0]), key).toBe(false)
+      // Why: a descendant that outlives Pi keeps the marker; its events must reach the pane again.
+      const stale = await runHook(launch, { [key]: String(exited) })
+      expect(listenerAccepts(stale.bodies[0]), key).toBe(true)
     }
-    // Why: three cmd.exe launches plus a real install can overrun the default under load.
-  }, 60_000)
+    // Why: five cmd.exe launches plus a real install can overrun the default under load.
+  }, 90_000)
 })
 
 describe('Windows Devin hook under a Pi status owner (#22011)', () => {
-  it('skips the post only after the Orca env guards', () => {
+  it('names the owner in the post instead of skipping it', () => {
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
     const home = tempDir('orca-devin-win-')
     homedirMock.mockReturnValue(home)
@@ -176,15 +193,14 @@ describe('Windows Devin hook under a Pi status owner (#22011)', () => {
     try {
       expect(new DevinHookService().install().state).toBe('installed')
       const script = readFileSync(join(home, '.orca', 'agent-hooks', 'devin-hook.cmd'), 'utf8')
-      const lastEnvGuard = Math.max(
-        ...buildWindowsHookEnvironmentGuardLines().map((guard) => script.indexOf(guard))
-      )
       const post = script.indexOf('/hook/devin')
+      const payload = script.indexOf('payload@-')
       for (const key of ['ORCA_PI_STATUS_OWNED', 'ORCA_PRIME_AGENT_STATUS_OWNED']) {
-        const guard = script.indexOf(`if not "%${key}%"=="" goto :orca_agent_hook_drain_stdin`)
-        // Why: outside a pane the caller may abandon stdin, so the drain must not run there (#11549).
-        expect(guard, key).toBeGreaterThan(lastEnvGuard)
-        expect(guard, key).toBeLessThan(post)
+        const field = script.indexOf(`--data-urlencode "${key}=%${key}%" ^`)
+        expect(field, key).toBeGreaterThan(post)
+        expect(field, key).toBeLessThan(payload)
+        // Why: a skip in cmd cannot see whether the owner is alive, so it would outlive Pi.
+        expect(script, key).not.toMatch(new RegExp(`%${key}%.*goto`))
       }
     } finally {
       Object.defineProperty(process, 'platform', platform)

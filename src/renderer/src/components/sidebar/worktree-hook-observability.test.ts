@@ -3,8 +3,14 @@ import {
   selectWorktreeHooksUnverifiable,
   type WorktreeHookObservabilityState
 } from './worktree-hook-observability'
+import { getDefaultSettings } from '../../../../shared/constants'
+import type { FolderWorkspace } from '../../../../shared/folder-workspace-types'
+import type { GlobalSettings } from '../../../../shared/global-settings-types'
+import type { Project } from '../../../../shared/project-types'
+import type { Repo } from '../../../../shared/repo-types'
 import type { TerminalTab } from '../../../../shared/terminal-tab-types'
 import type { TuiAgent } from '../../../../shared/tui-agent'
+import type { Worktree } from '../../../../shared/worktree/types'
 
 vi.mock('@/lib/renderer-app-platform', () => ({ getRendererAppPlatform: () => 'win32' }))
 
@@ -23,7 +29,93 @@ function makeTab(
   launchAgent?: TuiAgent,
   overrides: Partial<TerminalTab> = {}
 ): TerminalTab {
-  return { id, worktreeId: WORKTREE_ID, title: 'bash', launchAgent, ...overrides } as TerminalTab
+  return {
+    id,
+    ptyId: null,
+    worktreeId: WORKTREE_ID,
+    title: 'bash',
+    customTitle: null,
+    color: null,
+    sortOrder: 0,
+    createdAt: 0,
+    launchAgent,
+    ...overrides
+  }
+}
+
+function makeRepo(overrides: Partial<Repo> = {}): Repo {
+  return {
+    id: REPO_ID,
+    path: '/home/user/repo',
+    displayName: 'repo',
+    badgeColor: '#000000',
+    addedAt: 0,
+    connectionId: null,
+    ...overrides
+  }
+}
+
+function makeWorktree(overrides: Partial<Worktree> = {}): Worktree {
+  return {
+    id: WORKTREE_ID,
+    repoId: REPO_ID,
+    path: '/home/user/repo/wt-1',
+    head: 'abc123',
+    branch: 'refs/heads/wt-1',
+    isBare: false,
+    isMainWorktree: false,
+    displayName: 'wt-1',
+    comment: '',
+    linkedIssue: null,
+    linkedPR: null,
+    linkedLinearIssue: null,
+    isArchived: false,
+    isUnread: false,
+    isPinned: false,
+    sortOrder: 0,
+    lastActivityAt: 0,
+    ...overrides
+  }
+}
+
+function makeFolderWorkspace(folderPath: string): FolderWorkspace {
+  return {
+    id: FOLDER_ID,
+    projectGroupId: 'group-1',
+    name: 'project',
+    folderPath,
+    connectionId: null,
+    linkedTask: null,
+    comment: '',
+    isArchived: false,
+    isUnread: false,
+    isPinned: false,
+    sortOrder: 0,
+    lastActivityAt: 0,
+    createdAt: 0,
+    updatedAt: 0
+  }
+}
+
+function makeProject(overrides: Partial<Project> = {}): Project {
+  return {
+    id: REPO_ID,
+    displayName: 'repo',
+    badgeColor: '#000000',
+    sourceRepoIds: [REPO_ID],
+    createdAt: 0,
+    updatedAt: 0,
+    ...overrides
+  }
+}
+
+function makeSettings(overrides: Partial<GlobalSettings> = {}): GlobalSettings {
+  return {
+    ...getDefaultSettings('/home/user'),
+    agentStatusHooksEnabled: true,
+    disabledTuiAgents: [],
+    ...overrides
+  }
 }
 
 function makeState(
@@ -33,18 +125,16 @@ function makeState(
     agentHookInstallStateByTarget: { claude: 'not_installed' },
     tabsByWorktree: { [WORKTREE_ID]: [makeTab('tab-1', 'claude')] },
     ptyIdsByTabId: { 'tab-1': ['pty-1'] },
-    worktreesByRepo: {
-      [REPO_ID]: [{ id: WORKTREE_ID, repoId: REPO_ID, path: '/home/user/repo/wt-1' }]
-    },
-    repos: [{ id: REPO_ID, path: '/home/user/repo', connectionId: null }],
+    worktreesByRepo: { [REPO_ID]: [makeWorktree()] },
+    repos: [makeRepo()],
     projectGroups: [],
     folderWorkspaces: [],
     activeRepoId: REPO_ID,
     activeWorktreeId: WORKTREE_ID,
     projects: [],
-    settings: { agentStatusHooksEnabled: true, disabledTuiAgents: [] },
+    settings: makeSettings(),
     ...overrides
-  } as unknown as WorktreeHookObservabilityState
+  }
 }
 
 describe('selectWorktreeHooksUnverifiable', () => {
@@ -73,17 +163,13 @@ describe('selectWorktreeHooksUnverifiable', () => {
   })
 
   it('does not flag when managed status hooks are disabled', () => {
-    const state = makeState({
-      settings: { agentStatusHooksEnabled: false, disabledTuiAgents: [] }
-    } as unknown as Partial<WorktreeHookObservabilityState>)
+    const state = makeState({ settings: makeSettings({ agentStatusHooksEnabled: false }) })
 
     expect(selectWorktreeHooksUnverifiable(state, WORKTREE_ID, NO_EVIDENCE)).toBe(false)
   })
 
   it('does not flag an agent disabled in Settings', () => {
-    const state = makeState({
-      settings: { agentStatusHooksEnabled: true, disabledTuiAgents: ['claude'] }
-    } as unknown as Partial<WorktreeHookObservabilityState>)
+    const state = makeState({ settings: makeSettings({ disabledTuiAgents: ['claude'] }) })
 
     expect(selectWorktreeHooksUnverifiable(state, WORKTREE_ID, NO_EVIDENCE)).toBe(false)
   })
@@ -116,9 +202,7 @@ describe('selectWorktreeHooksUnverifiable', () => {
   })
 
   it('declines to judge an SSH worktree from the local hook config', () => {
-    const state = makeState({
-      repos: [{ id: REPO_ID, path: '/home/user/repo', connectionId: 'ssh-1' }]
-    } as unknown as Partial<WorktreeHookObservabilityState>)
+    const state = makeState({ repos: [makeRepo({ connectionId: 'ssh-1' })] })
 
     expect(selectWorktreeHooksUnverifiable(state, WORKTREE_ID, NO_EVIDENCE)).toBe(false)
   })
@@ -126,17 +210,17 @@ describe('selectWorktreeHooksUnverifiable', () => {
   it('declines to judge a WSL worktree — hooks live inside the distro', () => {
     const state = makeState({
       worktreesByRepo: {
-        [REPO_ID]: [{ id: WORKTREE_ID, path: '\\\\wsl$\\Ubuntu\\home\\user\\repo' }]
+        [REPO_ID]: [makeWorktree({ path: '\\\\wsl$\\Ubuntu\\home\\user\\repo' })]
       }
-    } as unknown as Partial<WorktreeHookObservabilityState>)
+    })
 
     expect(selectWorktreeHooksUnverifiable(state, WORKTREE_ID, NO_EVIDENCE)).toBe(false)
   })
 
   it('declines a Windows-path worktree configured to execute in WSL', () => {
     const state = makeState({
-      projects: [{ id: REPO_ID, localWindowsRuntimePreference: { kind: 'wsl', distro: 'Ubuntu' } }]
-    } as unknown as Partial<WorktreeHookObservabilityState>)
+      projects: [makeProject({ localWindowsRuntimePreference: { kind: 'wsl', distro: 'Ubuntu' } })]
+    })
 
     expect(selectWorktreeHooksUnverifiable(state, WORKTREE_ID, NO_EVIDENCE)).toBe(false)
   })
@@ -165,8 +249,8 @@ describe('selectWorktreeHooksUnverifiable', () => {
     const state = makeState({
       tabsByWorktree: { [FOLDER_WORKSPACE_ID]: [makeTab('folder-tab', 'claude')] },
       ptyIdsByTabId: { 'folder-tab': ['folder-pty'] },
-      folderWorkspaces: [{ id: FOLDER_ID, folderPath: '/home/user/project', connectionId: null }]
-    } as unknown as Partial<WorktreeHookObservabilityState>)
+      folderWorkspaces: [makeFolderWorkspace('/home/user/project')]
+    })
 
     expect(selectWorktreeHooksUnverifiable(state, FOLDER_WORKSPACE_ID, NO_EVIDENCE)).toBe(true)
   })
@@ -175,14 +259,8 @@ describe('selectWorktreeHooksUnverifiable', () => {
     const state = makeState({
       tabsByWorktree: { [FOLDER_WORKSPACE_ID]: [makeTab('folder-tab', 'claude')] },
       ptyIdsByTabId: { 'folder-tab': ['folder-pty'] },
-      folderWorkspaces: [
-        {
-          id: FOLDER_ID,
-          folderPath: '\\\\wsl$\\Ubuntu\\home\\user\\project',
-          connectionId: null
-        }
-      ]
-    } as unknown as Partial<WorktreeHookObservabilityState>)
+      folderWorkspaces: [makeFolderWorkspace('\\\\wsl$\\Ubuntu\\home\\user\\project')]
+    })
 
     expect(selectWorktreeHooksUnverifiable(state, FOLDER_WORKSPACE_ID, NO_EVIDENCE)).toBe(false)
   })

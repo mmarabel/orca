@@ -31,12 +31,9 @@ export const createAgentHookInstallStatusSlice: StateCreator<
     // Why: this refreshes on a timer, so bail on an unchanged snapshot — a new
     // object identity every tick would re-render every worktree dot for nothing.
     const current = get().agentHookInstallStateByTarget
-    const currentKeys = Object.keys(current)
     if (
-      currentKeys.length === Object.keys(next).length &&
-      currentKeys.every(
-        (key) => current[key as keyof typeof current] === next[key as keyof typeof next]
-      )
+      Object.keys(current).length === Object.keys(next).length &&
+      statuses.every((status) => current[status.agent] === next[status.agent])
     ) {
       return
     }

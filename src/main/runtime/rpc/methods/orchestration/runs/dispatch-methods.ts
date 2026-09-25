@@ -1,6 +1,9 @@
-import { defineMethod, type RpcMethod } from '../../../core'
+import { defineMethod } from '../../../core'
 import { OrchestrationError } from '../../../../orchestration/orchestration-error'
-import { buildDispatchPreamble } from '../../../../orchestration/preamble'
+import {
+  buildDispatchPreamble,
+  dispatchPreambleSendOptions
+} from '../../../../orchestration/preamble'
 import { resolveDispatchCreator } from './dispatch-creator'
 import {
   injectRejectedError,
@@ -10,7 +13,7 @@ import {
 import { resolveRunScope } from './run-scope'
 import { DispatchParams, DispatchShowParams } from '../schemas'
 
-export const ORCHESTRATION_DISPATCH_METHODS: RpcMethod[] = [
+export const ORCHESTRATION_DISPATCH_METHODS = [
   defineMethod({
     name: 'orchestration.dispatch',
     params: DispatchParams,
@@ -156,12 +159,11 @@ export const ORCHESTRATION_DISPATCH_METHODS: RpcMethod[] = [
       let prompt
       if (params.inject) {
         try {
-          prompt = await runtime.sendTerminalAgentPrompt(to, preamble, {
-            // A delayed provider hook must not revoke an accepted Dispatch.
-            acceptQueued: true,
-            observationTimeoutMs: 0,
-            requestId: orchestrationMutation?.requestId ?? ctx.id
-          })
+          prompt = await runtime.sendTerminalAgentPrompt(
+            to,
+            preamble,
+            dispatchPreambleSendOptions(orchestrationMutation?.requestId ?? ctx.id)
+          )
           injected = true
         } catch (err) {
           db.failDispatch(ctx.id, err instanceof Error ? err.message : String(err))

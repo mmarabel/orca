@@ -201,11 +201,10 @@ async function connectRemotePane(
     transport,
     live: (data) => captured.live?.(data),
     rebind: (nextIncarnation) => {
-      const onRebind = createdTransportOptions.at(-1)?.onPtyRebind as (
-        id: string,
-        replacedId: string,
-        incarnationId?: string | null
-      ) => void
+      const onRebind = createdTransportOptions.at(-1)?.onPtyRebind
+      if (typeof onRebind !== 'function') {
+        throw new Error('Transport was created without onPtyRebind')
+      }
       onRebind('remote:env-1@@terminal-1', 'remote:env-1@@terminal-1', nextIncarnation)
     },
     replay: (data, meta) => captured.current?.(data, meta as never),

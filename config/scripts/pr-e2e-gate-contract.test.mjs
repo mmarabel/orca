@@ -179,6 +179,13 @@ describe('PR E2E gate contract', () => {
       'pnpm run test:e2e "${TEST_FILES[@]}" --workers=1 "${E2E_PROJECT_ARGS[@]}"'
     )
     expect(playwrightConfig).toContain('retries: 0')
+    const steps = e2eWorkflow.jobs.e2e.steps.filter((step) =>
+      step.run?.includes('tests/e2e/worktree-switch-first-paint.spec.ts')
+    )
+    expect(steps).toHaveLength(1)
+    expect(steps[0].if).toBe("matrix.shard == '1/14'")
+    expect(steps[0].run).toContain('xvfb-run --auto-servernum')
+    expect(steps[0].run).toContain('--project=electron-headful --workers=1')
   })
 
   it('keeps startup-exec live parity in the isolated SSH lane', () => {
@@ -529,7 +536,8 @@ describe('PR E2E gate contract', () => {
       )
     }
     for (const source of [
-      'src/main/ipc/rg-availability.ts',
+      'src/main/ripgrep/bundled-ripgrep-path.ts',
+      'src/shared/bundled-ripgrep.ts',
       'src/shared/ripgrep-process-availability.ts'
     ]) {
       expect(selectPrE2eSpecs([source]), source).toEqual([

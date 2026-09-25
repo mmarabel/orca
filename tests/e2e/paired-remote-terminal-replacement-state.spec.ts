@@ -183,6 +183,7 @@ test('retained remote pane reconciles replacement shell and preserves a survivin
   let client: Awaited<ReturnType<typeof launchPairedElectronClient>> | undefined
   const evidence: Record<string, unknown> = {}
   const hostCall: RuntimeRpcCall = async (method, params) =>
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: each call site names the result shape of the runtime RPC method it invokes.
     (await host.client.call(method, params)).result as never
   try {
     evidence.hostBuild = await verifyReleaseBuild(host.app)
@@ -251,10 +252,9 @@ test('retained remote pane reconciles replacement shell and preserves a survivin
       .toBe(true)
     await installRemoteTerminalGeometryProbe(page, webTabId)
     evidence.before = await inspectPane(page, webTabId)
-    evidence.mouseBefore = await probeMouse(page, webTabId)
-    expect(
-      (evidence.mouseBefore as Awaited<ReturnType<typeof probeMouse>>).reports.length
-    ).toBeGreaterThan(0)
+    const mouseBefore = await probeMouse(page, webTabId)
+    evidence.mouseBefore = mouseBefore
+    expect(mouseBefore.reports.length).toBeGreaterThan(0)
     await captureHiddenRenderer(page, testInfo, 'before-restart')
 
     // A process-only serve restart must not be confused with replacing its daemon-backed PTY.
@@ -298,14 +298,14 @@ test('retained remote pane reconciles replacement shell and preserves a survivin
         { timeout: 10_000, message: 'Reconnect geometry did not recover within 10 seconds' }
       )
       .toBe(true)
-    evidence.warm = await inspectPane(page, webTabId)
+    const warmPane = await inspectPane(page, webTabId)
+    evidence.warm = warmPane
     await captureHiddenRenderer(page, testInfo, 'after-warm-restart')
-    expect.soft((evidence.warm as Awaited<ReturnType<typeof inspectPane>>)?.sameTerminal).toBe(true)
-    expect.soft((evidence.warm as Awaited<ReturnType<typeof inspectPane>>)?.mouseMode).toBe('any')
-    evidence.mouseWarm = await probeMouse(page, webTabId)
-    expect
-      .soft((evidence.mouseWarm as Awaited<ReturnType<typeof probeMouse>>).reports.length)
-      .toBeGreaterThan(0)
+    expect.soft(warmPane?.sameTerminal).toBe(true)
+    expect.soft(warmPane?.mouseMode).toBe('any')
+    const mouseWarm = await probeMouse(page, webTabId)
+    evidence.mouseWarm = mouseWarm
+    expect.soft(mouseWarm.reports.length).toBeGreaterThan(0)
 
     // Only the daemon owned by this freshly-created temporary profile is retired.
     await host.restartServeProcess({ betweenProcesses: () => cleanupE2EDaemons(host.userDataDir) })
@@ -333,10 +333,11 @@ test('retained remote pane reconciles replacement shell and preserves a survivin
     evidence.hostSessionAfter = await hostCall('session.tabs.list', {
       worktree: `id:${worktreeId}`
     })
-    evidence.hostScreen = await hostCall('terminal.read', {
-      terminal: replacement.handle,
-      screen: true
-    })
+    const hostScreen = await hostCall<{ terminal: { tail: string[]; source?: string } }>(
+      'terminal.read',
+      { terminal: replacement.handle, screen: true }
+    )
+    evidence.hostScreen = hostScreen
     await expect
       .poll(
         async () => {
@@ -365,20 +366,20 @@ test('retained remote pane reconciles replacement shell and preserves a survivin
         { timeout: 10_000, message: 'Replacement retained agent modes/status after settling' }
       )
       .toBe(true)
-    evidence.after = await inspectPane(page, webTabId)
-    evidence.mouseAfter = await probeMouse(page, webTabId)
-    evidence.hostScreenAfterMouse = await hostCall('terminal.read', {
+    const after = await inspectPane(page, webTabId)
+    evidence.after = after
+    const mouseAfter = await probeMouse(page, webTabId)
+    evidence.mouseAfter = mouseAfter
+    const afterMouse = await hostCall<{ terminal: { tail: string[] } }>('terminal.read', {
       terminal: replacement.handle,
       screen: true
     })
+    evidence.hostScreenAfterMouse = afterMouse
     await captureHiddenRenderer(page, testInfo, 'after-replacement')
-    const after = evidence.after as Awaited<ReturnType<typeof inspectPane>>
     expect.soft(after?.sameTerminal).toBe(true)
     expect.soft(after?.mouseMode).toBe('none')
     expect.soft(after?.invisibleCharacters).toBe(0)
-    expect
-      .soft((evidence.mouseAfter as Awaited<ReturnType<typeof probeMouse>>).reports)
-      .toHaveLength(0)
+    expect.soft(mouseAfter.reports).toHaveLength(0)
     expect
       .soft(
         after?.agentStates.some((entry) => entry.agentType === 'pi' && entry.state === 'working')
@@ -386,12 +387,10 @@ test('retained remote pane reconciles replacement shell and preserves a survivin
       .toBe(false)
     expect.soft(after?.cols).toBe(after?.proposedGrid?.cols)
     expect.soft(after?.rows).toBe(after?.proposedGrid?.rows)
-    const hostScreen = evidence.hostScreen as { terminal: { tail: string[]; source?: string } }
     expect(hostScreen.terminal.source).toBe('screen')
     const prompt = hostScreen.terminal.tail.at(-1)?.trim()
     expect(prompt).toBeTruthy()
     expect.soft(after?.text).toContain(prompt)
-    const afterMouse = evidence.hostScreenAfterMouse as { terminal: { tail: string[] } }
     expect.soft(afterMouse.terminal.tail.join('\n')).not.toMatch(/(?:35|64);\d+;\d+[Mm]/)
     expect
       .soft(

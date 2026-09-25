@@ -1,3 +1,4 @@
+import type { PtyChildProcessVerdict } from '../../shared/terminal-process-inspection'
 import { recognizeAgentProcessFromCommandLine } from '../../shared/agent-process-recognition'
 import { getCheapProcessTableSnapshot } from '../../shared/cheap-process-table-snapshot-reader'
 import { getProcessTableSnapshot } from '../../shared/process-table-snapshot-reader'
@@ -6,12 +7,14 @@ import {
   resolveAgentForegroundProcessWithAvailability
 } from './agent-foreground-process'
 import { buildPaneProcessFingerprint } from './posix-pane-foreground-fingerprint'
+import { isRetiredPtyMaster } from '../pty/node-pty-master-fd-retirement'
 import { resolveForegroundFallbackProcess } from './local-pty-launch-helpers'
 import {
   ptyAgentForegroundContextPaths,
   ptyLastRecognizedForeground,
   ptyProcesses,
-  ptyShellName
+  getPtyShellName,
+  ptyShellPath
 } from './local-pty-provider-state'
 import { resolveStableForegroundProcess } from './stable-foreground-process'
 import {
@@ -21,21 +24,34 @@ import {
 import { readWindowsConsoleAttachedProcessIds } from './windows-console-attached-processes'
 import { isWindowsPtyJobReadable, readWindowsPtyJobProcessIds } from './windows-pty-job-membership'
 
-export async function hasLocalPtyChildProcesses(id: string): Promise<boolean> {
+/**
+ * A retired master does not fail loudly: the `process` getter answers with the spawn file, which
+ * equals the recorded shell and would otherwise read as a real "nothing is running here". Ask the
+ * descriptor before the name, because an unreadable PTY is not evidence that its children exited.
+ */
+export function inspectLocalPtyChildProcesses(id: string): PtyChildProcessVerdict {
   const proc = ptyProcesses.get(id)
   if (!proc) {
-    return false
+    return 'no-children'
+  }
+  if (isRetiredPtyMaster(proc)) {
+    return 'unverifiable'
   }
   try {
     const foreground = proc.process
-    const shell = ptyShellName.get(id)
+    const shell = getPtyShellName(id)
     if (!shell) {
-      return true
+      return 'children'
     }
-    return foreground !== shell
+    return foreground === shell ? 'no-children' : 'children'
   } catch {
-    return false
+    // An unreadable PTY is not evidence that its children exited.
+    return 'unverifiable'
   }
+}
+
+export async function hasLocalPtyChildProcesses(id: string): Promise<boolean> {
+  return inspectLocalPtyChildProcesses(id) === 'children'
 }
 
 /**
@@ -74,7 +90,7 @@ export async function getLocalPtyForegroundProcess(id: string): Promise<string |
   }
   const fallbackProcess = resolveForegroundFallbackProcess(
     proc.process || null,
-    ptyShellName.get(id)
+    getPtyShellName(id)
   )
   const cachedEntry = ptyLastRecognizedForeground.get(id)
   const cachedAgent = cachedEntry?.name ?? null
@@ -220,7 +236,7 @@ export async function confirmLocalPtyForegroundProcess(id: string): Promise<stri
   try {
     const resolution = await resolveAgentForegroundProcessWithAvailability(
       proc.pid,
-      resolveForegroundFallbackProcess(proc.process || null, ptyShellName.get(id)),
+      resolveForegroundFallbackProcess(proc.process || null, getPtyShellName(id)),
       {
         contextPaths: ptyAgentForegroundContextPaths.get(id),
         fresh: true,
@@ -250,7 +266,7 @@ export async function confirmLocalPtyShellForeground(id: string): Promise<boolea
   }
   const confirmed = await confirmShellForegroundProcess(
     proc.pid,
-    ptyShellName.get(id),
+    ptyShellPath.get(id),
     process.platform === 'win32'
       ? { readWindowsPtyJobProcessIds: () => readWindowsPtyJobProcessIds(proc) }
       : {}

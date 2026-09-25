@@ -15,6 +15,7 @@ function createPane(width = 649): ManagedPane {
       terminal.rows = rows
     })
   }
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the fixture supplies the pane members safeFit and readProposedPaneFitDimensions read.
   return {
     terminal,
     container: {

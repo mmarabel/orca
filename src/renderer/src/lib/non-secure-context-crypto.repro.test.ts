@@ -4,17 +4,14 @@
  * recreates that exact global shape and drives the real call sites.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createNonSecureContextCrypto } from './non-secure-context-crypto-stub'
 
 const realCrypto = globalThis.crypto
 
 beforeEach(() => {
-  // Match a non-secure browser context: getRandomValues stays, the
-  // secure-context-only members are undefined.
   Object.defineProperty(globalThis, 'crypto', {
     configurable: true,
-    value: {
-      getRandomValues: realCrypto.getRandomValues.bind(realCrypto)
-    }
+    value: createNonSecureContextCrypto(realCrypto)
   })
 })
 
@@ -47,7 +44,7 @@ describe('non-secure context (plain HTTP LAN web client)', () => {
     })()
     Object.defineProperty(globalThis, 'crypto', {
       configurable: true,
-      value: { getRandomValues: realCrypto.getRandomValues.bind(realCrypto) }
+      value: createNonSecureContextCrypto(realCrypto)
     })
     expect(await hashOrcaHookScript('echo hi')).toBe(secureHash)
   })

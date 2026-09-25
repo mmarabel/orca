@@ -51,7 +51,7 @@ export function pairingJournalMountAdapters(
               effect('bundle-written', { version: written.current.version })
             },
             loadHosts: async () => [],
-            saveHost: async () => {
+            saveRecoveredPairingHost: async () => {
               effect('host-saved', HOST_ID)
             },
             connectRelay: () => candidateClient(client, effect, 'relay'),

@@ -24,20 +24,26 @@ export type FakePtyTerm = {
   emitExit: () => void
 }
 
+export type FakeRpcChild = EventEmitter & {
+  stdout: EventEmitter
+  stderr: EventEmitter
+  stdin: EventEmitter & { write: MockFn; end: MockFn }
+  kill: MockFn
+  exitCode: number | null
+}
+
 export function makeDisposable(): FakeDisposable {
   return { dispose: vi.fn() }
 }
 
-export function makeRpcChild() {
-  const child = new EventEmitter() as EventEmitter & {
-    stdout: EventEmitter
-    stderr: EventEmitter
-    stdin: EventEmitter & { write: MockFn; end: MockFn }
-    kill: MockFn
-    exitCode: number | null
-  }
-  child.stdout = new EventEmitter()
-  child.stderr = new EventEmitter()
+export function makeRpcChild(): FakeRpcChild {
+  const child: FakeRpcChild = Object.assign(new EventEmitter(), {
+    stdout: new EventEmitter(),
+    stderr: new EventEmitter(),
+    stdin: Object.assign(new EventEmitter(), { write: vi.fn(), end: vi.fn() }),
+    kill: vi.fn(),
+    exitCode: null
+  })
   // Why: like the real app-server, the fake dies on stdin EOF or a signal —
   // the graceful shutdown path resolves only once the child reports exit.
   const exitNow = (): void => {
@@ -45,9 +51,8 @@ export function makeRpcChild() {
     child.emit('exit', 0, null)
     child.emit('close', 0, null)
   }
-  child.stdin = Object.assign(new EventEmitter(), { write: vi.fn(), end: vi.fn(exitNow) })
-  child.exitCode = null
-  child.kill = vi.fn(() => {
+  child.stdin.end.mockImplementation(exitNow)
+  child.kill.mockImplementation(() => {
     exitNow()
     return true
   })

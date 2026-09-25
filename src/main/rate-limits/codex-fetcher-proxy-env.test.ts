@@ -78,7 +78,7 @@ describe('Codex probe proxy environment', () => {
 
     // Why: capture, then settle before asserting. The probe holds the codex-home process lock
     // until it resolves, so asserting first would leave the lock held and hang later tests.
-    const spawnEnv = childSpawnMock.mock.calls[0]?.[2]?.env as Record<string, string>
+    const spawnEnv: Record<string, string> = childSpawnMock.mock.calls[0]?.[2]?.env
 
     rpcChild.emit('close')
     await resultPromise
@@ -99,7 +99,7 @@ describe('Codex probe proxy environment', () => {
     })
     await vi.advanceTimersByTimeAsync(0)
 
-    const spawnEnv = ptySpawnMock.mock.calls[0]?.[2]?.env as Record<string, string>
+    const spawnEnv: Record<string, string> = ptySpawnMock.mock.calls[0]?.[2]?.env
 
     term.emitExit()
     await resultPromise
@@ -127,9 +127,9 @@ describe('Codex probe proxy environment', () => {
 
       const [spawnCmd, spawnArgs, spawnOptions] = childSpawnMock.mock.calls[0] ?? []
       expect(spawnCmd).toBe('wsl.exe')
-      const commandText = Array.isArray(spawnArgs) ? (spawnArgs as string[]).join(' ') : ''
+      const commandText = Array.isArray(spawnArgs) ? spawnArgs.join(' ') : ''
       expect(commandText).not.toContain('user:pass@127.0.0.1:7890')
-      const spawnEnv = (spawnOptions as { env?: Record<string, string> })?.env ?? {}
+      const spawnEnv: Record<string, string> = spawnOptions?.env ?? {}
       expect(spawnEnv.HTTPS_PROXY).toBe('http://user:pass@127.0.0.1:7890')
       expect(spawnEnv.WSLENV ?? '').toContain('HTTPS_PROXY')
 

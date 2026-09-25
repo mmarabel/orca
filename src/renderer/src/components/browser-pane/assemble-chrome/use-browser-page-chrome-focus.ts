@@ -49,9 +49,14 @@ export function useBrowserPageChromeFocus({
   const keybindings = useAppStore((s) => s.keybindings)
   const keepAddressBarFocusRef = useRef(false)
   const addressBarFocusGrabRef = useRef<(() => void) | null>(null)
+  const guestFocusRetryRef = useRef<(() => void) | null>(null)
 
   const cancelAddressBarFocusGrab = useCallback((): void => {
     addressBarFocusGrabRef.current?.()
+  }, [])
+
+  const cancelGuestFocusRetry = useCallback((): void => {
+    guestFocusRetryRef.current?.()
   }, [])
 
   const focusAddressBarNow = useCallback(
@@ -95,6 +100,7 @@ export function useBrowserPageChromeFocus({
   const startAddressBarFocusGrab = useCallback(
     (selection?: BrowserAddressBarSelection): (() => void) => {
       cancelAddressBarFocusGrab()
+      cancelGuestFocusRetry()
       let cancelled = false
       let frameId = 0
       let attempts = 0
@@ -135,7 +141,50 @@ export function useBrowserPageChromeFocus({
       focusAddressBar()
       return cancel
     },
-    [addressBarInputRef, cancelAddressBarFocusGrab, focusAddressBarNow]
+    [addressBarInputRef, cancelAddressBarFocusGrab, cancelGuestFocusRetry, focusAddressBarNow]
+  )
+
+  /**
+   * Hands the guest focus, retrying for a few frames while it is still attaching — a request
+   * consumed against a missing guest is otherwise lost. Returns a canceller, also parked in a ref.
+   */
+  const startGuestFocusRetry = useCallback(
+    (deferFirstAttempt: boolean): (() => void) => {
+      cancelGuestFocusRetry()
+      // Why: lowering the latch is not enough — a grab already in flight would spend its remaining
+      // frames dragging focus back off the page this request just aimed at.
+      cancelAddressBarFocusGrab()
+      let cancelled = false
+      let frameId = 0
+      let attempts = 0
+      const cancel = (): void => {
+        if (guestFocusRetryRef.current !== cancel) {
+          return
+        }
+        guestFocusRetryRef.current = null
+        cancelled = true
+        window.cancelAnimationFrame(frameId)
+      }
+      const runFocus = (): void => {
+        if (cancelled) {
+          return
+        }
+        attempts += 1
+        if (!focusGuestNow() && attempts < ADDRESS_BAR_FOCUS_FRAMES) {
+          frameId = window.requestAnimationFrame(runFocus)
+        } else {
+          guestFocusRetryRef.current = null
+        }
+      }
+      guestFocusRetryRef.current = cancel
+      if (deferFirstAttempt) {
+        frameId = window.requestAnimationFrame(runFocus)
+      } else {
+        runFocus()
+      }
+      return cancel
+    },
+    [cancelAddressBarFocusGrab, cancelGuestFocusRetry, focusGuestNow]
   )
 
   useEffect(() => {
@@ -197,28 +246,9 @@ export function useBrowserPageChromeFocus({
     if (focusTarget === 'address-bar') {
       return startAddressBarFocusGrab()
     }
-    // Why: lowering the latch is not enough — a grab already in flight would spend its remaining
-    // frames dragging focus back off the page this request just aimed at.
-    cancelAddressBarFocusGrab()
-    let cancelled = false
-    let frameId = 0
-    let attempts = 0
-    const runFocus = (): void => {
-      if (cancelled) {
-        return
-      }
-      attempts += 1
-      if (!focusGuestNow() && attempts < ADDRESS_BAR_FOCUS_FRAMES) {
-        frameId = window.requestAnimationFrame(runFocus)
-      }
-    }
     // Why: focus can be queued before the pane mounts; persisting outside React lets it be claimed on mount instead of racing an event.
-    frameId = window.requestAnimationFrame(runFocus)
-    return () => {
-      cancelled = true
-      window.cancelAnimationFrame(frameId)
-    }
-  }, [browserTabId, cancelAddressBarFocusGrab, focusGuestNow, isActive, startAddressBarFocusGrab])
+    return startGuestFocusRetry(true)
+  }, [browserTabId, isActive, startAddressBarFocusGrab, startGuestFocusRetry])
 
   useEffect(() => {
     if (!isActive) {
@@ -239,16 +269,23 @@ export function useBrowserPageChromeFocus({
         startAddressBarFocusGrab()
         return
       }
-      cancelAddressBarFocusGrab()
-      focusGuestNow()
+      startGuestFocusRetry(false)
     }
     // Why: an already-active page never remounts, so listen for the event to consume the durable focus request immediately.
     window.addEventListener(ORCA_BROWSER_FOCUS_REQUEST_EVENT, handleBrowserFocusRequest)
     return () => {
       window.removeEventListener(ORCA_BROWSER_FOCUS_REQUEST_EVENT, handleBrowserFocusRequest)
       cancelAddressBarFocusGrab()
+      cancelGuestFocusRetry()
     }
-  }, [browserTabId, cancelAddressBarFocusGrab, focusGuestNow, isActive, startAddressBarFocusGrab])
+  }, [
+    browserTabId,
+    cancelAddressBarFocusGrab,
+    cancelGuestFocusRetry,
+    isActive,
+    startAddressBarFocusGrab,
+    startGuestFocusRetry
+  ])
 
   return { focusAddressBarNow, focusGuestNow, startAddressBarFocusGrab, keepAddressBarFocusRef }
 }

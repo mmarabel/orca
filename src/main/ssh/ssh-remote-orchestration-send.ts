@@ -27,7 +27,8 @@ export function resolveRemoteOrchestrationSender(
     throw new RemoteCliArgumentError(
       'no_active_sender_terminal',
       'Could not determine the sender terminal for this orchestration command. ' +
-        'Pass --from <terminal-handle> or run the command inside a live Orca terminal with ORCA_TERMINAL_HANDLE set.'
+        "Pass --from with your own terminal's handle — another pane's handle would act on its mailbox — " +
+        'or run the command inside a live Orca terminal with ORCA_TERMINAL_HANDLE set.'
     )
   }
   return explicit ?? envHandle ?? 'unknown'
@@ -37,10 +38,11 @@ export function getRemoteOrchestrationPayload(flags: RemoteFlags): string | unde
   const rawPayload = optionalString(flags, 'payload')
   const taskId = optionalString(flags, 'task-id')
   const dispatchId = optionalString(flags, 'dispatch-id')
+  const outcome = optionalString(flags, 'outcome')
   const filesModified = optionalString(flags, 'files-modified')
   const reportPath = optionalString(flags, 'report-path')
   const phase = optionalString(flags, 'phase')
-  const hasStructuredPayload = [taskId, dispatchId, filesModified, reportPath, phase].some(
+  const hasStructuredPayload = [taskId, dispatchId, outcome, filesModified, reportPath, phase].some(
     (value) => value !== undefined
   )
   if (!hasStructuredPayload) {
@@ -61,6 +63,15 @@ export function getRemoteOrchestrationPayload(flags: RemoteFlags): string | unde
   }
   if (dispatchId) {
     payload.dispatchId = dispatchId
+  }
+  if (outcome) {
+    if (outcome !== 'succeeded' && outcome !== 'failed') {
+      throw new RemoteCliArgumentError(
+        'invalid_argument',
+        'Invalid --outcome. Expected succeeded or failed.'
+      )
+    }
+    payload.outcome = outcome
   }
   if (filesModified) {
     payload.filesModified = filesModified

@@ -52,7 +52,7 @@ function parseRelayProcessRows(output: string): RelayProcessRow[] {
   return output.split('\n').map((line) => {
     const [type, rawPid, rawParentPid, cwd] = line.split('\t')
     // Why: Number('') is 0, so empty pid/ppid (e.g. vanished /proc status) must
-    // throw and let expect.poll retry instead of accepting parentPid: 0.
+    // throw so callers retry the observation instead of accepting parentPid: 0.
     const pid = Number(rawPid)
     const parentPid = Number(rawParentPid)
     if (
@@ -74,6 +74,16 @@ function parseRelayProcessRows(output: string): RelayProcessRow[] {
 export function readDockerSshRelayProcessSnapshot(
   target: DockerSshRelayTarget
 ): DockerSshRelayProcessSnapshot | null {
+  const groups = readDockerSshRelayProcessSnapshots(target)
+  if (groups.length > 1) {
+    throw new Error(`Expected one Docker SSH relay process group, found ${groups.length}`)
+  }
+  return groups[0] ?? null
+}
+
+export function readDockerSshRelayProcessSnapshots(
+  target: DockerSshRelayTarget
+): DockerSshRelayProcessSnapshot[] {
   const rows = parseRelayProcessRows(
     execDockerSshRelayTargetCommand(target, LIST_RELAY_PROCESSES_COMMAND)
   )
@@ -85,10 +95,7 @@ export function readDockerSshRelayProcessSnapshot(
       .sort((left, right) => left - right)
     return watcherPids.length > 0 ? [{ relayPid: relay.pid, watcherPids, relayDir: relay.cwd }] : []
   })
-  if (groups.length > 1) {
-    throw new Error(`Expected one Docker SSH relay process group, found ${groups.length}`)
-  }
-  return groups[0] ?? null
+  return groups.sort((left, right) => left.relayPid - right.relayPid)
 }
 
 export function signalDockerSshRelayWatchers(

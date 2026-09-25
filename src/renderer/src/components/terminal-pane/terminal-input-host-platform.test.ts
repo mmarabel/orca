@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import type { RuntimeStatus } from '../../../../shared/runtime-types'
+import type { RuntimeEnvironmentStatus } from '../../../../shared/runtime-host-status'
 import type { AppState } from '@/store/types'
 import { resolveTerminalInputHostPlatform } from './terminal-input-host-platform'
 
@@ -6,14 +8,42 @@ function state(overrides: Partial<AppState> = {}): AppState {
   return {
     repos: [],
     worktreesByRepo: {},
+    detectedWorktreesByRepo: {},
     folderWorkspaces: [],
     projectGroups: [],
     settings: { activeRuntimeEnvironmentId: null },
     sshConnectionStates: new Map(),
+    sshStateByEnvironment: new Map(),
     runtimeStatusByEnvironmentId: new Map(),
     restoredRuntimeHostIdByWorkspaceSessionKey: {},
     ...overrides
   } as AppState
+}
+
+/** A Windows host that answered once and whose latest probe came back unverifiable. */
+function unverifiableWindowsHost(): RuntimeEnvironmentStatus {
+  const answered: RuntimeStatus = {
+    runtimeId: 'rt-win',
+    rendererGraphEpoch: 0,
+    graphStatus: 'ready',
+    authoritativeWindowId: null,
+    liveTabCount: 0,
+    liveLeafCount: 0,
+    hostPlatform: 'win32'
+  }
+  return {
+    status: null,
+    checkedAt: 2,
+    snapshot: {
+      environmentId: 'windows-box',
+      pairingRevision: 1,
+      sequence: 2,
+      checkedAt: 2,
+      status: answered,
+      verification: 'unavailable',
+      transport: 'ready'
+    }
+  }
 }
 
 describe('resolveTerminalInputHostPlatform', () => {
@@ -72,6 +102,34 @@ describe('resolveTerminalInputHostPlatform', () => {
         transport: {
           getConnectionId: () => null,
           getPtyId: () => 'remote:windows-box@@terminal-1'
+        }
+      })
+    ).toBe('win32')
+  })
+
+  it('uses the nested SSH host platform instead of the outer HUB platform', () => {
+    expect(
+      resolveTerminalInputHostPlatform({
+        clientPlatform: 'darwin',
+        state: state({
+          runtimeStatusByEnvironmentId: new Map([
+            ['hub', { status: { hostPlatform: 'linux' } } as never]
+          ]),
+          sshStateByEnvironment: new Map([
+            [
+              'hub',
+              {
+                connectionStates: new Map([['ssh-windows', { remotePlatform: 'win32' } as never]])
+              } as never
+            ]
+          ])
+        }),
+        worktreeId: 'repo::C:\\repo',
+        transport: {
+          getConnectionId: () => null,
+          getPtyId: () => 'remote:hub@@terminal-1',
+          getRuntimeEnvironmentId: () => 'hub',
+          getExecutionHostId: () => 'ssh:ssh-windows'
         }
       })
     ).toBe('win32')
@@ -184,7 +242,7 @@ describe('resolveTerminalInputHostPlatform', () => {
     ).toBe('win32')
   })
 
-  it('falls back to the client when SSH platform metadata is unavailable', () => {
+  it('uses conservative POSIX input when SSH platform metadata is unavailable', () => {
     expect(
       resolveTerminalInputHostPlatform({
         clientPlatform: 'darwin',
@@ -192,7 +250,23 @@ describe('resolveTerminalInputHostPlatform', () => {
         worktreeId: 'repo::/repo',
         transport: { getConnectionId: () => 'ssh-unknown' }
       })
-    ).toBe('darwin')
+    ).toBe('linux')
+  })
+
+  it('prefers the PTY-owner platform over stale nested SSH state', () => {
+    expect(
+      resolveTerminalInputHostPlatform({
+        clientPlatform: 'darwin',
+        state: state({ sshStateByEnvironment: new Map() }),
+        worktreeId: 'repo::/repo',
+        transport: {
+          getConnectionId: () => null,
+          getRuntimeEnvironmentId: () => 'hub',
+          getExecutionHostId: () => 'ssh:ssh-win',
+          getRemotePlatform: () => 'win32'
+        }
+      })
+    ).toBe('win32')
   })
 
   it('falls back to the client when runtime platform metadata is unavailable', () => {
@@ -230,6 +304,33 @@ describe('resolveTerminalInputHostPlatform', () => {
         }),
         worktreeId,
         transport: { getConnectionId: () => null }
+      })
+    ).toBe('win32')
+  })
+
+  // A probe that did not come back says nothing about which OS the host runs. Falling through to
+  // the client's platform re-points every keystroke and every path at the wrong conventions --
+  // a Windows host driven from a Mac silently starts speaking POSIX mid-session.
+  it('keeps the Windows host platform while its probe is unverifiable', () => {
+    const worktreeId = 'repo::C:\\repo'
+    expect(
+      resolveTerminalInputHostPlatform({
+        clientPlatform: 'darwin',
+        state: state({
+          repos: [
+            {
+              id: 'repo',
+              path: 'C:\\repo',
+              displayName: 'repo',
+              badgeColor: '#000',
+              addedAt: 0,
+              executionHostId: 'runtime:windows-box'
+            }
+          ],
+          runtimeStatusByEnvironmentId: new Map([['windows-box', unverifiableWindowsHost()]])
+        }),
+        worktreeId,
+        transport: null
       })
     ).toBe('win32')
   })

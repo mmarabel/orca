@@ -1,9 +1,15 @@
 import type { ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { sendToWatcherChild } from './parcel-watcher-child-messaging'
 import { createHostWatcherSubscription } from './parcel-watcher-host-subscriptions'
+import type { PendingWatcherUnsubscribe } from './parcel-watcher-host-subscriptions'
 import { subscribeWithInProcessWatcher } from './parcel-watcher-in-process-fallback'
-import { installPendingSubscribeControls } from './parcel-watcher-pending-subscribe'
+import {
+  installPendingSubscribeControls,
+  resetPendingSubscribeAttempt
+} from './parcel-watcher-pending-subscribe'
 import { WatcherProcessFailure } from './parcel-watcher-process-failure'
+import { rewriteWatcherEvents, resolveWatcherRootPaths } from './watcher-event-root-path-rewrite'
 import type {
   HostToWatcherMessage,
   WatcherProcessSubscribeOptions
@@ -25,10 +31,12 @@ type WatcherSupervisorSubscribeOptions = {
   useInProcessVitestFallback: boolean
   allocateId: () => number
   records: Map<number, WatcherProcessSubscriptionRecord>
-  pendingUnsubscribes: Map<number, () => void>
+  pendingUnsubscribes: Map<number, PendingWatcherUnsubscribe>
   ensureWatcherProcess: (entryPath: string) => ChildProcess | null
   getChild: () => ChildProcess | null
-  killWatcherChildIfIdle: () => void
+  getTerminationPromise: () => Promise<void> | null
+  killWatcherChildIfIdle: () => Promise<void>
+  terminateUnavailableChild: (child: ChildProcess | null) => Promise<void>
   sendSubscribe: (child: ChildProcess, record: WatcherProcessSubscriptionRecord) => void
   sendToChild: (child: ChildProcess, message: HostToWatcherMessage) => void
   cancelPendingSubscribe: (
@@ -37,9 +45,23 @@ type WatcherSupervisorSubscribeOptions = {
   ) => void
 }
 
+export function sendWatcherSubscribe(
+  child: ChildProcess,
+  record: WatcherProcessSubscriptionRecord
+): void {
+  resetPendingSubscribeAttempt(record)
+  sendToWatcherChild(child, {
+    op: 'subscribe',
+    id: record.id,
+    dir: record.dir,
+    opts: record.opts,
+    delivery: record.hooks.delivery
+  })
+}
+
 export function subscribeThroughWatcherSupervisor({
   dir,
-  callback,
+  callback: rawCallback,
   opts,
   hooks,
   shutdownRequested,
@@ -50,7 +72,9 @@ export function subscribeThroughWatcherSupervisor({
   pendingUnsubscribes,
   ensureWatcherProcess,
   getChild,
+  getTerminationPromise,
   killWatcherChildIfIdle,
+  terminateUnavailableChild,
   sendSubscribe,
   sendToChild,
   cancelPendingSubscribe
@@ -73,10 +97,17 @@ export function subscribeThroughWatcherSupervisor({
       )
     )
   }
+  // Why: a symlinked or differently-cased root is unwatchable on Linux
+  // (IN_ONLYDIR) and misreported on macOS (FSEvents canonicalizes). Watch the
+  // resolved directory, then restore the caller's spelling on the way out --
+  // this is the one boundary every desktop, runtime, and relay watch passes.
+  const { watchRoot, rewriteEventPath } = resolveWatcherRootPaths(dir)
+  const callback: WatcherProcessCallback = (error, events) =>
+    rawCallback(error, rewriteWatcherEvents(events, rewriteEventPath))
   // Why: under Vitest we cannot fork a real watcher child, so exercise the
   // subscription path in-process (against mocked @parcel/watcher) instead.
   if (process.env.VITEST && useInProcessVitestFallback) {
-    return subscribeWithInProcessWatcher(dir, callback, opts, hooks)
+    return subscribeWithInProcessWatcher(watchRoot, callback, opts, hooks)
   }
   if (!existsSync(entryPath)) {
     return Promise.reject(
@@ -89,14 +120,14 @@ export function subscribeThroughWatcherSupervisor({
   }
   const record: WatcherProcessSubscriptionRecord = {
     id: allocateId(),
-    dir,
+    dir: watchRoot,
     opts,
     callback,
     hooks,
     interrupted: false,
     crawlStarted: false
   }
-  return new Promise((resolve, reject) => {
+  return new Promise<WatcherProcessSubscription>((resolve, reject) => {
     const child = ensureWatcherProcess(entryPath)
     if (!child) {
       reject(
@@ -117,7 +148,9 @@ export function subscribeThroughWatcherSupervisor({
             records,
             pendingUnsubscribes,
             getChild,
+            getTerminationPromise,
             killWatcherChildIfIdle,
+            terminateUnavailableChild,
             sendToChild
           })
         ),

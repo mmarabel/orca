@@ -1,7 +1,11 @@
 import { parseExecutionHostId } from '../../../../shared/execution-host'
+import { lastVerifiedRuntimeStatus } from '../../../../shared/runtime-host-status'
 import { isWslUncPath } from '../../../../shared/wsl-paths'
 import { getConnectionIdFromState } from '@/lib/connection-context'
-import { getExecutionHostIdForWorktree } from '@/lib/worktree-runtime-owner'
+import {
+  getExecutionHostIdForWorktree,
+  getRuntimeEnvironmentIdForWorktree
+} from '@/lib/worktree-runtime-owner'
 import { getRemoteRuntimePtyEnvironmentId } from '@/runtime/runtime-terminal-stream'
 import type { AppState } from '@/store/types'
 import type { PtyTransport } from './pty-transport-types'
@@ -11,10 +15,12 @@ type TerminalInputHostPlatformState = Pick<
   AppState,
   | 'repos'
   | 'worktreesByRepo'
+  | 'detectedWorktreesByRepo'
   | 'folderWorkspaces'
   | 'projectGroups'
   | 'settings'
   | 'sshConnectionStates'
+  | 'sshStateByEnvironment'
   | 'runtimeStatusByEnvironmentId'
   | 'restoredRuntimeHostIdByWorkspaceSessionKey'
 >
@@ -26,17 +32,29 @@ export function resolveTerminalInputHostPlatform(args: {
   transport:
     | (Pick<PtyTransport, 'getConnectionId'> &
         Partial<
-          Pick<PtyTransport, 'getPtyId' | 'getRuntimeEnvironmentId' | 'getLocalSessionMetadata'>
+          Pick<
+            PtyTransport,
+            | 'getPtyId'
+            | 'getRuntimeEnvironmentId'
+            | 'getExecutionHostId'
+            | 'getRemotePlatform'
+            | 'getLocalSessionMetadata'
+          >
         >)
     | null
 }): NodeJS.Platform {
+  const authoritativePlatform = args.transport?.getRemotePlatform?.()
+  if (authoritativePlatform) {
+    return authoritativePlatform
+  }
   const transportConnectionId = args.transport?.getConnectionId?.()
   const connectionId =
     transportConnectionId === undefined
       ? getConnectionIdFromState(args.state, args.worktreeId)
       : transportConnectionId
   if (connectionId) {
-    return args.state.sshConnectionStates.get(connectionId)?.remotePlatform ?? args.clientPlatform
+    // Why: only an SSH-owner report may enable Windows-specific input encoding; client OS is unrelated.
+    return args.state.sshConnectionStates.get(connectionId)?.remotePlatform ?? 'linux'
   }
 
   // Why: a running pane keeps its spawn-time runtime even if the worktree's
@@ -45,10 +63,21 @@ export function resolveTerminalInputHostPlatform(args: {
   const runtimeEnvironmentId =
     args.transport?.getRuntimeEnvironmentId?.() ??
     (ptyId ? getRemoteRuntimePtyEnvironmentId(ptyId) : null)
-  if (runtimeEnvironmentId) {
+  const transportExecutionHost = parseExecutionHostId(args.transport?.getExecutionHostId?.())
+  if (runtimeEnvironmentId && transportExecutionHost?.kind === 'ssh') {
     return (
-      args.state.runtimeStatusByEnvironmentId.get(runtimeEnvironmentId)?.status?.hostPlatform ??
-      args.clientPlatform
+      args.state.sshStateByEnvironment
+        .get(runtimeEnvironmentId)
+        ?.connectionStates.get(transportExecutionHost.targetId)?.remotePlatform ?? 'linux'
+    )
+  }
+  if (runtimeEnvironmentId) {
+    // Why last-verified: the host's platform is a fact about the host, and falling back to the
+    // client's silently re-points every keystroke and path at the wrong conventions -- a Windows
+    // host driven from a Mac. See docs/reference/ssh-execution-boundary.md.
+    return (
+      lastVerifiedRuntimeStatus(args.state.runtimeStatusByEnvironmentId.get(runtimeEnvironmentId))
+        ?.hostPlatform ?? args.clientPlatform
     )
   }
   const localSessionMetadata = args.transport?.getLocalSessionMetadata?.()
@@ -61,12 +90,17 @@ export function resolveTerminalInputHostPlatform(args: {
 
   const host = parseExecutionHostId(getExecutionHostIdForWorktree(args.state, args.worktreeId))
   if (host?.kind === 'ssh') {
-    return args.state.sshConnectionStates.get(host.targetId)?.remotePlatform ?? args.clientPlatform
+    const ownerEnvironmentId = getRuntimeEnvironmentIdForWorktree(args.state, args.worktreeId)
+    return ownerEnvironmentId
+      ? (args.state.sshStateByEnvironment
+          .get(ownerEnvironmentId)
+          ?.connectionStates.get(host.targetId)?.remotePlatform ?? 'linux')
+      : (args.state.sshConnectionStates.get(host.targetId)?.remotePlatform ?? 'linux')
   }
   if (host?.kind === 'runtime') {
     return (
-      args.state.runtimeStatusByEnvironmentId.get(host.environmentId)?.status?.hostPlatform ??
-      args.clientPlatform
+      lastVerifiedRuntimeStatus(args.state.runtimeStatusByEnvironmentId.get(host.environmentId))
+        ?.hostPlatform ?? args.clientPlatform
     )
   }
   return args.clientPlatform

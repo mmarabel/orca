@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { CircleAlert, Loader2, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import type { WindowsMobileFirewallStatus } from '../../../../shared/windows-mobile-firewall'
@@ -10,34 +10,43 @@ import { cn } from '../../lib/utils'
 type WindowsFirewallNoticeProps = {
   pairingReady: boolean
   address?: string
+  /** Relay offers still carry a LAN endpoint, but a blocked one is not fatal. */
+  usingRelay?: boolean
   className?: string
 }
 
 export function WindowsFirewallNotice({
   pairingReady,
   address,
+  usingRelay = false,
   className
 }: WindowsFirewallNoticeProps): React.JSX.Element | null {
   const [status, setStatus] = useState<WindowsMobileFirewallStatus | null>(null)
   const [repairing, setRepairing] = useState(false)
   const mountedRef = useMountedRef()
+  const inspectIdRef = useRef(0)
 
-  const inspect = useCallback(async () => {
+  const inspect = useCallback(async (): Promise<WindowsMobileFirewallStatus | null> => {
+    // Why: UAC elevation steals and returns window focus, so a focus-triggered
+    // inspection can race the post-repair one; only the latest result may win.
+    const inspectId = ++inspectIdRef.current
     if (!pairingReady) {
       setStatus(null)
-      return
+      return null
     }
     try {
       const next = await window.api.mobile.getWindowsFirewallStatus(
         address ? { address } : undefined
       )
-      if (mountedRef.current) {
+      if (mountedRef.current && inspectIdRef.current === inspectId) {
         setStatus(next)
       }
+      return next
     } catch {
-      if (mountedRef.current) {
+      if (mountedRef.current && inspectIdRef.current === inspectId) {
         setStatus(null)
       }
+      return null
     }
   }, [address, mountedRef, pairingReady])
 
@@ -52,11 +61,16 @@ export function WindowsFirewallNotice({
   }
   const firewallStatus = status
   const networkIsPublic = firewallStatus.networkCategory === 'public'
+  const blockingRuleDetected = firewallStatus.blockingRuleDetected
   // Why: a Private-profile allow rule cannot help on managed domain networks.
   if (!pairingReady || firewallStatus.networkCategory === 'domain') {
     return null
   }
-  if (!networkIsPublic && (firewallStatus.ruleAllowed || !firewallStatus.privateFirewallEnabled)) {
+  if (
+    !networkIsPublic &&
+    (!firewallStatus.privateFirewallEnabled ||
+      (firewallStatus.ruleAllowed && !blockingRuleDetected))
+  ) {
     return null
   }
 
@@ -68,11 +82,32 @@ export function WindowsFirewallNotice({
         return
       }
       if (result.ok) {
-        setStatus({ ...firewallStatus, ruleAllowed: true })
-        toast.success(
+        // Why: elevation success only confirms the script ran; managed policy
+        // can still leave an overriding Block rule in effect.
+        const next = await inspect()
+        if (!mountedRef.current) {
+          return
+        }
+        if (
+          next?.supported &&
+          (!next.privateFirewallEnabled ||
+            (next.ruleAllowed && !next.blockingRuleDetected && next.inspectionAvailable))
+        ) {
+          toast.success(
+            translate(
+              'auto.components.mobile.WindowsFirewallNotice.repair-success',
+              'Windows Firewall now allows Orca Mobile on private networks'
+            )
+          )
+          return
+        }
+        if (!next) {
+          setStatus(firewallStatus)
+        }
+        toast.error(
           translate(
-            'auto.components.mobile.WindowsFirewallNotice.repair-success',
-            'Windows Firewall now allows Orca Mobile on private networks'
+            'auto.components.mobile.WindowsFirewallNotice.repair-unverified',
+            'Windows Firewall access could not be verified'
           )
         )
         return
@@ -81,7 +116,7 @@ export function WindowsFirewallNotice({
         toast.error(
           translate(
             'auto.components.mobile.WindowsFirewallNotice.repair-failed',
-            'Could not add the Windows Firewall rule'
+            'Could not update the Windows Firewall rules'
           )
         )
       }
@@ -90,7 +125,7 @@ export function WindowsFirewallNotice({
         toast.error(
           translate(
             'auto.components.mobile.WindowsFirewallNotice.repair-failed',
-            'Could not add the Windows Firewall rule'
+            'Could not update the Windows Firewall rules'
           )
         )
       }
@@ -113,10 +148,15 @@ export function WindowsFirewallNotice({
                     'auto.components.mobile.WindowsFirewallNotice.public-title',
                     'Windows marks this network as public'
                   )
-                : translate(
-                    'auto.components.mobile.WindowsFirewallNotice.missing-title',
-                    'Allow phone connections through Windows Firewall'
-                  )}
+                : blockingRuleDetected
+                  ? translate(
+                      'auto.components.mobile.WindowsFirewallNotice.blocked-title',
+                      'Windows may be blocking Orca Mobile'
+                    )
+                  : translate(
+                      'auto.components.mobile.WindowsFirewallNotice.missing-title',
+                      'Allow phone connections through Windows Firewall'
+                    )}
             </p>
             <p className="text-xs text-muted-foreground">
               {networkIsPublic
@@ -124,12 +164,26 @@ export function WindowsFirewallNotice({
                     'auto.components.mobile.WindowsFirewallNotice.public-description',
                     'Change this trusted Wi-Fi network to Private before allowing Orca Mobile connections.'
                   )
-                : translate(
-                    'auto.components.mobile.WindowsFirewallNotice.missing-description',
-                    'Windows may block the pairing server. Add a rule for this Orca app and TCP port {{port}} on Private networks.',
-                    { port: firewallStatus.port }
-                  )}
+                : blockingRuleDetected
+                  ? translate(
+                      'auto.components.mobile.WindowsFirewallNotice.blocked-description',
+                      'An existing inbound Block rule can override the pairing exception. Repair removes conflicting TCP rules for this Orca app, then allows port {{port}} on Private networks.',
+                      { port: firewallStatus.port }
+                    )
+                  : translate(
+                      'auto.components.mobile.WindowsFirewallNotice.missing-description',
+                      'Windows may block the pairing server. Add a rule for this Orca app and TCP port {{port}} on Private networks.',
+                      { port: firewallStatus.port }
+                    )}
             </p>
+            {usingRelay ? (
+              <p className="text-xs text-muted-foreground">
+                {translate(
+                  'auto.components.mobile.WindowsFirewallNotice.relay-note',
+                  'Pairing still works over Orca Relay — allowing this only adds the faster local connection.'
+                )}
+              </p>
+            ) : null}
           </div>
           {networkIsPublic ? (
             <Button
@@ -155,10 +209,15 @@ export function WindowsFirewallNotice({
                     'auto.components.mobile.WindowsFirewallNotice.waiting',
                     'Waiting for Windows…'
                   )
-                : translate(
-                    'auto.components.mobile.WindowsFirewallNotice.allow',
-                    'Allow phone connections'
-                  )}
+                : blockingRuleDetected
+                  ? translate(
+                      'auto.components.mobile.WindowsFirewallNotice.repair',
+                      'Repair firewall access'
+                    )
+                  : translate(
+                      'auto.components.mobile.WindowsFirewallNotice.allow',
+                      'Allow phone connections'
+                    )}
             </Button>
           )}
         </div>

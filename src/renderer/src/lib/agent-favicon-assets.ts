@@ -1,7 +1,9 @@
-import type { TuiAgent } from '../../../shared/types'
+import type { TuiAgent } from '../../../shared/tui-agent'
 import grokUrl from '../../../shared/agent-icons/grok.png?url'
 import mimoCodeUrl from '../../../shared/agent-icons/mimo-code.png?url'
 import anteUrl from '../../../shared/agent-icons/ante.png?url'
+import traeUrl from '../../../shared/agent-icons/trae.png?url'
+import primeAgentUrl from '../../../shared/agent-icons/prime-agent.png?url'
 import geminiUrl from '../../../shared/agent-icons/gemini.png?url'
 import antigravityUrl from '../../../shared/agent-icons/antigravity.png?url'
 import gooseUrl from '../../../shared/agent-icons/goose.png?url'
@@ -21,6 +23,8 @@ import qwenCodeUrl from '../../../shared/agent-icons/qwen-code.png?url'
 import rovoUrl from '../../../shared/agent-icons/rovo.png?url'
 import hermesUrl from '../../../shared/agent-icons/hermes.png?url'
 import devinUrl from '../../../shared/agent-icons/devin.png?url'
+import museUrl from '../../../shared/agent-icons/muse.png?url'
+import zcodeUrl from '../../../shared/agent-icons/zcode.png?url'
 import openclawUrl from '../../../shared/agent-icons/openclaw.png?url'
 
 // Why: these agents have no hand-authored SVG glyph, so previously their icons
@@ -34,6 +38,8 @@ export const AGENT_FAVICON_ASSETS: Partial<Record<TuiAgent, string>> = {
   grok: grokUrl,
   'mimo-code': mimoCodeUrl,
   ante: anteUrl,
+  trae: traeUrl,
+  'prime-agent': primeAgentUrl,
   gemini: geminiUrl,
   antigravity: antigravityUrl,
   goose: gooseUrl,
@@ -53,5 +59,7 @@ export const AGENT_FAVICON_ASSETS: Partial<Record<TuiAgent, string>> = {
   rovo: rovoUrl,
   hermes: hermesUrl,
   devin: devinUrl,
+  muse: museUrl,
+  zcode: zcodeUrl,
   openclaw: openclawUrl
 }

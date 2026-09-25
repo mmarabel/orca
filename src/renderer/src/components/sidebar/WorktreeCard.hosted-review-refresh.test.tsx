@@ -3,7 +3,9 @@ import type { ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Repo, Worktree, WorktreeCardProperty } from '../../../../shared/types'
+import type { Repo } from '../../../../shared/repo-types'
+import type { WorktreeCardProperty } from '../../../../shared/ui-chrome-types'
+import type { Worktree } from '../../../../shared/worktree/types'
 
 const fetchHostedReviewForBranch = vi.fn()
 const fetchIssue = vi.fn()
@@ -63,10 +65,6 @@ vi.mock('./WorktreeCardAgents', () => ({
   default: () => null
 }))
 
-vi.mock('./SshDisconnectedDialog', () => ({
-  SshDisconnectedDialog: () => null
-}))
-
 vi.mock('./WorktreeContextMenu', () => ({
   default: ({ children }: { children: ReactNode }) => <>{children}</>,
   CLOSE_ALL_CONTEXT_MENUS_EVENT: 'orca:test-close-context-menus',
@@ -76,6 +74,10 @@ vi.mock('./WorktreeContextMenu', () => ({
 
 vi.mock('./use-worktree-activity-status', () => ({
   useWorktreeActivityStatus: () => 'active'
+}))
+
+vi.mock('./use-worktree-sleep-state', () => ({
+  useIsSleepingWorktree: () => false
 }))
 
 function makeRepo(): Repo {

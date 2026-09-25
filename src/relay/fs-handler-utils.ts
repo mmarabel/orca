@@ -2,10 +2,11 @@
  * Pure helpers and child-process search utilities extracted from fs-handler.ts.
  *
  * Why: oxlint max-lines requires .ts files to stay under 300 lines.
- * These functions depend only on their arguments (plus `rg` being on PATH),
+ * These functions depend only on their arguments (plus a launchable `rg`),
  * so they are straightforward to test independently.
  */
-import { spawn, execFile } from 'node:child_process'
+import { SearchSubprocessLineAccumulator } from '../shared/search-subprocess-lines'
+import { spawn } from 'node:child_process'
 import { open } from 'node:fs/promises'
 import {
   buildRgArgs,
@@ -15,7 +16,21 @@ import {
   SEARCH_TIMEOUT_MS as SHARED_SEARCH_TIMEOUT_MS
 } from '../shared/text-search'
 import { IMAGE_FILE_MIME_TYPES } from '../shared/image-file-extensions'
-import type { SearchResult as SharedSearchResult } from '../shared/types'
+import type { SearchResult as SharedSearchResult } from '../shared/code-search-types'
+import {
+  absorbPendingRipgrepSpawnError,
+  classifyRipgrepLaunchFailure,
+  isRipgrepUnavailableExit,
+  killSpawnedRipgrepProcess,
+  ripgrepMissingCwdError,
+  RipgrepUnavailableError
+} from '../shared/ripgrep-process-availability'
+import { buildRelayCommandEnv } from './relay-command-env'
+import {
+  pathRipgrepCommand,
+  resolveRelayRipgrepCommand,
+  retryRipgrepOnPathAfterLaunchFailure
+} from './relay-bundled-ripgrep'
 
 // ─── Constants ───────────────────────────────────────────────────────
 
@@ -89,21 +104,36 @@ export function searchWithRg(
   query: string,
   opts: SearchOptions
 ): Promise<SearchResult> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const rgArgs = buildRgArgs(query, rootPath, opts)
     const acc = createAccumulator()
-    let buffer = ''
+    const lines = new SearchSubprocessLineAccumulator(Number.MAX_SAFE_INTEGER)
     let resolved = false
+    let processErrorObserved = false
+    let unavailableExitObserved = false
+    let launchFailureCheck: Promise<void> | null = null
 
     // Why: spawn can throw synchronously on invalid options (e.g. bad cwd),
     // which would leak out of the `new Promise` executor and leave the
     // promise forever pending. Treat a synchronous throw as a clean
     // "no results" fallback, the same way an async 'error' event is handled.
+    const resolvedRgCommand = resolveRelayRipgrepCommand()
+    // Why not spawn a bare name when this is null: on Windows CreateProcessW searches the spawn
+    // cwd -- the user's repo -- before PATH, so a planted rg.exe would run instead.
+    if (resolvedRgCommand === null) {
+      reject(new RipgrepUnavailableError())
+      return
+    }
+    // Why a second binding: the closures below capture it, and narrowing does not reach them.
+    const command: string = resolvedRgCommand
+    const env = buildRelayCommandEnv()
     let child: ReturnType<typeof spawn>
     try {
-      child = spawn('rg', rgArgs, {
+      child = spawn(command, rgArgs, {
         cwd: rootPath,
-        stdio: ['ignore', 'pipe', 'pipe']
+        env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true
       })
     } catch {
       resolve(finalize(acc))
@@ -112,109 +142,115 @@ export function searchWithRg(
 
     let killTimeout: ReturnType<typeof setTimeout>
 
-    function resolveOnce(): void {
+    function settle(): boolean {
       if (resolved) {
-        return
+        return false
       }
       resolved = true
+      lines.clear()
       clearTimeout(killTimeout)
       // Why: child.kill() is advisory over SSH; detach listeners if the
       // process ignores timeout kill so old searches cannot retain closures.
-      child.stdout!.off('data', handleStdoutData)
-      child.stderr!.off('data', handleStderrData)
+      child.stdout?.off('data', handleStdoutData)
+      child.stderr?.off('data', handleStderrData)
       child.off('error', handleError)
       child.off('close', handleClose)
-      resolve(finalize(acc))
+      absorbPendingRipgrepSpawnError(child, {
+        errorObserved: processErrorObserved,
+        unavailableExitObserved
+      })
+      return true
+    }
+
+    function resolveOnce(): void {
+      if (settle()) {
+        resolve(finalize(acc))
+      }
+    }
+
+    function settleLaunchFailure(error?: unknown): void {
+      if (launchFailureCheck) {
+        return
+      }
+      launchFailureCheck = retryRipgrepOnPathAfterLaunchFailure(command, rootPath, error).then(
+        async (retryOnPath) => {
+          if (retryOnPath) {
+            // Why: a launch failure produced no output, so rerunning on PATH rg loses nothing.
+            if (settle()) {
+              searchWithRg(rootPath, query, opts).then(resolve, reject)
+            }
+            return
+          }
+          // Why not resolveOnce() on an unreachable root: an empty result reads as "no matches"
+          // and the git/readdir chain never engages, because it only triggers on an unavailable
+          // ripgrep. The workspace moving would otherwise look like a successful empty scan.
+          if (settle()) {
+            reject(
+              (await classifyRipgrepLaunchFailure(
+                rootPath,
+                [command, pathRipgrepCommand()],
+                env
+              )) === 'cwd-unreachable'
+                ? ripgrepMissingCwdError(rootPath)
+                : new RipgrepUnavailableError()
+            )
+          }
+        }
+      )
     }
 
     function processLine(line: string): void {
       const verdict = ingestRgJsonLine(line, rootPath, acc, opts.maxResults)
       if (verdict === 'stop') {
-        child.kill()
+        killSpawnedRipgrepProcess(child)
       }
     }
 
     function handleStdoutData(chunk: string): void {
-      buffer += chunk
-      const lines = buffer.split('\n')
-      buffer = lines.pop() ?? ''
-      for (const line of lines) {
-        processLine(line)
-      }
+      lines.push(chunk, processLine)
     }
 
     function handleStderrData(): void {
       /* drain */
     }
 
-    function handleError(): void {
-      resolveOnce()
-    }
-
-    function handleClose(): void {
-      if (buffer) {
-        processLine(buffer)
+    function handleError(error: Error): void {
+      processErrorObserved = true
+      if (isRipgrepUnavailableExit(child, null, null)) {
+        settleLaunchFailure(error)
+        return
       }
       resolveOnce()
     }
 
-    child.stdout!.setEncoding('utf-8')
-    child.stdout!.on('data', handleStdoutData)
-    child.stderr!.on('data', handleStderrData)
+    function handleClose(code: number | null, signal: NodeJS.Signals | null): void {
+      if (
+        isRipgrepUnavailableExit(child, code, signal, {
+          classifyNativeLauncherExit: true
+        })
+      ) {
+        unavailableExitObserved = true
+        settleLaunchFailure()
+        return
+      }
+      const tail = lines.finish()
+      if (tail !== null) {
+        processLine(tail)
+      }
+      resolveOnce()
+    }
+
+    child.stdout?.setEncoding('utf-8')
+    child.stdout?.on('data', handleStdoutData)
+    child.stderr?.on('data', handleStderrData)
     child.once('error', handleError)
     child.once('close', handleClose)
 
     killTimeout = setTimeout(() => {
       acc.truncated = true
-      child.kill()
+      killSpawnedRipgrepProcess(child)
       resolveOnce()
     }, SEARCH_TIMEOUT_MS)
-  })
-}
-
-// ─── rg availability check ──────────────────────────────────────────
-
-// Why no cache: `rg --version` is a sub-10ms local spawn, and caching the
-// result caused a footgun — a negative cache persisted across rg installs
-// (forcing a relay restart), while a positive cache could mask an rg that
-// was uninstalled or broken mid-session. The `settled` flag below closes
-// the original race between 'error' and 'close' that the cache was added
-// to paper over, so re-checking per call is both simpler and safer.
-const RG_AVAILABILITY_TIMEOUT_MS = 5000
-
-export function checkRgAvailable(): Promise<boolean> {
-  return new Promise((resolve) => {
-    let settled = false
-    const child = execFile('rg', ['--version'])
-    let timeout: ReturnType<typeof setTimeout> | null = null
-    const cleanup = (): void => {
-      if (timeout) {
-        clearTimeout(timeout)
-        timeout = null
-      }
-      child.off('error', onError)
-      child.off('close', onClose)
-    }
-    const settle = (available: boolean, options?: { kill?: boolean }): void => {
-      if (settled) {
-        return
-      }
-      settled = true
-      cleanup()
-      if (options?.kill) {
-        child.kill()
-      }
-      resolve(available)
-    }
-    const onError = (): void => settle(false)
-    const onClose = (code: number | null): void => settle(code === 0)
-
-    child.once('error', onError)
-    child.once('close', onClose)
-    timeout = setTimeout(() => settle(false, { kill: true }), RG_AVAILABILITY_TIMEOUT_MS)
-    if (typeof timeout.unref === 'function') {
-      timeout.unref()
-    }
   })
 }
 

@@ -1,6 +1,9 @@
+import { stat } from 'node:fs/promises'
 import type { GitCapabilityCache } from '../shared/git-capability-cache'
 import type { GitExec } from './git-handler-ops'
-import { isUnsupportedWorktreeListZError, parseWorktreeList } from './git-handler-utils'
+import { isUnsupportedWorktreeListZError } from './git-handler-utils'
+import { parseWorktreeList } from '../shared/git-worktree-porcelain-parser'
+import type { GitWorktreeInfo } from '../shared/worktree/types'
 
 export type RelayWorktreeInfo = {
   path: string
@@ -30,14 +33,63 @@ export async function readRelayWorktreeList(
   )
 }
 
-function normalizeRelayWorktrees(worktrees: Record<string, unknown>[]): RelayWorktreeInfo[] {
+const PRUNABLE_EXISTENCE_PROBE_CONCURRENCY = 8
+
+/** Why: Git <2.31 does not emit the `prunable` porcelain annotation, so probe
+ *  each linked worktree path directly instead of treating a stale registration
+ *  as a live workspace (issue #8389). Runs on the `-z`-unsupported fallback
+ *  (Git <2.36); on Git 2.31–2.35 the annotation is already parsed, so this is a
+ *  harmless backstop. The relay owns the filesystem, so a plain stat is
+ *  authoritative. */
+export async function annotatePrunableWorktreesByExistence(
+  worktrees: GitWorktreeInfo[]
+): Promise<GitWorktreeInfo[]> {
+  const annotated = [...worktrees]
+  let nextIndex = 0
+
+  async function probeNext(): Promise<void> {
+    while (nextIndex < worktrees.length) {
+      const index = nextIndex
+      nextIndex += 1
+      const worktree = worktrees[index]
+      const worktreePath = worktree?.path ?? ''
+      // Git only marks linked worktrees prunable, and never locked ones (a
+      // lock shields the registration even when the directory is missing). The
+      // `locked` annotation is only parsed on Git >=2.31, so on older Git a
+      // locked+missing worktree cannot be shielded here. A missing main
+      // worktree is surfaced by the repo-level failure paths.
+      if (
+        !worktreePath ||
+        worktree.isMainWorktree === true ||
+        worktree.isBare === true ||
+        worktree.locked === true ||
+        worktree.prunable === true
+      ) {
+        continue
+      }
+      try {
+        await stat(worktreePath)
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
+          annotated[index] = { ...worktree, prunable: true }
+        }
+      }
+    }
+  }
+
+  const workerCount = Math.min(PRUNABLE_EXISTENCE_PROBE_CONCURRENCY, worktrees.length)
+  await Promise.all(Array.from({ length: workerCount }, () => probeNext()))
+  return annotated
+}
+
+function normalizeRelayWorktrees(worktrees: GitWorktreeInfo[]): RelayWorktreeInfo[] {
   return worktrees
     .map((worktree) => ({
-      path: typeof worktree.path === 'string' ? worktree.path : '',
-      head: typeof worktree.head === 'string' ? worktree.head : undefined,
-      branch: typeof worktree.branch === 'string' ? worktree.branch : undefined,
+      path: worktree.path,
+      head: worktree.head,
+      branch: worktree.branch,
       locked: worktree.locked === true ? true : undefined,
-      lockReason: typeof worktree.lockReason === 'string' ? worktree.lockReason : undefined
+      lockReason: worktree.lockReason
     }))
     .filter((worktree) => worktree.path.length > 0)
 }

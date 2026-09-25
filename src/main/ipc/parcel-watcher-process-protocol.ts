@@ -8,6 +8,8 @@ export type WatcherProcessSubscribeOptions = {
   ignore?: string[]
   ignoreGlobs?: string[]
   backend?: string
+  mode?: 'recursive' | 'shallow'
+  include?: string[]
 }
 
 export type WatcherProcessDeliveryOptions = {
@@ -34,4 +36,5 @@ export type WatcherToHostMessage =
   | { op: 'overflow'; id: number }
   | { op: 'watch-error'; id: number; message: string }
   | { op: 'cancel-requires-restart'; id: number }
+  | { op: 'unsubscribe-failed'; id: number; message: string }
   | { op: 'unsubscribed'; id: number }

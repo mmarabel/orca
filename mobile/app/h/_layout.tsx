@@ -10,7 +10,8 @@ import {
   loadHostSidebarWidth,
   saveHostSidebarWidth
 } from '../../src/storage/preferences'
-import { HostScreen } from './[hostId]/index'
+import { HostProtocolGate } from '../../src/components/HostProtocolGate'
+import { HostScreen } from '../../src/host-screen/HostScreen'
 
 // Keep at least this much room for the detail pane when resizing the sidebar.
 const MIN_DETAIL_WIDTH = 320
@@ -39,6 +40,7 @@ function HostStack({ animation }: { animation: 'none' | 'default' }) {
       }}
     >
       <Stack.Screen name="[hostId]/index" options={{ title: 'Host' }} />
+      <Stack.Screen name="[hostId]/edit" options={{ title: 'Edit host' }} />
       <Stack.Screen name="[hostId]/accounts" options={{ title: 'Accounts' }} />
       <Stack.Screen name="[hostId]/tasks" options={{ title: 'Tasks' }} />
       <Stack.Screen name="[hostId]/session/[worktreeId]" options={{ title: 'Terminal' }} />
@@ -52,6 +54,12 @@ function HostStack({ animation }: { animation: 'none' | 'default' }) {
       />
       <Stack.Screen name="[hostId]/review/[worktreeId]" options={{ title: 'Changes' }} />
       <Stack.Screen name="[hostId]/pr/[worktreeId]" options={{ title: 'Pull Request' }} />
+      {/* Dev-flag only: redirects to the host screen unless the hybrid shell flag is on. */}
+      <Stack.Screen name="[hostId]/web" options={{ title: 'Workspace' }} />
+      {/* Last, and matched last: every pathname above has a file of its own, so this takes only
+          what expo-router would otherwise send to Unmatched. Declared for the title alone — an
+          undeclared child still renders, appended after these with this group's screenOptions. */}
+      <Stack.Screen name="[hostId]/[...page]" options={{ title: 'Workspace' }} />
     </Stack>
   )
 }
@@ -137,23 +145,25 @@ export default function HostGroupLayout() {
   // changes so a fold/rotation doesn't remount the navigator and reset the
   // navigation stack — only the sidebar pane toggles in and out.
   return (
-    <View style={styles.row}>
-      {showSidebar && sidebarOpen ? (
-        <View style={[styles.sidebar, { width: sidebarWidth }]}>
-          <HostScreen
-            embedded
-            hostId={hostId}
-            action={action}
-            onHideSidebar={canCollapseSidebar ? hideSidebar : undefined}
-          />
-          {/* Dedicated drag handle straddling the right border — see resizer note. */}
-          <View style={styles.resizeHandle} {...resizer.panHandlers} />
+    <HostProtocolGate hostId={hostId}>
+      <View style={styles.row}>
+        {showSidebar && sidebarOpen ? (
+          <View style={[styles.sidebar, { width: sidebarWidth }]}>
+            <HostScreen
+              embedded
+              hostId={hostId}
+              action={action}
+              onHideSidebar={canCollapseSidebar ? hideSidebar : undefined}
+            />
+            {/* Dedicated drag handle straddling the right border — see resizer note. */}
+            <View style={styles.resizeHandle} {...resizer.panHandlers} />
+          </View>
+        ) : null}
+        <View style={styles.detail}>
+          <HostStack animation={showSidebar ? 'none' : 'default'} />
         </View>
-      ) : null}
-      <View style={styles.detail}>
-        <HostStack animation={showSidebar ? 'none' : 'default'} />
       </View>
-    </View>
+    </HostProtocolGate>
   )
 }
 

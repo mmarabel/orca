@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { win32 as pathWin32 } from 'node:path'
+import { posix as pathPosix, win32 as pathWin32 } from 'node:path'
 import { parseWslUncPath } from '../../shared/wsl-paths'
 
 export type CodexWslRuntimeHookTarget = {
@@ -13,6 +13,11 @@ export type CodexWslRuntimeHookInstallPlan = {
   scriptPath: string
   commandScriptPath: string
   trustConfigPath: string
+  /** Distro that executes Codex for this runtime home (RPC trust grants run
+   *  codex inside it). */
+  wslDistro: string
+  /** Canonical Linux-side runtime home — CODEX_HOME for in-distro codex runs. */
+  linuxRuntimeHome: string
 }
 
 export type WslCanonicalPathSettlement =
@@ -43,12 +48,25 @@ function toDefaultWslLinuxPath(windowsPath: string): string {
 
 const WSL_CANONICALIZE_TIMEOUT_MS = 5000
 const WSL_PATH_MISSING_OUTPUT = '__ORCA_WSL_PATH_MISSING__'
+export const MAX_WSL_CANONICAL_PATH_CACHE_ENTRIES = 512
 
 // Why: `readlink -f` over wsl.exe stalls up to the timeout on a cold or wedged
 // distro. Running it synchronously on the Electron main process froze the UI on
 // every Codex WSL launch, so resolve it off-thread and cache the latest result.
 const canonicalWslPathCache = new Map<string, string>()
 const inFlightWslCanonicalizations = new Map<string, Set<WslCanonicalPathSettled>>()
+
+function rememberCanonicalWslPath(key: string, value: string): void {
+  canonicalWslPathCache.delete(key)
+  canonicalWslPathCache.set(key, value)
+  while (canonicalWslPathCache.size > MAX_WSL_CANONICAL_PATH_CACHE_ENTRIES) {
+    const oldest = canonicalWslPathCache.keys().next()
+    if (oldest.done) {
+      break
+    }
+    canonicalWslPathCache.delete(oldest.value)
+  }
+}
 
 function wslCanonicalizeCacheKey(distro: string, linuxPath: string): string {
   return `${distro}\x00${linuxPath}`
@@ -80,7 +98,7 @@ function scheduleWslLinuxPathCanonicalization(
     ? [
         '-d',
         distro,
-        '--',
+        '--exec',
         'sh',
         '-c',
         `resolved=$(wslpath -a -u "$1") || exit; if [ ! -d "$resolved" ]; then printf '%s\\n' '${WSL_PATH_MISSING_OUTPUT}'; exit 0; fi; readlink -f -- "$resolved"`,
@@ -90,7 +108,7 @@ function scheduleWslLinuxPathCanonicalization(
     : [
         '-d',
         distro,
-        '--',
+        '--exec',
         'sh',
         '-c',
         `if [ ! -d "$1" ]; then printf '%s\\n' '${WSL_PATH_MISSING_OUTPUT}'; exit 0; fi; readlink -f -- "$1"`,
@@ -111,7 +129,7 @@ function scheduleWslLinuxPathCanonicalization(
           ? { status: 'missing' }
           : { status: 'unavailable' }
       if (settlement.status === 'resolved') {
-        canonicalWslPathCache.set(key, canonicalPath)
+        rememberCanonicalWslPath(key, canonicalPath)
       } else if (settlement.status === 'missing') {
         // Why: a successful directory probe is stronger than a transport error;
         // clear the identity so stale trust can be revoked and later rediscovered.
@@ -142,7 +160,11 @@ function canonicalizeWslLinuxPath(
   if (process.platform !== 'win32') {
     return linuxPath
   }
-  const cached = canonicalWslPathCache.get(wslCanonicalizeCacheKey(distro, linuxPath))
+  const cacheKey = wslCanonicalizeCacheKey(distro, linuxPath)
+  const cached = canonicalWslPathCache.get(cacheKey)
+  if (cached !== undefined) {
+    rememberCanonicalWslPath(cacheKey, cached)
+  }
   // Why: every launch revalidates asynchronously. Returning the cache keeps
   // launch prep synchronous while settlement repairs or revokes trust in-place.
   scheduleWslLinuxPathCanonicalization(distro, linuxPath, windowsPath, onSettled)
@@ -183,8 +205,10 @@ export function createCodexWslRuntimeHookInstallPlan(
     configPath: pathWin32.join(runtimeHomePath, 'hooks.json'),
     tomlPath: pathWin32.join(runtimeHomePath, 'config.toml'),
     scriptPath: pathWin32.join(runtimeHomePath, '.orca', 'agent-hooks', 'codex-hook.sh'),
-    commandScriptPath: `${linuxRuntimeHome}/.orca/agent-hooks/codex-hook.sh`,
-    trustConfigPath: `${linuxRuntimeHome}/hooks.json`
+    commandScriptPath: pathPosix.join(linuxRuntimeHome, '.orca', 'agent-hooks', 'codex-hook.sh'),
+    trustConfigPath: pathPosix.join(linuxRuntimeHome, 'hooks.json'),
+    wslDistro: distro,
+    linuxRuntimeHome
   }
 }
 
@@ -193,5 +217,8 @@ export const _internals = {
   resetWslCanonicalPathCache(): void {
     canonicalWslPathCache.clear()
     inFlightWslCanonicalizations.clear()
+  },
+  getWslCanonicalPathCacheSizeForTests(): number {
+    return canonicalWslPathCache.size
   }
 }

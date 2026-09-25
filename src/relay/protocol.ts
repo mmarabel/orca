@@ -1,11 +1,31 @@
 // Self-contained relay protocol — mirrors src/main/ssh/relay-protocol.ts
 // but has no Electron dependencies. Deployed standalone to remote hosts.
 
+import {
+  FrameDecoder,
+  FrameDecoderContinuationError,
+  HEADER_LENGTH,
+  MAX_MESSAGE_SIZE,
+  FRAME_DECODER_MAX_FRAMES_PER_TURN,
+  FRAME_DECODER_MAX_BYTES_PER_TURN,
+  FRAME_DECODER_MAX_TURN_MS,
+  FRAME_DECODER_MAX_RETAINED_BYTES
+} from './relay-frame-decoder'
+
+export {
+  FrameDecoder,
+  FrameDecoderContinuationError,
+  HEADER_LENGTH,
+  MAX_MESSAGE_SIZE,
+  FRAME_DECODER_MAX_FRAMES_PER_TURN,
+  FRAME_DECODER_MAX_BYTES_PER_TURN,
+  FRAME_DECODER_MAX_TURN_MS,
+  FRAME_DECODER_MAX_RETAINED_BYTES
+}
+export type { DecodedFrame, FrameDecoderOptions } from './relay-frame-decoder'
+
 export const RELAY_VERSION = '0.1.0'
 export const RELAY_SENTINEL = `ORCA-RELAY v${RELAY_VERSION} READY\n`
-
-export const HEADER_LENGTH = 13
-export const MAX_MESSAGE_SIZE = 16 * 1024 * 1024
 
 export const MessageType = {
   Regular: 1,
@@ -18,26 +38,74 @@ export const MessageType = {
 // to refuse mismatched-version --connect bridges that would otherwise drive a
 // stale daemon.
 export type HandshakeMessage =
-  | { type: 'orca-relay-handshake'; version: string }
+  | { type: 'orca-relay-handshake'; version: string; endpointCredential?: string }
   | { type: 'orca-relay-handshake-ok'; version: string }
   | { type: 'orca-relay-handshake-mismatch'; expected: string; got: string }
+  // Why a distinct reply: the bridge exits with its own code so the client can tell a refused
+  // credential from a crashed relay. Old bridges reject the unknown type and exit 1 pre-sentinel.
+  | { type: 'orca-relay-handshake-credential-mismatch' }
 
 export function encodeHandshakeFrame(msg: HandshakeMessage): Buffer {
   const payload = Buffer.from(JSON.stringify(msg), 'utf-8')
   return encodeFrame(MessageType.Handshake, 0, 0, payload)
 }
 
+// Why the fields are checked and not just the type: this frame arrives before any credential, and
+// both sides interpolate its version fields into log lines. `JSON.parse` can produce values a
+// template literal throws on, so anything that reaches a reader must already be a string.
+const HANDSHAKE_STRING_FIELDS: Readonly<Record<HandshakeMessage['type'], readonly string[]>> = {
+  'orca-relay-handshake': ['version'],
+  'orca-relay-handshake-ok': ['version'],
+  'orca-relay-handshake-mismatch': ['expected', 'got'],
+  'orca-relay-handshake-credential-mismatch': []
+}
+
+// Optional fields are peer-supplied too, so the parser only proves the type of what it returns if
+// it refuses a present-but-wrong one. `endpointCredential` survives today only because its single
+// reader compares it and never interpolates it; the next reader to log it would restore the bug
+// this function exists to stop. Absent stays absent — refusing that would break a bridge that
+// legitimately presents no credential.
+const HANDSHAKE_OPTIONAL_STRING_FIELDS: Readonly<
+  Record<HandshakeMessage['type'], readonly string[]>
+> = {
+  'orca-relay-handshake': ['endpointCredential'],
+  'orca-relay-handshake-ok': [],
+  'orca-relay-handshake-mismatch': [],
+  'orca-relay-handshake-credential-mismatch': []
+}
+
 export function parseHandshakeMessage(payload: Buffer): HandshakeMessage {
-  const msg = JSON.parse(payload.toString('utf-8')) as HandshakeMessage
-  const t = (msg as { type?: string }).type
-  if (
-    t !== 'orca-relay-handshake' &&
-    t !== 'orca-relay-handshake-ok' &&
-    t !== 'orca-relay-handshake-mismatch'
-  ) {
-    throw new Error(`Unknown handshake type: ${t}`)
+  const parsed: unknown = JSON.parse(payload.toString('utf-8'))
+  if (typeof parsed !== 'object' || parsed === null) {
+    throw new Error('Handshake payload is not an object')
   }
-  return msg
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the typeof/null guard directly above is exactly what makes this an index-able object; every read below still proves its own field.
+  const msg = parsed as Record<string, unknown>
+  const t = msg.type
+  const required =
+    typeof t === 'string' && Object.hasOwn(HANDSHAKE_STRING_FIELDS, t)
+      ? // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: reached only when Object.hasOwn proved t is a key of this record, on the same line.
+        HANDSHAKE_STRING_FIELDS[t as HandshakeMessage['type']]
+      : null
+  if (required === null) {
+    // Why typeof and not String(t): a peer-supplied `{ "type": { "toString": 1 } }` makes String()
+    // itself throw "Cannot convert object to primitive value", replacing the one diagnostic this
+    // line exists to produce.
+    throw new Error(`Unknown handshake type: ${typeof t === 'string' ? t : typeof t}`)
+  }
+  for (const field of required) {
+    if (typeof msg[field] !== 'string') {
+      throw new Error(`Handshake field ${field} is not a string`)
+    }
+  }
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the required === null bail above already refused every t that is not one of the four keys.
+  for (const field of HANDSHAKE_OPTIONAL_STRING_FIELDS[t as HandshakeMessage['type']]) {
+    if (msg[field] !== undefined && typeof msg[field] !== 'string') {
+      throw new Error(`Handshake field ${field} is not a string`)
+    }
+  }
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: this is the one place the shape is proved: the type is one of the four literals and every field the union declares has been checked to be a string.
+  return msg as unknown as HandshakeMessage
 }
 
 export const KEEPALIVE_SEND_MS = 5_000
@@ -82,7 +150,10 @@ export type GitResponseStreamMarker = {
 
 export const RelayErrorCode = {
   TooManyStreams: -33006,
-  StreamProtocolError: -33007
+  StreamProtocolError: -33007,
+  /** Substituted for a response too large for the sink's frame capacity; the request fails
+   *  instead of the whole link, so a caller can retry with a narrower scope. */
+  ResponseOverCapacity: -33008
 } as const
 
 export type JsonRpcRequest = {
@@ -107,12 +178,12 @@ export type JsonRpcNotification = {
 
 export type JsonRpcMessage = JsonRpcRequest | JsonRpcResponse | JsonRpcNotification
 
-export type DecodedFrame = {
-  type: number
-  id: number
-  ack: number
-  payload: Buffer
-}
+const JSON_RPC_PAYLOAD_BYTES = Symbol('jsonRpcPayloadBytes')
+
+export type PreparedJsonRpcPayload = Readonly<{
+  byteLength: number
+  [JSON_RPC_PAYLOAD_BYTES]: Buffer
+}>
 
 export function encodeFrame(
   type: number,
@@ -129,164 +200,34 @@ export function encodeFrame(
 }
 
 export function encodeJsonRpcFrame(msg: JsonRpcMessage, id: number, ack: number): Buffer {
+  return encodePreparedJsonRpcFrame(prepareJsonRpcPayload(msg), id, ack)
+}
+
+export function prepareJsonRpcPayload(msg: JsonRpcMessage): PreparedJsonRpcPayload {
   const payload = Buffer.from(JSON.stringify(msg), 'utf-8')
   if (payload.length > MAX_MESSAGE_SIZE) {
     throw new Error(`Message too large: ${payload.length} bytes`)
   }
-  return encodeFrame(MessageType.Regular, id, ack, payload)
+  return Object.freeze({ byteLength: payload.length, [JSON_RPC_PAYLOAD_BYTES]: payload })
+}
+
+export function encodePreparedJsonRpcFrame(
+  payload: PreparedJsonRpcPayload,
+  id: number,
+  ack: number
+): Buffer {
+  return encodeFrame(MessageType.Regular, id, ack, payload[JSON_RPC_PAYLOAD_BYTES])
 }
 
 export function encodeKeepAliveFrame(id: number, ack: number): Buffer {
   return encodeFrame(MessageType.KeepAlive, id, ack, Buffer.alloc(0))
 }
 
-export class FrameDecoder {
-  // Why: feed() sits on the hot receive path. Rebuilding one contiguous
-  // buffer per feed (Buffer.concat) re-copies every already-buffered byte for
-  // each incoming chunk — O(n²) per large frame. A chunk list assembles each
-  // frame exactly once instead.
-  private chunks: Buffer[] = []
-  private bufferedLength = 0
-  private onFrame: (frame: DecodedFrame) => void
-  private onError: ((err: Error) => void) | null
-
-  constructor(onFrame: (frame: DecodedFrame) => void, onError?: (err: Error) => void) {
-    this.onFrame = onFrame
-    this.onError = onError ?? null
-  }
-
-  feed(chunk: Buffer | Uint8Array): void {
-    const buf = Buffer.isBuffer(chunk)
-      ? chunk
-      : Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength)
-    if (buf.length > 0) {
-      this.chunks.push(buf)
-      this.bufferedLength += buf.length
-    }
-
-    while (this.bufferedLength >= HEADER_LENGTH) {
-      const header = this.peekBytes(HEADER_LENGTH)
-      const length = header.readUInt32BE(9)
-      const totalLength = HEADER_LENGTH + length
-
-      if (this.bufferedLength < totalLength) {
-        // Not fully received yet (also holds oversized frames until they can
-        // be skipped whole, keeping the decoder synchronized).
-        break
-      }
-
-      if (length > MAX_MESSAGE_SIZE) {
-        // Why: Throwing here would leave the buffer in a partially consumed
-        // state — subsequent feed() calls would try to parse the leftover
-        // payload bytes as a new header, corrupting every future frame.
-        // Instead we skip the entire oversized frame so the decoder stays
-        // synchronized with the stream.
-        this.discardBytes(totalLength)
-        const err = new Error(`Frame payload too large: ${length} bytes — discarded`)
-        if (this.onError) {
-          this.onError(err)
-        } else {
-          process.stderr.write(`[relay] ${err.message}\n`)
-        }
-        continue
-      }
-
-      const framed = this.takeBytes(totalLength)
-      const frame: DecodedFrame = {
-        type: framed[0],
-        id: framed.readUInt32BE(1),
-        ack: framed.readUInt32BE(5),
-        payload: framed.subarray(HEADER_LENGTH, totalLength)
-      }
-      this.onFrame(frame)
-    }
-  }
-
-  reset(): void {
-    this.chunks = []
-    this.bufferedLength = 0
-  }
-
-  // Why: at the handshake → dispatcher transition, the next consumer must
-  // pick up any bytes that arrived in the same TCP chunk as the handshake
-  // frame. This returns and clears the decoder's internal residue so the
-  // caller can hand it to the dispatcher (or stdout pipe) without loss.
-  drain(): Buffer {
-    const out =
-      this.chunks.length === 1 ? this.chunks[0] : Buffer.concat(this.chunks, this.bufferedLength)
-    this.reset()
-    return out
-  }
-
-  /** View of the first `count` buffered bytes without consuming them. */
-  private peekBytes(count: number): Buffer {
-    const first = this.chunks[0]
-    if (first.length >= count) {
-      return first
-    }
-    const out = Buffer.allocUnsafe(count)
-    let copied = 0
-    for (const part of this.chunks) {
-      copied += part.copy(out, copied, 0, Math.min(part.length, count - copied))
-      if (copied >= count) {
-        break
-      }
-    }
-    return out
-  }
-
-  /** Consume and return the first `count` buffered bytes (single copy). */
-  private takeBytes(count: number): Buffer {
-    const first = this.chunks[0]
-    if (first.length === count) {
-      this.chunks.shift()
-      this.bufferedLength -= count
-      return first
-    }
-    if (first.length > count) {
-      this.chunks[0] = first.subarray(count)
-      this.bufferedLength -= count
-      return first.subarray(0, count)
-    }
-    const out = Buffer.allocUnsafe(count)
-    let copied = 0
-    while (copied < count) {
-      const part = this.chunks[0]
-      const take = Math.min(part.length, count - copied)
-      part.copy(out, copied, 0, take)
-      copied += take
-      if (take === part.length) {
-        this.chunks.shift()
-      } else {
-        this.chunks[0] = part.subarray(take)
-      }
-    }
-    this.bufferedLength -= count
-    return out
-  }
-
-  /** Consume the first `count` buffered bytes without assembling them. */
-  private discardBytes(count: number): void {
-    let remaining = count
-    while (remaining > 0) {
-      const part = this.chunks[0]
-      if (part.length <= remaining) {
-        this.chunks.shift()
-        remaining -= part.length
-      } else {
-        this.chunks[0] = part.subarray(remaining)
-        remaining = 0
-      }
-    }
-    this.bufferedLength -= count
-  }
-}
-
 export function parseJsonRpcMessage(payload: Buffer): JsonRpcMessage {
   const text = payload.toString('utf-8')
   const msg = JSON.parse(text) as JsonRpcMessage
   if (msg.jsonrpc !== '2.0') {
-    throw new Error(`Invalid JSON-RPC version: ${(msg as Record<string, unknown>).jsonrpc}`)
+    throw new Error(`Invalid JSON-RPC version: ${String((msg as Record<string, unknown>).jsonrpc)}`)
   }
   return msg
 }

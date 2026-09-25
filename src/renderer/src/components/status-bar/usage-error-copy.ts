@@ -30,7 +30,13 @@ export function getProviderDisplayName(provider: ProviderRateLimits['provider'])
 }
 
 function isUsageRateLimitError(message: string | null): boolean {
-  return Boolean(message && /\brate[- ]?limits?\b|\brate[- ]?limited\b/i.test(message))
+  // Why: Codex app-server's "chatgpt authentication required to read rate
+  // limits" mentions rate limits only as the thing it could not read; treat
+  // authentication-required failures as auth, never as the user being limited.
+  if (!message || /\bauthentication required\b/i.test(message)) {
+    return false
+  }
+  return /\brate[- ]?limits?\b|\brate[- ]?limited\b/i.test(message)
 }
 
 const USAGE_AUTH_ERROR_PATTERNS = [
@@ -45,6 +51,7 @@ const USAGE_AUTH_ERROR_PATTERNS = [
   /\bauth (?:is missing|tokens are missing|does not expose)\b/i,
   /\bunauthori[sz]ed\b/i,
   /\bunauthenticated\b/i,
+  /\bauthentication required\b/i,
   /\bplease reauthenticate\b/i,
   /\bsign in\b/i,
   /\blogged in to another account\b/i,
@@ -57,7 +64,25 @@ function isUsageAuthError(message: string | null): boolean {
   return Boolean(message && USAGE_AUTH_ERROR_PATTERNS.some((pattern) => pattern.test(message)))
 }
 
+function getDelegatedCliRefreshProvider(
+  p: ProviderRateLimits
+): Extract<ProviderRateLimits['provider'], 'grok' | 'kimi'> | null {
+  if (p.usageMetadata?.failureKind !== 'delegated-refresh-required') {
+    return null
+  }
+  // Why: only these providers require a user-run CLI to rotate the read-only
+  // session Orca consumes; Claude handles the same failure kind in-app.
+  return p.provider === 'grok' || p.provider === 'kimi' ? p.provider : null
+}
+
 export function getProviderUsageStatusLabel(p: ProviderRateLimits): string {
+  const delegatedCliProvider = getDelegatedCliRefreshProvider(p)
+  if (delegatedCliProvider === 'grok') {
+    return translate('auto.components.status.bar.tooltip.e2c6a4f917', 'Run Grok to refresh')
+  }
+  if (delegatedCliProvider === 'kimi') {
+    return translate('auto.components.status.bar.tooltip.f90b3d7a16', 'Run Kimi to refresh')
+  }
   if (p.provider === 'claude') {
     switch (p.usageMetadata?.failureKind) {
       case 'deferred-by-live-session':
@@ -78,6 +103,7 @@ export function getProviderUsageStatusLabel(p: ProviderRateLimits): string {
         return translate('auto.components.status.bar.tooltip.f8b8dbed85', 'Usage unavailable')
       case 'missing-credentials':
       case 'missing-scope':
+      case 'no-subscription':
       case 'parse':
       case 'rate-limited':
       case 'server':
@@ -85,6 +111,19 @@ export function getProviderUsageStatusLabel(p: ProviderRateLimits): string {
       case undefined:
         break
     }
+  }
+  // Why: MiniMax reports credential expiry through the payload, not an HTTP status,
+  // so it needs its own copy rather than the generic refresh-failure label.
+  if (p.provider === 'minimax' && p.usageMetadata?.failureKind === 'stale-token') {
+    return translate('auto.components.status.bar.tooltip.minimax.expired.label', 'Sign-in expired')
+  }
+  // Why: an unsubscribed account is a settled answer about the account, not a
+  // failed refresh; "Refresh failed" sends the user hunting a bug that is not there.
+  if (p.usageMetadata?.failureKind === 'no-subscription') {
+    return translate(
+      'auto.components.status.bar.tooltip.usage.noSubscription.label',
+      'No subscription'
+    )
   }
   if (isUsageRateLimitError(p.error)) {
     return translate('auto.components.status.bar.tooltip.7ad719c4bf', 'Limited')
@@ -99,6 +138,19 @@ export function getProviderUsageErrorMessage(p: ProviderRateLimits): string {
   )
   if (!p.error) {
     return fallback
+  }
+  const delegatedCliProvider = getDelegatedCliRefreshProvider(p)
+  if (delegatedCliProvider === 'grok') {
+    return translate(
+      'auto.components.status.bar.tooltip.d1b7f509ac',
+      'Run grok in a terminal on the computer running Orca and wait for it to start. If prompted, complete sign-in, then retry usage. You do not need to send a chat message.'
+    )
+  }
+  if (delegatedCliProvider === 'kimi') {
+    return translate(
+      'auto.components.status.bar.tooltip.a37e8c15d4',
+      'Run kimi in a terminal on the computer running Orca and wait for it to start, then retry usage.'
+    )
   }
   if (p.provider === 'claude') {
     switch (p.usageMetadata?.failureKind) {
@@ -135,6 +187,7 @@ export function getProviderUsageErrorMessage(p: ProviderRateLimits): string {
           'Claude usage is unavailable right now.'
         )
       case 'missing-credentials':
+      case 'no-subscription':
       case 'rate-limited':
       case 'unknown':
       case undefined:
@@ -142,6 +195,21 @@ export function getProviderUsageErrorMessage(p: ProviderRateLimits): string {
     }
   }
   if (isUsageRateLimitError(p.error)) {
+    return p.error
+  }
+  if (p.provider === 'minimax' && p.usageMetadata?.failureKind === 'stale-token') {
+    return p.usageMetadata.credentialSource === 'api-key'
+      ? translate(
+          'auto.components.status.bar.tooltip.minimax.expired.apiKey',
+          'MiniMax API key expired. Replace it in Settings.'
+        )
+      : translate(
+          'auto.components.status.bar.tooltip.minimax.expired.cookie',
+          'MiniMax session cookie expired. Replace it in Settings.'
+        )
+  }
+  // The entitlement verdict names the account state; generic auth copy would bury it.
+  if (p.usageMetadata?.failureKind === 'no-subscription') {
     return p.error
   }
   if (isUsageAuthError(p.error)) {

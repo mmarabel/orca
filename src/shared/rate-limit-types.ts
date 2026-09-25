@@ -15,7 +15,7 @@ export type RateLimitBucket = RateLimitWindow & {
   name: string
 }
 
-export type UsageRateLimitSource = 'oauth' | 'cli' | 'web'
+export type UsageRateLimitSource = 'oauth' | 'cli' | 'web' | 'live-session'
 
 export type UsageRateLimitFailureKind =
   | 'missing-credentials'
@@ -25,6 +25,8 @@ export type UsageRateLimitFailureKind =
   | 'deferred-by-live-session'
   | 'keychain-unavailable'
   | 'missing-scope'
+  /** The account is authenticated but not entitled to the product being polled. */
+  | 'no-subscription'
   | 'network'
   | 'server'
   | 'parse'
@@ -41,6 +43,8 @@ export type UsageRateLimitMetadata = {
   authProvenance?: string
   deferredByLiveClaudeSession?: boolean
   lastSuccessfulSource?: UsageRateLimitSource
+  /** Unix ms timestamp before which usage refetches should not be attempted (from HTTP Retry-After). */
+  retryAtMs?: number
 }
 
 export type ProviderRateLimits = {
@@ -59,7 +63,7 @@ export type ProviderRateLimits = {
   weekly: RateLimitWindow | null
   /** Claude Fable 7-day weekly window, null if not available. */
   fableWeekly?: RateLimitWindow | null
-  /** 30-day monthly window (OpenCode Go only), null if not available. */
+  /** 30-day monthly window (OpenCode Go, Grok unified billing), null if not available. */
   monthly?: RateLimitWindow | null
   /** Named per-model buckets (Gemini only). */
   buckets?: RateLimitBucket[]
@@ -76,6 +80,8 @@ export type ProviderRateLimits = {
       grantedAt: number | null
     }[]
   } | null
+  /** Subscription plan tier for the active account (Codex `plan_type`, e.g. "plus"). */
+  planType?: string | null
   /** Unix ms timestamp of the last successful data update. */
   updatedAt: number
   /** Human-readable error message, null when status is 'ok'. */
@@ -127,6 +133,20 @@ export type RateLimitState = {
    * between snapshot refreshes.
    */
   minimaxCookieConfigured: boolean
+  /**
+   * True when a MiniMax API key is persisted on disk. The key value itself
+   * never leaves main, so the renderer only sees this boolean. The status bar
+   * ORs it with the cookie flag to decide whether to keep the MiniMax bar
+   * visible across reloads.
+   */
+  minimaxApiKeyConfigured: boolean
+  /**
+   * True when main resolved an OpenCode Go API key (Orca settings,
+   * OPENCODE_API_KEY, or what OpenCode stored on /connect). The key itself
+   * never leaves main; the status bar ORs this with the session cookie to
+   * decide whether the OpenCode Go bar stays visible.
+   */
+  opencodeGoApiKeyConfigured: boolean
   /** True when main finds a Grok CLI session file (~/.grok/auth.json or GROK_HOME). */
   grokAuthConfigured: boolean
   claudeTarget: RateLimitRuntimeTarget

@@ -10,13 +10,17 @@ import {
   isCustomAgentId,
   listCommitMessageAgentCapabilities,
   listCommitMessageAgentIds,
+  resolveCommitMessageAgentChoice
+} from './commit-message-agent-spec'
+import {
+  COMMIT_MESSAGE_MODEL_JSON_STRUCTURE_LIMITS,
   parseAntigravityModels,
+  parseClaudeModels,
   parseCodexModels,
   parseCursorModels,
   parseLineModels,
-  parsePiModels,
-  resolveCommitMessageAgentChoice
-} from './commit-message-agent-spec'
+  parsePiModels
+} from './commit-message-model-parsers'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -33,7 +37,10 @@ describe('COMMIT_MESSAGE_AGENT_SPECS', () => {
       'copilot',
       'cursor',
       'kimi',
+      'muse',
+      'omp',
       'opencode',
+      'opencode2',
       'pi'
     ])
   })
@@ -41,7 +48,48 @@ describe('COMMIT_MESSAGE_AGENT_SPECS', () => {
   it('uses the strongest available defaults for core agents', () => {
     expect(COMMIT_MESSAGE_AGENT_SPECS.claude?.defaultModelId).toBe('sonnet')
     expect(COMMIT_MESSAGE_AGENT_SPECS.codex?.defaultModelId).toBe('gpt-5.5')
-    expect(COMMIT_MESSAGE_AGENT_SPECS.pi?.defaultModelId).toBe('github-copilot/gpt-5.4-mini')
+    expect(COMMIT_MESSAGE_AGENT_SPECS.pi?.defaultModelId).toBe('default')
+  })
+
+  it('uses --prompt (not Claude --print) for Kimi non-interactive generation', () => {
+    // Why: kimi-code 0.31+ rejects --print; non-interactive mode is --prompt/-p (#11669).
+    const spec = COMMIT_MESSAGE_AGENT_SPECS.kimi
+    expect(spec).toBeDefined()
+    expect(spec!.promptDelivery).toBe('argv')
+    const args = spec!.buildArgs({
+      prompt: 'Name a branch for adding login',
+      model: 'kimi-code/kimi-for-coding',
+      thinkingLevel: 'on'
+    })
+    expect(args).toContain('--prompt')
+    expect(args).not.toContain('--print')
+    // Why: with argv delivery the prompt is the value of --prompt.
+    const promptIndex = args.indexOf('--prompt')
+    expect(promptIndex).toBeGreaterThanOrEqual(0)
+    expect(args[promptIndex + 1]).toBe('Name a branch for adding login')
+    expect(args).toContain('--quiet')
+    expect(args).toContain('--thinking')
+    expect(args).toEqual(expect.arrayContaining(['--model', 'kimi-code/kimi-for-coding']))
+  })
+
+  it('uses Muse exec for non-interactive Source Control AI generation', () => {
+    const spec = COMMIT_MESSAGE_AGENT_SPECS.muse
+    expect(spec).toBeDefined()
+    expect(spec?.promptDelivery).toBe('argv')
+    expect(spec?.buildArgs({ prompt: 'Write a concise commit message', model: 'default' })).toEqual(
+      [
+        'exec',
+        '--no-session-log',
+        '--approval-mode',
+        'never',
+        '--disable-sandbox',
+        '--disable-shell',
+        '--disable-write',
+        '--disable-web-tools',
+        '--',
+        'Write a concise commit message'
+      ]
+    )
   })
 
   it('uses the provider-qualified Kimi model id accepted by the CLI', () => {
@@ -49,6 +97,25 @@ describe('COMMIT_MESSAGE_AGENT_SPECS', () => {
       'default',
       'kimi-code/kimi-for-coding'
     ])
+  })
+
+  it('maps Kimi thinking off and omission to distinct argv', () => {
+    const spec = COMMIT_MESSAGE_AGENT_SPECS.kimi!
+    const offArgs = spec.buildArgs({ prompt: 'PROMPT', model: 'default', thinkingLevel: 'off' })
+    const defaultArgs = spec.buildArgs({ prompt: 'PROMPT', model: 'default' })
+
+    expect(offArgs).toContain('--no-thinking')
+    expect(offArgs).not.toContain('--thinking')
+    expect(defaultArgs).not.toContain('--thinking')
+    expect(defaultArgs).not.toContain('--no-thinking')
+  })
+
+  it('omits Kimi --model for the config default and an empty model', () => {
+    const spec = COMMIT_MESSAGE_AGENT_SPECS.kimi!
+
+    for (const model of ['default', '']) {
+      expect(spec.buildArgs({ prompt: 'PROMPT', model })).not.toContain('--model')
+    }
   })
 
   it('lists Copilot hosted CLI models even when account policy filters the picker', () => {
@@ -193,6 +260,81 @@ describe('buildArgs (Claude)', () => {
 })
 
 describe('model discovery parsers', () => {
+  it('parses Claude list_models output into commit-message models', () => {
+    const stdout = `${JSON.stringify({
+      type: 'control_response',
+      response: {
+        subtype: 'success',
+        request_id: 'orca-model-discovery',
+        response: {
+          models: [
+            {
+              value: 'default',
+              displayName: 'Default (recommended)',
+              supportsEffort: true,
+              supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max']
+            },
+            {
+              value: 'opus[1m]',
+              displayName: 'Opus (1M context)',
+              description: 'Opus 5 with 1M context · $5/$25 per Mtok',
+              supportsEffort: true,
+              supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+              supportsFastMode: true
+            },
+            { value: 'haiku', displayName: 'Haiku' }
+          ]
+        }
+      }
+    })}\n`
+    expect(parseClaudeModels(stdout)).toEqual([
+      {
+        id: 'opus[1m]',
+        label: 'Opus (1M context)',
+        description: 'Opus 5 with 1M context · $5/$25 per Mtok',
+        thinkingLevels: [
+          { id: 'low', label: 'Low' },
+          { id: 'medium', label: 'Medium' },
+          { id: 'high', label: 'High' },
+          { id: 'xhigh', label: 'Extra High' },
+          { id: 'max', label: 'Max' }
+        ],
+        defaultThinkingLevel: 'low',
+        supportsFastMode: true
+      },
+      { id: 'haiku', label: 'Haiku' }
+    ])
+  })
+
+  it('returns no Claude models when the CLI lacks list_models so the seed stays', () => {
+    expect(
+      parseClaudeModels(
+        '{"type":"control_response","response":{"subtype":"error","request_id":"orca-model-discovery","error":"Unsupported control request subtype: list_models"}}\n'
+      )
+    ).toEqual([])
+  })
+
+  it('declares stdin-driven dynamic discovery for Claude', () => {
+    const discovery = COMMIT_MESSAGE_AGENT_SPECS.claude?.modelDiscovery
+    expect(COMMIT_MESSAGE_AGENT_SPECS.claude?.modelSource).toBe('dynamic')
+    expect(discovery?.binary).toBe('claude')
+    expect(discovery?.args).toEqual([
+      '-p',
+      '--input-format',
+      'stream-json',
+      '--output-format',
+      'stream-json',
+      '--verbose'
+    ])
+    const payload = JSON.parse(discovery?.stdinPayload ?? '') as {
+      type?: string
+      request?: { subtype?: string }
+    }
+    expect(payload.type).toBe('control_request')
+    expect(payload.request?.subtype).toBe('list_models')
+    expect(discovery?.stdinPayload?.endsWith('\n')).toBe(true)
+  })
+
   it('parses Codex model JSON', () => {
     expect(
       parseCodexModels(
@@ -218,6 +360,17 @@ describe('model discovery parsers', () => {
         defaultThinkingLevel: 'low'
       }
     ])
+  })
+
+  it('rejects excessive Codex model nesting before JSON.parse', () => {
+    const parseSpy = vi.spyOn(JSON, 'parse')
+    const depth = COMMIT_MESSAGE_MODEL_JSON_STRUCTURE_LIMITS.nestingDepth + 1
+    try {
+      expect(parseCodexModels(`${'['.repeat(depth)}0${']'.repeat(depth)}`)).toEqual([])
+      expect(parseSpy).not.toHaveBeenCalled()
+    } finally {
+      parseSpy.mockRestore()
+    }
   })
 
   it('parses one-model-per-line output', () => {
@@ -440,13 +593,79 @@ describe('buildArgs (OpenCode)', () => {
   })
 })
 
+describe('buildArgs (OpenCode 2)', () => {
+  const spec = getCommitMessageAgentSpec('opencode2')!
+
+  it('runs `opencode2 run` with stdin delivery', () => {
+    const prompt = `PROMPT ${'x'.repeat(1024)}`
+    const args = spec.buildArgs({
+      prompt,
+      model: 'opencode/deepseek-v4-flash-free'
+    })
+
+    expect(args).toEqual([
+      'run',
+      '--model',
+      'opencode/deepseek-v4-flash-free',
+      '--agent',
+      'build',
+      '--format',
+      'default'
+    ])
+    expect(args).not.toContain(prompt)
+    expect(args).not.toContain('')
+    expect(spec.promptDelivery).toBe('stdin')
+  })
+
+  it('inlines the thinking variant as model#variant (v1 --variant is removed in v2)', () => {
+    const args = spec.buildArgs({
+      prompt: 'PROMPT',
+      model: 'opencode/gpt-5.4-mini',
+      thinkingLevel: 'high'
+    })
+
+    expect(args).toEqual([
+      'run',
+      '--model',
+      'opencode/gpt-5.4-mini#high',
+      '--agent',
+      'build',
+      '--format',
+      'default'
+    ])
+    expect(args).not.toContain('--variant')
+  })
+})
+
 describe('buildArgs (Antigravity)', () => {
   const spec = getCommitMessageAgentSpec('antigravity')!
 
-  it('runs agy with --print, --sandbox, and --model flags', () => {
-    const args = spec.buildArgs({ prompt: '', model: 'Gemini 3.5 Flash (Medium)' })
-    expect(args).toEqual(['--print', '--sandbox', '--model', 'Gemini 3.5 Flash (Medium)'])
-    expect(spec.promptDelivery).toBe('stdin')
+  it('runs agy with the prompt attached to --print, then --sandbox and --model flags', () => {
+    const args = spec.buildArgs({
+      prompt: 'real commit prompt',
+      model: 'Gemini 3.5 Flash (Medium)'
+    })
+    expect(args).toEqual([
+      '--print=real commit prompt',
+      '--sandbox',
+      '--model',
+      'Gemini 3.5 Flash (Medium)'
+    ])
+    expect(spec.promptDelivery).toBe('argv')
+  })
+
+  it('binds a leading-dash prompt to --print instead of letting it parse as an option', () => {
+    const args = spec.buildArgs({ prompt: '-fix: something', model: 'Gemini 3.5 Flash (Medium)' })
+    expect(args[0]).toBe('--print=-fix: something')
+  })
+
+  // Why: pins argv construction only. Real agy 1.2.1 separately rejects a --print value
+  // that exactly matches a registered flag name (its own heuristic, independent of this
+  // fix) — verified `agy --print=--sandbox` still errors there. Real prompts are never
+  // literally a bare flag name, so this doesn't affect actual generation.
+  it('still glues a prompt that collides with a flag name onto --print', () => {
+    const args = spec.buildArgs({ prompt: '--sandbox', model: 'Gemini 3.5 Flash (Medium)' })
+    expect(args[0]).toBe('--print=--sandbox')
   })
 
   it('uses dynamic model discovery via agy models', () => {
@@ -455,7 +674,60 @@ describe('buildArgs (Antigravity)', () => {
     expect(spec.modelDiscovery?.args).toEqual(['models'])
   })
 
-  it('uses Gemini 3.5 Flash (Medium) as default model', () => {
-    expect(COMMIT_MESSAGE_AGENT_SPECS.antigravity?.defaultModelId).toBe('Gemini 3.5 Flash (Medium)')
+  it('uses the configured CLI model instead of a bundled model that can retire', () => {
+    expect(spec.defaultModelId).toBe('default')
+    expect(
+      spec.buildArgs({ prompt: 'Generate a commit message', model: spec.defaultModelId })
+    ).toEqual(['--print=Generate a commit message', '--sandbox'])
+  })
+
+  it('passes only a nonempty requested effort', () => {
+    expect(spec.buildArgs({ prompt: 'P', model: 'default', thinkingLevel: '' })).not.toContain(
+      '--effort'
+    )
+    expect(spec.buildArgs({ prompt: 'P', model: 'default', thinkingLevel: 'high' })).toEqual([
+      '--print=P',
+      '--sandbox',
+      '--effort',
+      'high'
+    ])
+  })
+
+  it('parses current tab-separated IDs without treating progress text as a model', () => {
+    expect(
+      parseAntigravityModels(
+        [
+          'Fetching available models...',
+          'id\tLabel',
+          'gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)',
+          'claude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)',
+          'gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)',
+          ''
+        ].join('\r\n')
+      )
+    ).toEqual([
+      { id: 'gemini-3.8-flash-medium', label: 'Gemini 3.8 Flash (Medium)' },
+      { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Thinking)' }
+    ])
+  })
+})
+
+describe('Pi Source Control AI model selection', () => {
+  it('leaves provider selection to Pi for the config default', () => {
+    const args = getCommitMessageAgentSpec('pi')!.buildArgs({
+      prompt: 'Name a branch',
+      model: 'default'
+    })
+    expect(args).not.toContain('--model')
+  })
+
+  it('passes an explicit discovered Pi model through', () => {
+    const args = getCommitMessageAgentSpec('pi')!.buildArgs({
+      prompt: 'Name a branch',
+      model: 'openai-codex/gpt-5.5'
+    })
+    const modelFlagIndex = args.indexOf('--model')
+    expect(modelFlagIndex).toBeGreaterThanOrEqual(0)
+    expect(args[modelFlagIndex + 1]).toBe('openai-codex/gpt-5.5')
   })
 })

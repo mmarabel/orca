@@ -132,7 +132,11 @@ export class RuntimeTerminalAgentStatusQuery {
         const titleOwnsAgent =
           isRunningAgent &&
           (!terminal.titleIsRestored ||
-            (await this.foregroundAgentMatchesTitle(ptyId, terminal.title)))
+            (await this.foregroundAgentMatchesTitle(
+              ptyId,
+              terminal.title,
+              terminal.titleStatus === 'permission'
+            )))
         this.assertTerminalAgentStatusPtyBinding(handle, ptyId)
         // Why: a live title can land during the awaits above and supersede the one read here.
         if (retriesLeft > 0 && titleObservationChanged(terminal, this.getSnapshot(handle, ptyId))) {
@@ -243,12 +247,21 @@ export class RuntimeTerminalAgentStatusQuery {
     }
   }
 
-  // Only a recognized foreground agent outside the title's identity group contradicts the title.
-  private async foregroundAgentMatchesTitle(ptyId: string, title: string | null): Promise<boolean> {
+  /**
+   * Whether the foreground agent can own a restored title: a recognized agent outside the title's
+   * identity group contradicts it, and missing evidence keeps it unless `requireOwner` is set.
+   * Why `requireOwner` for permission: a stale prompt can draw an approval typed into whatever runs
+   * now, while losing a restored one only leaves the status unknown until live evidence arrives.
+   */
+  private async foregroundAgentMatchesTitle(
+    ptyId: string,
+    title: string | null,
+    requireOwner: boolean
+  ): Promise<boolean> {
     const titleAgent = title ? resolveExplicitTerminalTitleAgentType(title) : null
     const controller = this.deps.getController()
     if (!titleAgent || !controller) {
-      return true
+      return !requireOwner
     }
     let foregroundAgent: TuiAgent | null
     try {
@@ -260,11 +273,12 @@ export class RuntimeTerminalAgentStatusQuery {
           : foreground
       foregroundAgent = recognizeAgentProcess(evidence)?.agent ?? null
     } catch {
-      return true
+      return !requireOwner
     }
-    return (
-      foregroundAgent === null || shareCompatibleTitleIdentityGroup(titleAgent, foregroundAgent)
-    )
+    if (foregroundAgent === null) {
+      return !requireOwner
+    }
+    return shareCompatibleTitleIdentityGroup(titleAgent, foregroundAgent)
   }
 
   private async terminalHasShellForegroundProcess(handle: string, ptyId: string): Promise<boolean> {

@@ -381,6 +381,33 @@ describe('inventory-adopted daemon session title seed (#22809)', () => {
     await expect(runtime.getTerminalInteractiveWait(handle)).resolves.toBeNull()
   })
 
+  // A stale prompt can draw an approval typed into whatever runs now, so only a recognized owner
+  // keeps a restored permission title; idle and working titles keep the missing-evidence rule.
+  it.each([
+    ['the foreground read fails', () => Promise.reject(new Error('read'))],
+    ['the foreground is not a recognized agent', async () => 'node'],
+    ['the foreground is unknown', async () => null]
+  ] as const)(
+    'withholds a restored permission prompt when %s',
+    async (_label, getForegroundProcess) => {
+      const { runtime } = createHeadlessRuntime({
+        serializeProviderBuffer: async () =>
+          providerSnapshot({ lastTitle: GEMINI_PERMISSION_TITLE }),
+        getForegroundProcess
+      })
+      await runtime.listTerminals()
+      await vi.waitFor(() => expect(runtime.record()?.lastOscTitle).toBe(GEMINI_PERMISSION_TITLE))
+      const { handle } = await onlyTerminal(runtime)
+
+      await expect(runtime.getTerminalAgentStatus(handle)).resolves.toEqual({
+        handle,
+        isRunningAgent: true,
+        status: null
+      })
+      await expect(runtime.getTerminalInteractiveWait(handle)).resolves.toBeNull()
+    }
+  )
+
   it('compares a restored title with the agent fresh evidence finds behind a cached shell', async () => {
     const { runtime } = createHeadlessRuntime({
       serializeProviderBuffer: async () => providerSnapshot({ lastTitle: GEMINI_PERMISSION_TITLE }),

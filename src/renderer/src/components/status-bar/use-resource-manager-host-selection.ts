@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { useAppStore } from '../../store'
 import { LOCAL_EXECUTION_HOST_ID } from '../../../../shared/execution-host'
 import { getHostDisplayLabelOverrides } from '../../../../shared/host-setting-overrides'
+import { isPairedWebClientWindow } from '@/lib/desktop-window-chrome'
 import {
   isRemoteResourceManagerHost,
   listResourceManagerHosts,
@@ -25,7 +26,8 @@ export function useResourceManagerHostSelection() {
         runtimeEnvironments,
         runtimeStatusByEnvironmentId,
         hostLabelOverrides,
-        selectedHostId
+        selectedHostId,
+        isPairedWebClient: isPairedWebClientWindow()
       }),
     [runtimeEnvironments, runtimeStatusByEnvironmentId, hostLabelOverrides, selectedHostId]
   )

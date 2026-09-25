@@ -38,12 +38,17 @@ export type ResourceManagerHostInputs = {
   hostLabelOverrides: ReadonlyMap<string, string>
   /** Kept listed even if it drops, so a live selection is never silently swapped out. */
   selectedHostId?: string
+  /** The paired web client has no memory proxy, so a runtime host there would read as all-zero. */
+  isPairedWebClient?: boolean
 }
 
 export function listResourceManagerHosts(inputs: ResourceManagerHostInputs): ResourceManagerHost[] {
   const hosts: ResourceManagerHost[] = [
     { id: LOCAL_EXECUTION_HOST_ID, label: getLocalExecutionHostLabel(), kind: 'local' }
   ]
+  if (inputs.isPairedWebClient) {
+    return hosts
+  }
   for (const environment of inputs.runtimeEnvironments) {
     if (!isUserManagedRuntimeEnvironment(environment)) {
       continue

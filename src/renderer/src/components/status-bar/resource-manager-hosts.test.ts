@@ -70,6 +70,16 @@ describe('listResourceManagerHosts', () => {
     expect(hosts.map((host) => host.id)).toEqual(['local'])
   })
 
+  // Why: the web client's memory API cannot proxy to a runtime and only returns zeros.
+  it('offers only the local host in the paired web client', () => {
+    const hosts = listResourceManagerHosts({
+      ...hostInputs([environment('env-1')], [['env-1', connected]]),
+      selectedHostId: 'runtime:env-1',
+      isPairedWebClient: true
+    })
+    expect(hosts.map((host) => host.id)).toEqual(['local'])
+  })
+
   // Why: dropping the host already on screen would silently swap the panel to
   // local numbers under no label at all.
   it('keeps a disconnected host listed while it is the selected one', () => {

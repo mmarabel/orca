@@ -67,7 +67,9 @@ export class RuntimeTerminalAgentPresence {
           ? ptyTitleProvesAgentPresence(trackedPty, paneTitle, paneClassification)
           : agentTitleProvesAgentPresence(paneTitle, paneClassification)
       ) {
-        return true
+        return (
+          trackedPty === null || (await this.titleStillProvesAgent(trackedPty, paneTitle, options))
+        )
       }
       const tabTitle = this.deps.getTabTitle(leaf.tabId)
       const tabClassification = paneTitle === null ? classifyAgentTitle(tabTitle) : 'neutral'
@@ -76,7 +78,9 @@ export class RuntimeTerminalAgentPresence {
           ? ptyTitleProvesAgentPresence(trackedPty, tabTitle, tabClassification)
           : agentTitleProvesAgentPresence(tabTitle, tabClassification)
       ) {
-        return true
+        return (
+          trackedPty === null || (await this.titleStillProvesAgent(trackedPty, tabTitle, options))
+        )
       }
       const markerTitle = paneTitle ?? tabTitle
       const waitText = buildTerminalWaitText(leaf.tailBuffer, leaf.tailPartialLine, leaf.preview)
@@ -122,7 +126,8 @@ export class RuntimeTerminalAgentPresence {
       : null
     const leafClassification = classifyAgentTitle(leafTitle)
     if (ptyTitleProvesAgentPresence(pty, leafTitle, leafClassification)) {
-      return true
+      // Why: a leaf bound to an adopted session inherits the restored PTY title.
+      return await this.titleStillProvesAgent(pty, leafTitle, options)
     }
     const ptyTitle = getLatestAgentCandidateTitle(
       { title: pty.title, updatedAt: pty.titleUpdatedAt },
@@ -130,11 +135,7 @@ export class RuntimeTerminalAgentPresence {
     )
     const ptyClassification = classifyAgentTitle(ptyTitle)
     if (leafTitle === null && ptyTitleProvesAgentPresence(pty, ptyTitle, ptyClassification)) {
-      // Why: a restored title can outlive its agent, so a shell now in the foreground wins.
-      return (
-        !ptyTitleIsRestored(pty, ptyTitle) ||
-        !(await this.hasShellForegroundProcess(pty.ptyId, options))
-      )
+      return await this.titleStillProvesAgent(pty, ptyTitle, options)
     }
     const managementClassification = classifyLatestAgentTitle({
       title: pty.managementTitle,
@@ -172,6 +173,17 @@ export class RuntimeTerminalAgentPresence {
       foreground,
       suppressClaude,
       options.retryForegroundWrappers !== false
+    )
+  }
+
+  // Why: a restored title can outlive its agent, so a shell now in the foreground wins.
+  private async titleStillProvesAgent(
+    pty: RuntimePtyWorktreeRecord,
+    title: string | null,
+    options: RuntimeTerminalAgentPresenceOptions
+  ): Promise<boolean> {
+    return (
+      !ptyTitleIsRestored(pty, title) || !(await this.hasShellForegroundProcess(pty.ptyId, options))
     )
   }
 

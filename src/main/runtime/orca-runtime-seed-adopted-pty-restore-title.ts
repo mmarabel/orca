@@ -2,9 +2,21 @@ import { OrcaRuntimeWithRecordPtyWorktree } from './orca-runtime-record-pty-work
 import type { RuntimePtyWorktreeRecord } from './runtime-terminal-state-records'
 import { restoredTerminalTailSeedAllowed } from './terminal-tail-restore-seed'
 
+// Why a bound: the provider maps a failed snapshot to null, the same answer as a title-less
+// session or an older daemon, so a transient failure gets a retry but a real null stays cheap.
+const ADOPTED_PTY_TITLE_SEED_MAX_PROBES = 3
+// Why a delay: a burst of inventory refreshes would otherwise spend every retry on one outage.
+const ADOPTED_PTY_TITLE_SEED_RETRY_DELAY_MS = 10_000
+
+// `retryAt` is null while a probe is in flight.
+type AdoptedPtyTitleSeedProbes = { attempt: string; probes: number; retryAt: number | null }
+
 export class OrcaRuntimeWithSeedAdoptedPtyRestoreTitle extends OrcaRuntimeWithRecordPtyWorktree {
-  // Keyed by record so a pruned record drops its attempt; the value names the PTY incarnation tried.
-  private readonly adoptedPtyTitleSeedAttempts = new WeakMap<RuntimePtyWorktreeRecord, string>()
+  // Keyed by record so a pruned record drops its probes; `attempt` names the PTY incarnation.
+  private readonly adoptedPtyTitleSeedProbes = new WeakMap<
+    RuntimePtyWorktreeRecord,
+    AdoptedPtyTitleSeedProbes
+  >()
 
   /**
    * Seeds the last title of a live session adopted from the controller inventory.
@@ -21,7 +33,14 @@ export class OrcaRuntimeWithSeedAdoptedPtyRestoreTitle extends OrcaRuntimeWithRe
     }
     const ptyId = pty.ptyId
     const attempt = this.adoptedPtyTitleSeedAttempt(pty)
-    if (this.adoptedPtyTitleSeedAttempts.get(pty) === attempt) {
+    const previous = this.adoptedPtyTitleSeedProbes.get(pty)
+    const current = previous?.attempt === attempt ? previous : null
+    if (
+      current &&
+      (current.probes >= ADOPTED_PTY_TITLE_SEED_MAX_PROBES ||
+        current.retryAt === null ||
+        Date.now() < current.retryAt)
+    ) {
       return
     }
     // Why: live bytes, a tracked title, or a spawn-path seed already gave this record its state.
@@ -32,9 +51,19 @@ export class OrcaRuntimeWithSeedAdoptedPtyRestoreTitle extends OrcaRuntimeWithRe
     ) {
       return
     }
-    this.adoptedPtyTitleSeedAttempts.set(pty, attempt)
+    const probe: AdoptedPtyTitleSeedProbes = {
+      attempt,
+      probes: (current?.probes ?? 0) + 1,
+      retryAt: null
+    }
+    this.adoptedPtyTitleSeedProbes.set(pty, probe)
     // Why fire-and-forget: the inventory listing is a hot path and must not wait on a snapshot.
-    void this.applyAdoptedPtyRestoreTitle(pty, attempt).catch(() => {})
+    // A title-less answer leaves the record seedable, so a later inventory refresh probes again.
+    void this.applyAdoptedPtyRestoreTitle(pty, attempt)
+      .catch(() => {})
+      .finally(() => {
+        probe.retryAt = Date.now() + ADOPTED_PTY_TITLE_SEED_RETRY_DELAY_MS
+      })
   }
 
   private adoptedPtyTitleSeedAttempt(pty: RuntimePtyWorktreeRecord): string {

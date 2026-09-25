@@ -1,5 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OrcaRuntimeService } from './orca-runtime'
+import { RuntimeTerminalAgentPresence } from './runtime-terminal-agent-presence'
+import { RuntimeTerminalAgentStatusQuery } from './runtime-terminal-agent-status-query'
+import type { RuntimeSyncWindowGraph } from '../../shared/runtime-types'
 import type { PtyProviderBufferSnapshot } from '../providers/types'
 import type { PtyProcessInfo } from '../providers/pty-process-info'
 
@@ -13,6 +16,30 @@ const INCARNATION = '40000000-0000-4000-8000-000000000001'
 const REPLACEMENT = '40000000-0000-4000-8000-000000000002'
 const CLAUDE_IDLE_TITLE = '✳ Claude Code'
 const GEMINI_PERMISSION_TITLE = '✋ Gemini CLI'
+
+// A renderer pane bound to the adopted session, as a desktop client's graph sync publishes it.
+const PANE_GRAPH = {
+  tabs: [
+    {
+      tabId: 'tab-1',
+      worktreeId: WORKTREE_ID,
+      title: 'Agent',
+      activeLeafId: 'leaf-1',
+      layout: null
+    }
+  ],
+  leaves: [
+    {
+      tabId: 'tab-1',
+      worktreeId: WORKTREE_ID,
+      leafId: 'leaf-1',
+      paneRuntimeId: 1,
+      ptyId: PTY_ID,
+      paneTitle: null,
+      title: ''
+    }
+  ]
+} satisfies RuntimeSyncWindowGraph
 
 function processRow(overrides: Partial<PtyProcessInfo> = {}): PtyProcessInfo {
   // The daemon inventory cannot carry a title; it reports a fixed placeholder.
@@ -54,6 +81,10 @@ type Snapshot = PtyProviderBufferSnapshot | null
 class AdoptedTitleRuntime extends OrcaRuntimeService {
   record(ptyId = PTY_ID) {
     return this.ptysById.get(ptyId)
+  }
+
+  primaryLeaf(ptyId = PTY_ID) {
+    return this.getPrimaryLeafForPty(ptyId)
   }
 }
 
@@ -228,6 +259,91 @@ describe('inventory-adopted daemon session title seed (#22809)', () => {
     }
   )
 
+  it('verifies the restored title a pane inherits when a renderer binds the adopted session', async () => {
+    let foreground = 'claude'
+    const { runtime } = createHeadlessRuntime({
+      serializeProviderBuffer: async () => providerSnapshot(),
+      getForegroundProcess: async () => foreground
+    })
+    await runtime.listTerminals()
+    await vi.waitFor(() => expect(runtime.record()?.lastOscTitle).toBe(CLAUDE_IDLE_TITLE))
+    const { handle: adoptedHandle } = await onlyTerminal(runtime)
+    runtime.syncWindowGraph(1, PANE_GRAPH)
+    const expectInheritedTitleVerified = async (handle: string) => {
+      foreground = 'claude'
+      await expect(runtime.getTerminalAgentStatus(handle)).resolves.toEqual({
+        handle,
+        isRunningAgent: true,
+        status: 'idle'
+      })
+      foreground = 'bash'
+      await expect(runtime.getTerminalAgentStatus(handle)).resolves.toEqual({
+        handle,
+        isRunningAgent: false,
+        status: null
+      })
+      await expect(runtime.isTerminalRunningAgent(handle)).resolves.toBe(false)
+    }
+
+    // Until the next listing rebinds it, the adopted handle resolves through the PTY record and
+    // its newly bound primary pane; afterwards it resolves through the pane itself.
+    await expectInheritedTitleVerified(adoptedHandle)
+    const { handle } = await onlyTerminal(runtime)
+    expect(handle).toBe(adoptedHandle)
+    await expectInheritedTitleVerified(handle)
+  })
+
+  // A PTY-bound handle (what `terminal create` returns) resolves through the PTY record and reads
+  // its primary pane's title, so that path must verify the inherited title too.
+  it('verifies the inherited title on the PTY-record path when the session has a pane', async () => {
+    const { runtime } = createHeadlessRuntime({
+      serializeProviderBuffer: async () => providerSnapshot()
+    })
+    await runtime.listTerminals()
+    await vi.waitFor(() => expect(runtime.record()?.lastOscTitle).toBe(CLAUDE_IDLE_TITLE))
+    runtime.syncWindowGraph(1, PANE_GRAPH)
+    const pty = runtime.record()!
+    const leaf = runtime.primaryLeaf()!
+    expect(leaf.lastOscTitle).toBe(CLAUDE_IDLE_TITLE)
+
+    let foreground = 'claude'
+    const getForegroundProcess = async () => foreground
+    const common = {
+      getLiveLeaf: (): never => {
+        throw new Error('terminal_handle_stale')
+      },
+      getPrimaryLeaf: () => leaf,
+      getTrackedPty: () => pty,
+      getTabTitle: () => null
+    }
+    const presence = new RuntimeTerminalAgentPresence({
+      ...common,
+      getLivePty: () => pty,
+      getForegroundProcess
+    })
+    const status = new RuntimeTerminalAgentStatusQuery({
+      ...common,
+      getController: () => ({ write: () => true, kill: () => true, getForegroundProcess }),
+      getLivePty: () => ({ pty }),
+      getExplicitStatus: () => null,
+      getLifecycleStatus: () => undefined,
+      isRunning: (handle) => presence.isRunning(handle)
+    })
+
+    await expect(status.getStatus('h')).resolves.toEqual({
+      handle: 'h',
+      isRunningAgent: true,
+      status: 'idle'
+    })
+    foreground = 'bash'
+    await expect(presence.isRunning('h')).resolves.toBe(false)
+    await expect(status.getStatus('h')).resolves.toEqual({
+      handle: 'h',
+      isRunningAgent: false,
+      status: null
+    })
+  })
+
   it('verifies a restored permission title against the foreground before reporting a prompt', async () => {
     let foreground = 'gemini'
     const { runtime } = createHeadlessRuntime({
@@ -300,24 +416,73 @@ describe('inventory-adopted daemon session title seed (#22809)', () => {
     expect(terminal.lastOutputAt).toBeNull()
   })
 
-  it('probes at most once per PTY incarnation across repeated inventory refreshes', async () => {
-    let rows = [processRow()]
-    const { runtime, serializeProviderBuffer } = createHeadlessRuntime({
-      // Why null: a title-less answer leaves the record seedable, so only the attempt guard stops a refetch.
-      serializeProviderBuffer: async () => null,
-      listProcesses: async () => rows
+  describe('retrying a title-less answer', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(1_000_000)
+    })
+    afterEach(() => {
+      vi.useRealTimers()
     })
 
-    for (let i = 0; i < 3; i += 1) {
+    async function refreshAfter(runtime: OrcaRuntimeService, ms: number): Promise<void> {
+      vi.setSystemTime(Date.now() + ms)
       await runtime.listTerminals()
       await flushAsyncWork()
     }
-    expect(serializeProviderBuffer).toHaveBeenCalledOnce()
 
-    rows = [processRow({ incarnationId: REPLACEMENT })]
+    it('spaces retries out and stops after three probes per PTY incarnation', async () => {
+      let rows = [processRow()]
+      const { runtime, serializeProviderBuffer } = createHeadlessRuntime({
+        // Why null: a title-less answer leaves the record seedable, so only the bound stops a refetch.
+        serializeProviderBuffer: async () => null,
+        listProcesses: async () => rows
+      })
+
+      await refreshAfter(runtime, 0)
+      await refreshAfter(runtime, 1_000)
+      expect(serializeProviderBuffer).toHaveBeenCalledOnce()
+
+      for (let i = 0; i < 4; i += 1) {
+        await refreshAfter(runtime, 10_000)
+      }
+      expect(serializeProviderBuffer).toHaveBeenCalledTimes(3)
+
+      rows = [processRow({ incarnationId: REPLACEMENT })]
+      await refreshAfter(runtime, 0)
+      expect(serializeProviderBuffer).toHaveBeenCalledTimes(4)
+    })
+
+    it('recovers the title when an earlier snapshot came back empty', async () => {
+      // The production provider maps a failed snapshot to null.
+      const answers: Snapshot[] = [null, providerSnapshot()]
+      const { runtime, serializeProviderBuffer } = createHeadlessRuntime({
+        serializeProviderBuffer: async () => answers.shift() ?? null
+      })
+
+      await refreshAfter(runtime, 0)
+      expect(runtime.record()?.lastOscTitle).toBeNull()
+
+      await refreshAfter(runtime, 10_000)
+      await vi.waitFor(() => expect(runtime.record()?.lastOscTitle).toBe(CLAUDE_IDLE_TITLE))
+      await refreshAfter(runtime, 10_000)
+      expect(serializeProviderBuffer).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it('keeps one probe in flight per PTY incarnation', async () => {
+    const snapshot = deferred<Snapshot>()
+    const { runtime, serializeProviderBuffer } = createHeadlessRuntime({
+      serializeProviderBuffer: () => snapshot.promise
+    })
+
+    await runtime.listTerminals()
     await runtime.listTerminals()
     await flushAsyncWork()
-    expect(serializeProviderBuffer).toHaveBeenCalledTimes(2)
+    expect(serializeProviderBuffer).toHaveBeenCalledOnce()
+
+    snapshot.resolve(providerSnapshot())
+    await vi.waitFor(() => expect(runtime.record()?.lastOscTitle).toBe(CLAUDE_IDLE_TITLE))
   })
 
   it('drops a snapshot whose PTY was replaced while it was in flight', async () => {

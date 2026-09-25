@@ -31,6 +31,7 @@ type Dependencies = {
   getLivePty(handle: string): { pty: RuntimePtyWorktreeRecord } | null
   getLiveLeaf(handle: string): { leaf: RuntimeLeafRecord }
   getPrimaryLeaf(ptyId: string): RuntimeLeafRecord | null
+  getTrackedPty(ptyId: string): RuntimePtyWorktreeRecord | null
   getTabTitle(tabId: string): string | null
   getExplicitStatus(
     handle: string
@@ -196,7 +197,9 @@ export class RuntimeTerminalAgentStatusQuery {
           ? detectAgentStatusFromTitle(ptyTitle.title)
           : pty.pty.lastAgentStatus,
         titleStatusIsLive: ptyTitle !== null,
-        titleIsRestored: leafTitle === null && ptyTitleIsRestored(pty.pty, ptyTitle?.title ?? null)
+        // Why the PTY record: only it knows whether a title was ever observed live, and a leaf
+        // bound to an adopted session inherits the restored title without that knowledge.
+        titleIsRestored: ptyTitleIsRestored(pty.pty, ptyTitle?.title ?? null)
       }
     }
 
@@ -215,13 +218,14 @@ export class RuntimeTerminalAgentStatusQuery {
       { title: leaf.lastOscTitle, updatedAt: leaf.lastOscTitleAt },
       { title: this.deps.getTabTitle(leaf.tabId), updatedAt: 0 }
     )
+    const trackedPty = this.deps.getTrackedPty(leaf.ptyId)
     return {
       waitText: buildTerminalWaitText(leaf.tailBuffer, leaf.tailPartialLine, leaf.preview),
       waitBlockedAt: leaf.waitBlockedAt,
       title: title?.title ?? null,
       titleStatus: title ? detectAgentStatusFromTitle(title.title) : leaf.lastAgentStatus,
       titleStatusIsLive: (title?.updatedAt ?? 0) > 0,
-      titleIsRestored: false
+      titleIsRestored: trackedPty !== null && ptyTitleIsRestored(trackedPty, title?.title ?? null)
     }
   }
 

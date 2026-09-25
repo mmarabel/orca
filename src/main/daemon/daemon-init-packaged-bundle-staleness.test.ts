@@ -24,13 +24,18 @@ const {
   (await import('./daemon-init-test-harness')).createDaemonInitMocks()
 )
 
-vi.mock('electron', () => moduleFactories.electron())
 vi.mock('fs', () => moduleFactories.fs())
 vi.mock('child_process', async (importOriginal) =>
   moduleFactories.childProcess(await importOriginal<Record<string, unknown>>())
 )
 vi.mock('net', () => moduleFactories.net())
 vi.mock('./daemon-health', () => moduleFactories.daemonHealth())
+vi.mock('./daemon-pid-identity', () => moduleFactories.daemonPidIdentity())
+vi.mock('./daemon-tcc-attribution', () => moduleFactories.daemonTccAttribution())
+vi.mock('./daemon-bundle-staleness', () => moduleFactories.daemonBundleStaleness())
+vi.mock('./daemon-stale-kill', () => moduleFactories.daemonStaleKill())
+vi.mock('./daemon-process-start-time', () => moduleFactories.daemonProcessStartTime())
+vi.mock('./daemon-pid-file-parse', () => moduleFactories.daemonPidFileParse())
 vi.mock('./client', () => moduleFactories.client())
 vi.mock('./daemon-lifecycle-event', () => moduleFactories.daemonLifecycleEvent())
 vi.mock('./daemon-spawner', () => moduleFactories.daemonSpawner())
@@ -98,7 +103,7 @@ describe('daemon-init: runRestartDaemon (7-step sequence)', () => {
         on(event: string, cb: (arg?: unknown) => void) {
           handlers[event]?.push(cb)
           if (event === 'message') {
-            queueMicrotask(() => cb({ type: 'ready', startedAtMs: 1_000_000 }))
+            queueMicrotask(() => cb({ type: 'ready', pid: 12345, startedAtMs: 1_000_000 }))
           }
           return this
         },
@@ -159,6 +164,7 @@ describe('daemon-init: runRestartDaemon (7-step sequence)', () => {
     daemonClientMock.mockImplementationOnce(function MockDaemonClient() {
       return {
         ensureConnected: vi.fn(async () => {}),
+        ensureConnectedWithin: vi.fn(async () => {}),
         request: requestMock,
         disconnect: disconnectMock
       }
@@ -179,7 +185,7 @@ describe('daemon-init: runRestartDaemon (7-step sequence)', () => {
       '/fake/token',
       '1.2.3'
     )
-    expect(requestMock).toHaveBeenCalledWith('listSessions', undefined)
+    expect(requestMock).toHaveBeenCalledWith('listSessions', undefined, expect.any(Number))
     expect(disconnectMock).toHaveBeenCalledOnce()
     expect(killStaleDaemonMock).not.toHaveBeenCalled()
     expect(forkMock).not.toHaveBeenCalled()

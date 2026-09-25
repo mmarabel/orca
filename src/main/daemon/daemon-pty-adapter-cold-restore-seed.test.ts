@@ -1,3 +1,4 @@
+import './mock-descendant-sweep'
 /* Cold-restore seed transfer and the payload shapes handed back to the renderer. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { hostname } from 'node:os'
@@ -9,6 +10,7 @@ import { getHistorySessionDirName } from './history-paths'
 import { TERMINAL_HISTORY_INLINE_SEED_CODE_UNITS } from './terminal-history-seed-chunks'
 import { createMockSubprocess, startDaemonAdapterHarness } from './daemon-pty-adapter-test-harness'
 import type * as DaemonHealthModule from './daemon-health'
+import type * as DaemonTccAttributionModule from './daemon-tcc-attribution'
 
 const { getMacDaemonSystemResolverHealthMock, getMacDaemonTccAttributionHealthMock } = vi.hoisted(
   () => ({
@@ -25,7 +27,14 @@ vi.mock('./daemon-health', async (importOriginal) => {
   const actual = await importOriginal<typeof DaemonHealthModule>()
   return {
     ...actual,
-    getMacDaemonSystemResolverHealth: getMacDaemonSystemResolverHealthMock,
+    getMacDaemonSystemResolverHealth: getMacDaemonSystemResolverHealthMock
+  }
+})
+
+vi.mock('./daemon-tcc-attribution', async (importOriginal) => {
+  const actual = await importOriginal<typeof DaemonTccAttributionModule>()
+  return {
+    ...actual,
     getMacDaemonTccAttributionHealth: getMacDaemonTccAttributionHealthMock
   }
 })

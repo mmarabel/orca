@@ -71,6 +71,42 @@ describe('web settings preload API', () => {
     expect(settings.terminalCursorStyleDefaultedToBlock).toBe(true)
   })
 
+  it('mirrors the host-owned agent skill sharing capability without granting it', async () => {
+    const runtimeCalls: { method: string; params: unknown }[] = []
+    vi.doMock('./web-runtime-client', () => ({
+      WebRuntimeClient: class {
+        call(method: string, params?: unknown): Promise<RuntimeRpcResponse<unknown>> {
+          runtimeCalls.push({ method, params })
+          return Promise.resolve({
+            id: `call-${runtimeCalls.length}`,
+            ok: true,
+            result: { settings: { agentSkillSharingEnabled: false } },
+            _meta: { runtimeId: 'runtime-1' }
+          })
+        }
+
+        close(): void {}
+      }
+    }))
+
+    const globals = installBrowserGlobals('Linux')
+    writeStoredRuntimeEnvironment(globals.storage)
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    installWebPreloadApi()
+
+    const settings = await globals.window.api.settings.get()
+    await globals.window.api.settings.set({ agentSkillSharingEnabled: true })
+    const refreshed = await globals.window.api.settings.get()
+
+    expect(settings.agentSkillSharingEnabled).toBe(false)
+    expect(refreshed.agentSkillSharingEnabled).toBe(false)
+    expect(runtimeCalls).toEqual([
+      { method: 'settings.get', params: undefined },
+      { method: 'settings.get', params: undefined }
+    ])
+    expect(runtimeCalls).not.toContainEqual(expect.objectContaining({ method: 'settings.update' }))
+  })
+
   it('normalizes terminal cursor style before web settings writes return or persist', async () => {
     const { api, storage } = await installApi('Linux')
 
@@ -561,7 +597,8 @@ describe('web settings preload API', () => {
             result: {
               settings: {
                 minimaxGroupId: 'group-42',
-                minimaxUsageModels: 'general,abab6.5'
+                minimaxUsageModels: 'general,abab6.5',
+                minimaxEndpoint: 'cn'
               }
             },
             _meta: { runtimeId: 'runtime-1' }
@@ -581,12 +618,15 @@ describe('web settings preload API', () => {
     const stored = JSON.parse(globals.storage.getItem('orca.web.settings.v1') ?? '{}') as {
       minimaxGroupId?: string
       minimaxUsageModels?: string
+      minimaxEndpoint?: string
     }
 
     expect(settings.minimaxGroupId).toBe('group-42')
     expect(settings.minimaxUsageModels).toBe('general,abab6.5')
+    expect(settings.minimaxEndpoint).toBe('cn')
     expect(stored.minimaxGroupId).toBe('group-42')
     expect(stored.minimaxUsageModels).toBe('general,abab6.5')
+    expect(stored.minimaxEndpoint).toBe('cn')
     expect(runtimeCalls).toEqual([{ method: 'settings.get', params: undefined }])
   })
 
@@ -707,7 +747,8 @@ describe('web settings preload API', () => {
             result: {
               settings: {
                 minimaxGroupId: 'group-42',
-                minimaxUsageModels: 'general,abab6.5'
+                minimaxUsageModels: 'general,abab6.5',
+                minimaxEndpoint: 'cn'
               }
             },
             _meta: { runtimeId: 'runtime-1' }
@@ -725,24 +766,29 @@ describe('web settings preload API', () => {
 
     const settings = await globals.window.api.settings.set({
       minimaxGroupId: 'group-42',
-      minimaxUsageModels: 'general,abab6.5'
+      minimaxUsageModels: 'general,abab6.5',
+      minimaxEndpoint: 'cn'
     })
 
     const stored = JSON.parse(globals.storage.getItem('orca.web.settings.v1') ?? '{}') as {
       minimaxGroupId?: string
       minimaxUsageModels?: string
+      minimaxEndpoint?: string
     }
 
     expect(settings.minimaxGroupId).toBe('group-42')
     expect(settings.minimaxUsageModels).toBe('general,abab6.5')
+    expect(settings.minimaxEndpoint).toBe('cn')
     expect(stored.minimaxGroupId).toBe('group-42')
     expect(stored.minimaxUsageModels).toBe('general,abab6.5')
+    expect(stored.minimaxEndpoint).toBe('cn')
     expect(runtimeCalls).toEqual([
       {
         method: 'settings.update',
         params: {
           minimaxGroupId: 'group-42',
-          minimaxUsageModels: 'general,abab6.5'
+          minimaxUsageModels: 'general,abab6.5',
+          minimaxEndpoint: 'cn'
         }
       }
     ])

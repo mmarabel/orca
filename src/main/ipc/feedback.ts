@@ -160,7 +160,8 @@ async function submitFeedbackWithImages(
     }
     // Why: the text lane retries 5xx, this one does not. Replaying the
     // attachments on a flaky link costs more than it saves, and the dialog
-    // keeps the draft and thumbnails so the user can resend.
+    // stays open with its thumbnails while the draft text sits in the app
+    // store, so a manual resend loses nothing.
     return { ok: false, ...imagesFailure }
   } catch (error) {
     return { ok: false, ...errorFailure(error) }

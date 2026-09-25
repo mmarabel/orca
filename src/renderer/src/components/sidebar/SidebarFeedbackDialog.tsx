@@ -12,6 +12,7 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { useMountedRef } from '@/hooks/useMountedRef'
+import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
 import type { GitHubViewer } from '../../../../shared/github/pull-request-types'
 import { translate } from '@/i18n/i18n'
@@ -60,11 +61,17 @@ export function SidebarFeedbackDialog({
   open,
   onOpenChange
 }: SidebarFeedbackDialogProps): React.JSX.Element {
-  const [feedback, setFeedback] = useState('')
+  // Why: the draft lives in the app store, not component state. This dialog
+  // renders inside the sidebar subtree, so collapsing the sidebar unmounts it
+  // and would otherwise discard a report the user has not managed to send yet
+  // (orca#22466).
+  const feedback = useAppStore((s) => s.feedbackDraft.feedback)
+  const submitAnonymously = useAppStore((s) => s.feedbackDraft.submitAnonymously)
+  const setFeedbackDraft = useAppStore((s) => s.setFeedbackDraft)
+  const clearFeedbackDraft = useAppStore((s) => s.clearFeedbackDraft)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [viewer, setViewer] = useState<GitHubViewer | null>(null)
   const [isViewerLoading, setIsViewerLoading] = useState(false)
-  const [submitAnonymously, setSubmitAnonymously] = useState(false)
   const mountedRef = useMountedRef()
   const feedbackTextareaRef = useRef<HTMLTextAreaElement>(null)
   const {
@@ -79,6 +86,15 @@ export function SidebarFeedbackDialog({
     hasPendingImageReads,
     getReservedImageCapacity
   } = useSidebarFeedbackImages({ open, isSubmitting, mountedRef })
+
+  // Why: reads the committed draft at call time so a late-resolving prefill
+  // cannot overwrite characters typed while it was in flight.
+  const setFeedback = React.useCallback(
+    (updater: (current: string) => string) => {
+      setFeedbackDraft({ feedback: updater(useAppStore.getState().feedbackDraft.feedback) })
+    },
+    [setFeedbackDraft]
+  )
 
   useSidebarFeedbackEnvironmentPrefill({
     open,
@@ -184,8 +200,7 @@ export function SidebarFeedbackDialog({
             )
           )
         }
-        setFeedback('')
-        setSubmitAnonymously(false)
+        clearFeedbackDraft()
         clearImages()
         onOpenChange(false)
       }
@@ -304,7 +319,7 @@ export function SidebarFeedbackDialog({
         <textarea
           ref={feedbackTextareaRef}
           value={feedback}
-          onChange={(event) => setFeedback(event.target.value)}
+          onChange={(event) => setFeedbackDraft({ feedback: event.target.value })}
           placeholder={translate(
             'auto.components.sidebar.SidebarFeedbackDialog.d46ddd66fc',
             'What could we improve?'
@@ -335,7 +350,9 @@ export function SidebarFeedbackDialog({
                 <input
                   type="checkbox"
                   checked={submitAnonymously}
-                  onChange={(event) => setSubmitAnonymously(event.target.checked)}
+                  onChange={(event) =>
+                    setFeedbackDraft({ submitAnonymously: event.target.checked })
+                  }
                   className={cn(
                     'size-3.5 rounded border border-border bg-background align-middle',
                     'accent-foreground'

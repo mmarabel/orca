@@ -54,6 +54,7 @@ vi.mock('@/lib/feedback-image-attachments', async (importOriginal) => {
 })
 
 import { SidebarFeedbackDialog } from './SidebarFeedbackDialog'
+import { useAppStore } from '@/store'
 
 beforeEach(() => {
   mocks.readFeedbackImageFiles.mockReset()
@@ -87,6 +88,9 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  // Why: the draft outlives the dialog on purpose now, so it also outlives a
+  // test unless each one starts from an empty store.
+  useAppStore.getState().clearFeedbackDraft()
 })
 
 describe('SidebarFeedbackDialog environment prefill', () => {
@@ -478,5 +482,48 @@ describe('SidebarFeedbackDialog image submission', () => {
     expect(mocks.toastWarning).toHaveBeenCalledWith(
       'Wait for the current feedback to finish sending before attaching more images.'
     )
+  })
+})
+
+describe('SidebarFeedbackDialog draft survival', () => {
+  const REPORT = 'The terminal froze right after a rebase'
+
+  function textarea(): HTMLTextAreaElement {
+    return screen.getByPlaceholderText<HTMLTextAreaElement>('What could we improve?')
+  }
+
+  // Why: orca#22466's third complaint. The dialog renders inside the sidebar
+  // subtree, so collapsing the sidebar unmounts it; with the draft in component
+  // state that silently discarded a report the user had not managed to send.
+  it('keeps the typed report when the sidebar unmounts and remounts the dialog', () => {
+    const first = render(<SidebarFeedbackDialog open onOpenChange={vi.fn()} />)
+    fireEvent.change(textarea(), { target: { value: REPORT } })
+
+    first.unmount()
+    render(<SidebarFeedbackDialog open onOpenChange={vi.fn()} />)
+
+    expect(textarea().value).toContain(REPORT)
+  })
+
+  it('keeps the report after a submit the server refused outright', async () => {
+    mocks.submit.mockResolvedValue({ ok: false, status: 500, error: 'status 500' })
+    render(<SidebarFeedbackDialog open onOpenChange={vi.fn()} />)
+    fireEvent.change(textarea(), { target: { value: REPORT } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    await waitFor(() => expect(mocks.submit).toHaveBeenCalled())
+
+    expect(textarea().value).toContain(REPORT)
+    expect(useAppStore.getState().feedbackDraft.feedback).toContain(REPORT)
+  })
+
+  it('clears the draft once delivery is confirmed', async () => {
+    mocks.submit.mockResolvedValue({ ok: true })
+    render(<SidebarFeedbackDialog open onOpenChange={vi.fn()} />)
+    fireEvent.change(textarea(), { target: { value: REPORT } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+
+    await waitFor(() => expect(useAppStore.getState().feedbackDraft.feedback).toBe(''))
   })
 })

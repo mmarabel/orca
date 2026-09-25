@@ -135,7 +135,7 @@ export default function EditHostScreen() {
       // failure or block navigating back. The address changed, so the live
       // client must be rebuilt even on Relay, which is otherwise preserved:
       // that session is bound to the endpoint the user just replaced.
-      void forceReconnectHost?.(host.id, { bypassRelayPreservation: true }).catch(() => {})
+      void forceReconnectHost?.(host.id, { savedAddressChanged: true }).catch(() => {})
     }
   }
 

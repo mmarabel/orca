@@ -251,11 +251,17 @@ export function RpcClientProvider({ children }: { children: ReactNode }) {
       // Why: getActivePath() latches on the first adopted session and is never cleared, so a host
       // whose relay is merely retrying still reads 'relay'. Preserving it after an address edit
       // would keep dialling the pre-edit endpoint until the app restarts.
-      if (entry && !options?.bypassRelayPreservation && shouldPreserveActiveRelay(entry, logical)) {
+      if (entry && !options?.savedAddressChanged && shouldPreserveActiveRelay(entry, logical)) {
         // Keep a Relay-active host on its existing recovery state; rebuilding the
         // facade starts the unreachable direct endpoint before Relay can race it.
         entry.client.notifyForeground('app-resume')
         return
+      }
+      if (options?.savedAddressChanged) {
+        // Why: the prime cache is what openHostClientEntry reads first, so a rebuild that skipped
+        // this would reopen on the pre-edit address whenever the edit screen's best-effort
+        // re-prime failed. Dropping it forces the reopen through the authoritative loadHosts().
+        primedHostsRef.current.delete(hostId)
       }
       // Why: ownership survives explicit close/re-pair while observers never become synthetic owners.
       const savedRefCount = acquisitionsRef.current.count(hostId)

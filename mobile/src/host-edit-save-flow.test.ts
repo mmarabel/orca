@@ -158,7 +158,7 @@ describe('edit host handleSave', () => {
       endpoint: 'ws://192.168.1.20:6768'
     })
     expect(dependencies.forceReconnectHost).toHaveBeenCalledWith('host-1', {
-      bypassRelayPreservation: true
+      savedAddressChanged: true
     })
     expect(dependencies.back).toHaveBeenCalledTimes(1)
 
@@ -177,7 +177,7 @@ describe('edit host handleSave', () => {
       endpoint: 'ws://192.168.1.20:6768'
     })
     expect(dependencies.forceReconnectHost).toHaveBeenCalledWith('host-1', {
-      bypassRelayPreservation: true
+      savedAddressChanged: true
     })
     expect(dependencies.back).toHaveBeenCalledTimes(1)
 
@@ -233,7 +233,7 @@ describe('edit host handleSave', () => {
     })
 
     expect(dependencies.forceReconnectHost).toHaveBeenCalledWith('host-1', {
-      bypassRelayPreservation: true
+      savedAddressChanged: true
     })
     expect(dependencies.back).toHaveBeenCalledTimes(1)
     expect(findText(renderer, 'connect failed')).toBe(false)

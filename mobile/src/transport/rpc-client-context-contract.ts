@@ -6,11 +6,13 @@ import type { ConnectionState, HostProfile } from './types'
 
 export type ForceReconnectOptions = {
   /**
-   * Rebuild the client even while a Relay session is active. Set only when the saved host
-   * address changed: the live session is dialling the pre-edit endpoint, so preserving it
-   * strands the host until the app restarts.
+   * The stored host address changed since this client opened, so nothing already in memory can
+   * still be trusted to dial it. Two consequences follow and both are needed: the live Relay
+   * session is rebuilt rather than preserved (it is bound to the pre-edit endpoint), and the
+   * cached host profile is dropped so the reopen re-reads the row the user just saved. Leave it
+   * unset for a plain Retry, which wants neither.
    */
-  bypassRelayPreservation?: boolean
+  savedAddressChanged?: boolean
 }
 
 /** Re-dials one host. `null` where this document cannot dial: the page's shell owns the connection. */

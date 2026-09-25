@@ -45,7 +45,8 @@ import {
   RpcClientProvider,
   useDisconnectHostClient,
   useForceReconnect,
-  useHostClient
+  useHostClient,
+  usePrimeHosts
 } from './client-context'
 import { useAllHostClients } from './use-all-host-clients'
 import { useRelayRecoveryStatus } from './client-context-connection-metrics'
@@ -436,13 +437,50 @@ describe('useHostClient', () => {
       })
 
       await act(async () => {
-        await forceReconnect?.(HOST.id, { bypassRelayPreservation: true })
+        await forceReconnect?.(HOST.id, { savedAddressChanged: true })
       })
 
       // The live Relay session is bound to the pre-edit address, so it must come down.
       expect(relayClient.closeMock).toHaveBeenCalled()
       expect(relayClient.notifyForeground).not.toHaveBeenCalled()
       expect(connectMock).toHaveBeenCalledTimes(2)
+    } finally {
+      act(() => renderer?.unmount())
+    }
+  })
+
+  it('reopens from the saved host row when a stale profile is still primed', async () => {
+    const relayClient = makeFakeClient('connected', 'relay')
+    const replacement = makeFakeClient('connecting', 'tailscale')
+    connectMock.mockReturnValueOnce(relayClient).mockReturnValueOnce(replacement)
+    loadHostsMock.mockResolvedValue([HOST])
+    const edited = { ...HOST, name: 'Tailnet desk', endpoint: 'ws://100.101.102.103:6768' }
+
+    let forceReconnect: ReturnType<typeof useForceReconnect> = null
+    let primeHosts: ((hosts: (typeof HOST)[]) => void) | null = null
+    let renderer: ReactTestRenderer | null = null
+    function Probe(): null {
+      forceReconnect = useForceReconnect()
+      primeHosts = usePrimeHosts()
+      useHostClient(HOST.id)
+      return null
+    }
+
+    try {
+      await act(async () => {
+        renderer = create(createElement(RpcClientProvider, null, createElement(Probe)))
+        await Promise.resolve()
+      })
+      // The edit screen's post-save re-prime is best-effort: this is the state it leaves behind
+      // when loadHosts() throws — the cache still holds the address the user just replaced.
+      act(() => primeHosts?.([HOST]))
+      loadHostsMock.mockResolvedValue([edited])
+
+      await act(async () => {
+        await forceReconnect?.(HOST.id, { savedAddressChanged: true })
+      })
+
+      expect(connectMock.mock.calls[1]?.[0]).toEqual(edited)
     } finally {
       act(() => renderer?.unmount())
     }

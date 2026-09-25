@@ -133,6 +133,7 @@ describe('worktree activity state', () => {
         { 'tab-1': [] },
         {},
         new Set(),
+        new Set(),
         new Set(['wt-1'])
       )
     ).toBe(false)
@@ -146,6 +147,7 @@ describe('worktree activity state', () => {
         { 'tab-2': [] },
         {},
         new Set(),
+        new Set(),
         new Set(['wt-1'])
       )
     ).toBe(true)
@@ -158,6 +160,7 @@ describe('worktree activity state', () => {
         { 'wt-1': [makeTab('tab-1')] },
         { 'tab-1': [] },
         {},
+        new Set(),
         new Set(),
         new Set()
       )
@@ -260,6 +263,43 @@ describe('getWorktreeIdsWithLiveAgent', () => {
       new Map([
         ['wt-1', 'working'],
         ['wt-2', 'permission']
+      ])
+    )
+  })
+
+  it('reports monitoring below active working and permission', () => {
+    const entries = {
+      'tab-1:leaf-1': makeAgentEntry({
+        paneKey: 'tab-1:leaf-1',
+        worktreeId: 'wt-1',
+        workingMode: 'monitoring'
+      }),
+      'tab-2:leaf-2': makeAgentEntry({
+        paneKey: 'tab-2:leaf-2',
+        worktreeId: 'wt-2',
+        workingMode: 'monitoring'
+      }),
+      'tab-3:leaf-3': makeAgentEntry({
+        paneKey: 'tab-3:leaf-3',
+        worktreeId: 'wt-2'
+      }),
+      'tab-4:leaf-4': makeAgentEntry({
+        paneKey: 'tab-4:leaf-4',
+        worktreeId: 'wt-3',
+        workingMode: 'monitoring'
+      }),
+      'tab-5:leaf-5': makeAgentEntry({
+        paneKey: 'tab-5:leaf-5',
+        worktreeId: 'wt-3',
+        state: 'waiting'
+      })
+    }
+
+    expect(getLiveAgentStatusByWorktreeId(entries, {}, NOW)).toEqual(
+      new Map([
+        ['wt-1', 'monitoring'],
+        ['wt-2', 'working'],
+        ['wt-3', 'permission']
       ])
     )
   })

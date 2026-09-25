@@ -9,12 +9,12 @@ import { resolveAgentStatusWorktreeId } from './agent-status-worktree-attributio
 type TerminalLikeTab = Pick<TerminalTab, 'id'>
 type BrowserLikeTab = { id: string }
 
-const EMPTY_WORKTREE_ID_SET: ReadonlySet<string> = new Set()
-
 type TabsByWorktree = Record<string, readonly TerminalLikeTab[]>
 type PtyIdsByTabId = Record<string, string[]>
 type BrowserTabsByWorktree = Record<string, readonly BrowserLikeTab[]>
-export type LiveAgentWorktreeStatus = 'working' | 'permission'
+export type LiveAgentWorktreeStatus = 'working' | 'monitoring' | 'permission'
+
+const EMPTY_WORKTREE_IDS: ReadonlySet<string> = new Set()
 
 /**
  * Worktree ids that currently have a live agent session, derived from the
@@ -52,8 +52,18 @@ export function getLiveAgentStatusByWorktreeId(
   for (const entry of entries) {
     const worktreeId = resolveAgentStatusWorktreeId(entry, worktreeIdByTabId)
     if (worktreeId) {
-      const status = entry.state === 'working' ? 'working' : 'permission'
-      if (status === 'permission' || !result.has(worktreeId)) {
+      const status =
+        entry.state === 'working'
+          ? entry.workingMode === 'monitoring'
+            ? 'monitoring'
+            : 'working'
+          : 'permission'
+      const current = result.get(worktreeId)
+      if (
+        status === 'permission' ||
+        current === undefined ||
+        (status === 'working' && current === 'monitoring')
+      ) {
         result.set(worktreeId, status)
       }
     }
@@ -67,7 +77,8 @@ export function hasActiveWorkspaceActivity(
   ptyIdsByTabId: PtyIdsByTabId | null | undefined,
   browserTabsByWorktree: BrowserTabsByWorktree | null | undefined,
   worktreeIdsWithLiveAgent: ReadonlySet<string>,
-  pendingReconnectWorktreeIds: ReadonlySet<string> = EMPTY_WORKTREE_ID_SET
+  worktreeIdsWithStructuredChat: ReadonlySet<string> = EMPTY_WORKTREE_IDS,
+  pendingReconnectWorktreeIds: ReadonlySet<string> = EMPTY_WORKTREE_IDS
 ): boolean {
   const tabs = tabsByWorktree?.[worktreeId] ?? []
   const hasLiveTerminal =
@@ -76,10 +87,13 @@ export function hasActiveWorkspaceActivity(
   // Why: a running agent keeps the workspace visible through brief PTY gaps
   // such as an SSH reconnect or an unmounted remote pane. #7197
   const hasLiveAgent = worktreeIdsWithLiveAgent.has(worktreeId)
+  // Why not folded into hasLiveTerminal: a structured chat has no PTY and no entry in
+  // tabsByWorktree, so every terminal-shaped signal above reads it as absent.
+  const hasStructuredChat = worktreeIdsWithStructuredChat.has(worktreeId)
   // Startup hydrates tabs before reconnect restores their ptyIds; without this a
   // workspace awake at shutdown reads as asleep until then. #16247
   const isReattaching = pendingReconnectWorktreeIds.has(worktreeId)
-  return hasLiveTerminal || hasBrowser || hasLiveAgent || isReattaching
+  return hasLiveTerminal || hasBrowser || hasLiveAgent || hasStructuredChat || isReattaching
 }
 
 export function isInactiveWorkspace(
@@ -88,7 +102,8 @@ export function isInactiveWorkspace(
   ptyIdsByTabId: PtyIdsByTabId | null | undefined,
   browserTabsByWorktree: BrowserTabsByWorktree | null | undefined,
   worktreeIdsWithLiveAgent: ReadonlySet<string>,
-  pendingReconnectWorktreeIds: ReadonlySet<string> = EMPTY_WORKTREE_ID_SET
+  worktreeIdsWithStructuredChat: ReadonlySet<string> = EMPTY_WORKTREE_IDS,
+  pendingReconnectWorktreeIds: ReadonlySet<string> = EMPTY_WORKTREE_IDS
 ): boolean {
   return !hasActiveWorkspaceActivity(
     worktreeId,
@@ -96,6 +111,7 @@ export function isInactiveWorkspace(
     ptyIdsByTabId,
     browserTabsByWorktree,
     worktreeIdsWithLiveAgent,
+    worktreeIdsWithStructuredChat,
     pendingReconnectWorktreeIds
   )
 }

@@ -1,12 +1,11 @@
 import React, { useCallback } from 'react'
 import { Box, Copy, ExternalLink, Info, Server, Trash2 } from 'lucide-react'
-import { getPortOpenBrowserTooltipLabel } from '@/lib/workspace-port-actions'
 import {
-  clientReachableAddress,
-  useClientReachableUrlForPort,
-  usePortSystemBrowserAvailable
-} from '@/lib/workspace-port-client-reachable-url'
-import { addressForPort } from '@/lib/workspace-port-urls'
+  getPortOpenBrowserTooltipLabel,
+  resolvePortOpenModifierDestination
+} from '@/lib/workspace-port-open-routing'
+import { usePortClientReachability } from '@/lib/workspace-port-client-reachability'
+import { useAppStore } from '@/store'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -37,12 +36,12 @@ export function LocalPortRow({
   onShowDetails: (port: WorkspacePort) => void
   onOpenInBrowser: (port: WorkspacePort, event?: React.MouseEvent<HTMLButtonElement>) => void
 }): React.JSX.Element {
-  // Why: on a remote workspace the OS-derived address is `localhost:<port>`, which
-  // names *this* machine and reaches nothing. Showing and copying the reachable
-  // address instead keeps the row honest and makes a remote port read like a local one.
-  const reachableUrl = useClientReachableUrlForPort(port)
-  const address = clientReachableAddress(reachableUrl) ?? addressForPort(port)
-  const systemBrowserAvailable = usePortSystemBrowserAvailable(port)
+  // Why: on a remote workspace the OS-derived address is `localhost:<port>`, which names
+  // *this* machine. Worse, a developer laptop often has its own server on that port, so
+  // the old row could send a copied address to the wrong process silently.
+  const { address, systemBrowserAvailable } = usePortClientReachability(port)
+  const settings = useAppStore((s) => s.settings)
+  const modifierDestination = resolvePortOpenModifierDestination(settings, systemBrowserAvailable)
 
   const handleCopy = useCallback(() => {
     void window.api.ui.writeClipboardText(address)
@@ -153,11 +152,7 @@ export function LocalPortRow({
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="top" sideOffset={4}>
-                {getPortOpenBrowserTooltipLabel(
-                  openBrowserLabel,
-                  undefined,
-                  systemBrowserAvailable
-                )}
+                {getPortOpenBrowserTooltipLabel(openBrowserLabel, { modifierDestination })}
               </TooltipContent>
             </Tooltip>
             <Tooltip>

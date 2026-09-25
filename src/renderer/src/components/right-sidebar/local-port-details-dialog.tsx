@@ -6,11 +6,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
-import {
-  clientReachableAddress,
-  useClientReachableUrlForPort
-} from '@/lib/workspace-port-client-reachable-url'
-import { addressForPort } from '@/lib/workspace-port-urls'
+import { usePortClientReachability } from '@/lib/workspace-port-client-reachability'
 import type { WorkspacePort } from '../../../../shared/workspace-ports'
 import { translate } from '@/i18n/i18n'
 
@@ -24,8 +20,7 @@ export function LocalPortDetailsDialog({
   // Why: the row, the copy action and this dialog must name the same address, or the
   // details pane quietly contradicts the row it was opened from. Bind stays raw below,
   // which is what makes the two fields useful together on a remote workspace.
-  const address =
-    clientReachableAddress(useClientReachableUrlForPort(port)) ?? (port ? addressForPort(port) : '')
+  const { address } = usePortClientReachability(port)
   return (
     <Dialog open={Boolean(port)} onOpenChange={(open) => !open && onClose()}>
       <DialogContent>

@@ -4,22 +4,19 @@ import { toast } from 'sonner'
 import { useAppStore } from '@/store'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useWorktreeRuntimeTarget } from '@/runtime/use-worktree-runtime-target'
 import {
   canStopWorkspacePort,
-  getPortOpenBrowserTooltipLabel,
   killWorkspacePortForTarget,
   openWorkspacePortInBrowser,
-  refreshWorkspacePortScanAfterStop,
-  resolvePortOpenInOrcaBrowser
+  refreshWorkspacePortScanAfterStop
 } from '@/lib/workspace-port-actions'
 import {
-  clientReachableAddress,
-  useClientReachableUrlForPort,
-  usePortSystemBrowserAvailable
-} from '@/lib/workspace-port-client-reachable-url'
+  getPortOpenBrowserTooltipLabel,
+  resolvePortOpenModifierDestination,
+  resolvePortOpenRouting
+} from '@/lib/workspace-port-open-routing'
+import { usePortClientReachability } from '@/lib/workspace-port-client-reachability'
 import { useLocalhostLabelRouteForPort } from '@/lib/workspace-port-localhost-label-selector'
-import { addressForPort } from '@/lib/workspace-port-urls'
 import type { WorkspacePort } from '../../../../shared/workspace-ports'
 import {
   WorktreeCardDetailSection,
@@ -111,15 +108,13 @@ function WorktreePortRow({ port }: { port: WorkspacePort }): React.JSX.Element {
   const replaceWorkspacePortScans = useAppStore((s) => s.replaceWorkspacePortScans)
   const setWorkspacePortScanRefreshing = useAppStore((s) => s.setWorkspacePortScanRefreshing)
   const recordFeatureInteraction = useAppStore((s) => s.recordFeatureInteraction)
-  const runtimeTarget = useWorktreeRuntimeTarget(
-    port.kind === 'workspace' ? port.owner.worktreeId : null
-  )
   const processLabel = port.processName ?? (port.pid ? `PID ${port.pid}` : 'Unknown process')
   // Why: on a remote workspace the OS-derived address names *this* machine, where
-  // nothing is listening. Show and copy the reachable one so the row stays honest.
-  const clientReachableUrl = useClientReachableUrlForPort(port)
-  const address = clientReachableAddress(clientReachableUrl) ?? addressForPort(port)
-  const systemBrowserAvailable = usePortSystemBrowserAvailable(port)
+  // nothing is listening. One hook resolves the owning host, the address to show and
+  // copy, and whether the system browser has anywhere to go, so the three cannot drift.
+  const { address, reachableUrl, runtimeTarget, systemBrowserAvailable } =
+    usePortClientReachability(port)
+  const modifierDestination = resolvePortOpenModifierDestination(settings, systemBrowserAvailable)
   const canStop = canStopWorkspacePort(port)
   const openBrowserLabel = translate(
     'auto.components.sidebar.WorktreeCardPorts.33bc7d7495',
@@ -130,7 +125,7 @@ function WorktreePortRow({ port }: { port: WorkspacePort }): React.JSX.Element {
     (event: React.MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation()
       recordFeatureInteraction('ports')
-      const openInOrcaBrowser = resolvePortOpenInOrcaBrowser({
+      const routing = resolvePortOpenRouting({
         settings,
         // Why: keyboard activations have detail=0; only pointer clicks carry
         // the modifier intent for the system-browser escape hatch.
@@ -142,9 +137,10 @@ function WorktreePortRow({ port }: { port: WorkspacePort }): React.JSX.Element {
         runtimeTarget,
         createBrowserTab,
         setRemoteBrowserPageHandle,
-        openInOrcaBrowser,
+        openInOrcaBrowser: routing.openInOrcaBrowser,
+        systemBrowserRequested: routing.systemBrowserRequested,
         localhostLabelRoute,
-        clientReachableUrl
+        clientReachableUrl: reachableUrl
       }).then((result) => {
         if (!result.ok) {
           toast.error(
@@ -158,7 +154,7 @@ function WorktreePortRow({ port }: { port: WorkspacePort }): React.JSX.Element {
       })
     },
     [
-      clientReachableUrl,
+      reachableUrl,
       createBrowserTab,
       port,
       localhostLabelRoute,
@@ -263,11 +259,9 @@ function WorktreePortRow({ port }: { port: WorkspacePort }): React.JSX.Element {
         <div className="absolute inset-y-0 right-0 flex items-center gap-0.5 rounded-md border border-border/40 bg-popover/95 px-0.5 can-hover:opacity-0 shadow-xs transition-opacity group-hover/port:opacity-100 group-focus-within/port:opacity-100">
           <PortAction
             label={openBrowserLabel}
-            tooltipLabel={getPortOpenBrowserTooltipLabel(
-              openBrowserLabel,
-              undefined,
-              systemBrowserAvailable
-            )}
+            tooltipLabel={getPortOpenBrowserTooltipLabel(openBrowserLabel, {
+              modifierDestination
+            })}
             onClick={handleOpen}
           >
             <ExternalLink className="size-3" />

@@ -11,15 +11,36 @@ const {
   openUrlMock,
   recordFeatureInteractionMock,
   setRemoteBrowserPageHandleMock,
-  storeState
+  storeState,
+  writeClipboardTextMock
 } = vi.hoisted(() => {
   const state = {
     settings: { openLinksInApp: true },
+    activeWorktreeId: null,
     createBrowserTab: vi.fn(),
     setRemoteBrowserPageHandle: vi.fn(),
     replaceWorkspacePortScans: vi.fn(),
     setWorkspacePortScanRefreshing: vi.fn(),
     recordFeatureInteraction: vi.fn(),
+    runtimeEnvironments: [
+      {
+        id: 'env-1',
+        name: 'vps',
+        createdAt: 0,
+        updatedAt: 0,
+        lastUsedAt: null,
+        runtimeId: 'runtime-1',
+        preferredEndpointId: 'ws-primary',
+        endpoints: [
+          {
+            id: 'ws-primary',
+            kind: 'websocket' as const,
+            label: 'Tailscale',
+            endpoint: 'ws://100.64.1.20:6768'
+          }
+        ]
+      }
+    ],
     workspacePortScansByKey: {}
   }
   return {
@@ -28,7 +49,8 @@ const {
     openUrlMock: vi.fn(),
     recordFeatureInteractionMock: state.recordFeatureInteraction,
     setRemoteBrowserPageHandleMock: state.setRemoteBrowserPageHandle,
-    storeState: state
+    storeState: state,
+    writeClipboardTextMock: vi.fn()
   }
 })
 
@@ -100,7 +122,7 @@ describe('status bar port row open routing', () => {
         openUrl: openUrlMock
       },
       ui: {
-        writeClipboardText: vi.fn()
+        writeClipboardText: writeClipboardTextMock
       }
     }
     openUrlMock.mockResolvedValue(undefined)
@@ -109,6 +131,7 @@ describe('status bar port row open routing', () => {
     recordFeatureInteractionMock.mockClear()
     setRemoteBrowserPageHandleMock.mockClear()
     activateAndRevealWorktreeMock.mockClear()
+    writeClipboardTextMock.mockClear()
   })
 
   afterEach(() => {
@@ -179,5 +202,92 @@ describe('status bar port row open routing', () => {
     expect(recordFeatureInteractionMock).toHaveBeenCalledWith('ports')
     expect(openUrlMock).not.toHaveBeenCalled()
     expect(createBrowserTabMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('status bar port row address attribution', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  const remoteWildcardPort: WorkspacePort = {
+    kind: 'workspace',
+    id: 'environment:env-1:all:0.0.0.0:5173',
+    hostScanKey: 'environment:env-1:all',
+    bindHost: '0.0.0.0',
+    connectHost: 'localhost',
+    port: 5173,
+    protocol: 'http',
+    processName: 'node',
+    owner: {
+      worktreeId: 'repo-1:feature',
+      repoId: 'repo-1',
+      displayName: 'feature',
+      path: '/srv/work/feature',
+      confidence: 'cwd'
+    }
+  }
+
+  beforeEach(() => {
+    ;(window as unknown as { api: unknown }).api = {
+      shell: { openUrl: openUrlMock },
+      ui: { writeClipboardText: writeClipboardTextMock }
+    }
+    writeClipboardTextMock.mockClear()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  function renderRow(port: WorkspacePort): void {
+    act(() => {
+      root.render(<PortRow port={port} activeWorktreeId="repo-1:feature" />)
+    })
+  }
+
+  function copyButton(): HTMLButtonElement {
+    const button = container.querySelector<HTMLButtonElement>('button[aria-label^="Copy "]')
+    if (!button) {
+      throw new Error('expected Copy button')
+    }
+    return button
+  }
+
+  it('shows and copies the reachable address for a remote wildcard-bound port', () => {
+    renderRow(remoteWildcardPort)
+    expect(container.textContent).toContain('100.64.1.20:5173')
+    expect(container.textContent).not.toContain('localhost:5173')
+    act(() => {
+      copyButton().dispatchEvent(new window.MouseEvent('click', { bubbles: true, detail: 1 }))
+    })
+    expect(writeClipboardTextMock).toHaveBeenCalledWith('100.64.1.20:5173')
+  })
+
+  it('keeps the OS-derived address for a remote loopback-bound port', () => {
+    renderRow({ ...remoteWildcardPort, bindHost: '127.0.0.1', connectHost: '127.0.0.1' })
+    expect(container.textContent).toContain('127.0.0.1:5173')
+    // No address reaches a loopback listener from another machine, so the tooltip must
+    // not advertise a modifier that would silently fall through to the in-app browser.
+    expect(container.textContent).not.toContain('for system browser')
+  })
+
+  it('does not stamp a local row in the merged view with the remote host', () => {
+    // Regression: the popover renders the merged all-hosts scan. Falling back to the
+    // active (remote) workspace's host made a local 0.0.0.0 listener read as the remote
+    // machine's address, pointing at whatever that host runs on the same port.
+    renderRow({
+      ...remoteWildcardPort,
+      id: 'local:all:0.0.0.0:7000',
+      hostScanKey: 'local:all',
+      port: 7000
+    })
+    expect(container.textContent).toContain('localhost:7000')
+    expect(container.textContent).not.toContain('100.64.1.20')
   })
 })

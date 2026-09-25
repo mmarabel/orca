@@ -41,6 +41,11 @@ type WorkspacePortBase = {
    *  Normalized for a consumer on the *execution host*; on a paired runtime `localhost`
    *  names the client, so a client-side surface must not treat it as reachable. */
   connectHost: string
+  /** Scan key of the host that reported this listener. Stamped by the renderer's
+   *  all-hosts merge, which is the only view where rows from different hosts sit side by
+   *  side; a single-host scan leaves it unset because every row belongs to that host.
+   *  Never sent over the wire. */
+  hostScanKey?: string
   port: number
   pid?: number
   processName?: string

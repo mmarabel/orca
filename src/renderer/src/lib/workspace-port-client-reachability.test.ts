@@ -1,10 +1,20 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { PublicKnownRuntimeEnvironment } from '../../../shared/runtime-environments'
 import type { WorkspacePort } from '../../../shared/workspace-ports'
-import {
-  clientReachableAddress,
-  resolveClientReachableUrlForPort
-} from './workspace-port-client-reachable-url'
+
+vi.mock('@/store', () => ({
+  useAppStore: Object.assign(() => undefined, { getState: () => ({}) })
+}))
+
+// Why mocked: the worktree -> execution-host lookup walks the whole store graph. These
+// tests are about which host a *port* resolves to, so the worktree answer is pinned and
+// only the port's own scan key varies.
+vi.mock('@/lib/worktree-runtime-owner', () => ({
+  getExecutionHostIdForWorktree: () => 'local'
+}))
+
+const { resolveClientReachableUrlForPort, resolvePortClientReachability } =
+  await import('./workspace-port-client-reachability')
 
 const PORT: WorkspacePort = {
   kind: 'workspace',
@@ -138,18 +148,89 @@ describe('resolveClientReachableUrlForPort', () => {
   })
 })
 
-describe('clientReachableAddress', () => {
-  it('reduces a reachable URL to the host:port a row displays', () => {
-    expect(clientReachableAddress('http://100.64.1.20:5173')).toBe('100.64.1.20:5173')
-    expect(clientReachableAddress('https://100.64.1.20:5173/app')).toBe('100.64.1.20:5173')
+describe('resolvePortClientReachability', () => {
+  const state = { activeWorktreeId: 'repo-1:feature', runtimeEnvironments: [environment()] }
+
+  it('reduces the reachable URL to the host:port a row displays and copies', () => {
+    const reachability = resolvePortClientReachability(state, {
+      ...PORT,
+      hostScanKey: 'environment:env-1:all'
+    })
+    expect(reachability.reachableUrl).toBe('http://100.64.1.20:5173')
+    expect(reachability.address).toBe('100.64.1.20:5173')
+    expect(reachability.systemBrowserAvailable).toBe(true)
   })
 
-  it('keeps IPv6 hosts bracketed so the row stays copy-pasteable', () => {
-    expect(clientReachableAddress('http://[2001:db8::1]:5173')).toBe('[2001:db8::1]:5173')
+  it('keeps an IPv6 host bracketed so the row stays copy-pasteable', () => {
+    const reachability = resolvePortClientReachability(
+      {
+        ...state,
+        runtimeEnvironments: [
+          environment({
+            endpoints: [
+              {
+                id: 'ws-primary',
+                kind: 'websocket',
+                label: 'Tailscale',
+                endpoint: 'ws://[2001:db8::1]:6768'
+              }
+            ]
+          })
+        ]
+      },
+      { ...PORT, hostScanKey: 'environment:env-1:all' }
+    )
+    expect(reachability.address).toBe('[2001:db8::1]:5173')
   })
 
-  it('returns null for nothing to show, so callers keep the OS-derived address', () => {
-    expect(clientReachableAddress(null)).toBeNull()
-    expect(clientReachableAddress('not a url')).toBeNull()
+  it('resolves a merged row against the host that reported it, not the active workspace', () => {
+    // Regression: the status bar renders the merged all-hosts scan, so a *local*
+    // 0.0.0.0 listener sat next to remote rows. Falling back to the active workspace's
+    // host stamped it with a remote machine's address, naming whatever that host runs on
+    // the same port.
+    const localExternalPort: WorkspacePort = {
+      kind: 'external',
+      id: 'local:all:0.0.0.0:7000',
+      hostScanKey: 'local:all',
+      bindHost: '0.0.0.0',
+      connectHost: 'localhost',
+      port: 7000,
+      protocol: 'http'
+    }
+    const remoteState = {
+      activeWorktreeId: 'repo-1:feature',
+      runtimeEnvironments: [environment()]
+    }
+    expect(resolvePortClientReachability(remoteState, localExternalPort)).toMatchObject({
+      runtimeTarget: { kind: 'local' },
+      reachableUrl: null,
+      address: 'localhost:7000',
+      systemBrowserAvailable: true
+    })
+
+    const remoteExternalPort: WorkspacePort = {
+      ...localExternalPort,
+      id: 'environment:env-1:all:0.0.0.0:7000',
+      hostScanKey: 'environment:env-1:all'
+    }
+    expect(resolvePortClientReachability(remoteState, remoteExternalPort)).toMatchObject({
+      runtimeTarget: { kind: 'environment', environmentId: 'env-1' },
+      address: '100.64.1.20:7000'
+    })
+  })
+
+  it('falls back to the OS-derived address when no reachable URL exists', () => {
+    const loopbackPort: WorkspacePort = {
+      ...PORT,
+      hostScanKey: 'environment:env-1:all',
+      bindHost: '127.0.0.1',
+      connectHost: '127.0.0.1'
+    }
+    expect(resolvePortClientReachability(state, loopbackPort)).toMatchObject({
+      reachableUrl: null,
+      address: '127.0.0.1:5173',
+      // A remote loopback-bound port has no address any browser on this machine can open.
+      systemBrowserAvailable: false
+    })
   })
 })

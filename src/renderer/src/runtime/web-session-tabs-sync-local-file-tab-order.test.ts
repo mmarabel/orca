@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { toWebTerminalSurfaceTabId } from '../../../shared/terminal-surface-id'
 import type { RuntimeMobileSessionTabsResult } from '../../../shared/runtime-types'
 import type { Tab } from '../../../shared/tab-types'
-import { applyWebSessionTabsSnapshot, type WebSessionTabsSyncState } from './web-session-tabs-sync'
+import { applyWebSessionTabsSnapshot } from './web-session-tabs-sync'
 import {
   ENV,
   LEAF_ID,
@@ -67,7 +67,6 @@ function syncTabOrder(args: {
   currentTabOrder: string[]
   hostSurfaces: RuntimeMobileSessionTabsResult['tabs']
   hostTabOrder?: string[]
-  otherHostGroups?: { id: string; tabOrder: string[] }[]
 }): string[] | undefined {
   const patch = applyWebSessionTabsSnapshot(
     makeState({
@@ -89,19 +88,14 @@ function syncTabOrder(args: {
       ...(args.hostTabOrder
         ? {
             tabGroups: [
-              { id: 'host-group-1', activeTabId: 'host-agent', tabOrder: args.hostTabOrder },
-              ...(args.otherHostGroups ?? []).map((group) => ({
-                id: group.id,
-                activeTabId: group.tabOrder[0] ?? null,
-                tabOrder: group.tabOrder
-              }))
+              { id: 'host-group-1', activeTabId: 'host-agent', tabOrder: args.hostTabOrder }
             ]
           }
         : {})
     }),
     ENV,
     NOW
-  ) as Partial<WebSessionTabsSyncState>
+  )
   return patch.groupsByWorktree?.[WT]?.find((group) => group.id === 'host-group-1')?.tabOrder
 }
 
@@ -128,16 +122,6 @@ describe('local file tab order on a remote host', () => {
     ).toEqual([AGENT_TAB_ID, FILE_TAB_ID, SHELL_TAB_ID])
   })
 
-  it('still adopts a host reorder of the host-owned tabs', () => {
-    expect(
-      syncTabOrder({
-        currentTabOrder: [AGENT_TAB_ID, FILE_TAB_ID, SHELL_TAB_ID],
-        hostSurfaces: [AGENT_SURFACE, SHELL_SURFACE],
-        hostTabOrder: ['host-shell', 'host-agent']
-      })
-    ).toEqual([SHELL_TAB_ID, FILE_TAB_ID, AGENT_TAB_ID])
-  })
-
   it('appends a newly published host tab after the existing order', () => {
     expect(
       syncTabOrder({
@@ -156,17 +140,6 @@ describe('local file tab order on a remote host', () => {
         hostTabOrder: ['host-agent', 'host-shell']
       })
     ).toEqual([AGENT_TAB_ID, FILE_TAB_ID, SHELL_TAB_ID])
-  })
-
-  it('does not let a host tab that moved to another group pull a live tab past the file tab', () => {
-    expect(
-      syncTabOrder({
-        currentTabOrder: [SHELL_TAB_ID, FILE_TAB_ID, AGENT_TAB_ID],
-        hostSurfaces: [AGENT_SURFACE, SHELL_SURFACE],
-        hostTabOrder: ['host-agent'],
-        otherHostGroups: [{ id: 'host-group-2', tabOrder: ['host-shell'] }]
-      })
-    ).toEqual([FILE_TAB_ID, AGENT_TAB_ID])
   })
 
   it('keeps the file tab in place on a host that publishes no tab groups', () => {

@@ -57,17 +57,51 @@ describe('OrcaRuntimeService', () => {
     })
     const sourceHandle = runtime.getTerminalHandleForPaneKey(makePaneKey(tabId, sourceLeafId))
 
-    void runtime.splitTerminal(sourceHandle!, {
+    const split = runtime.splitTerminal(sourceHandle!, {
       direction: 'vertical',
       command: `bash -lc 'eval "$ORCA_SETUP_OBSERVED_SCRIPT"'`,
       env: { ORCA_SETUP_OBSERVED_SCRIPT: 'bash /repo/setup-runner.sh' }
     })
 
     await vi.waitFor(() => expect(splitTerminal).toHaveBeenCalledTimes(1))
-    expect(splitTerminal.mock.calls[0]?.[2]).toMatchObject({
+    const splitOpts = splitTerminal.mock.calls[0]?.[2]
+    expect(splitOpts).toMatchObject({
       direction: 'vertical',
       env: { ORCA_SETUP_OBSERVED_SCRIPT: 'bash /repo/setup-runner.sh' }
     })
+
+    // Why publish the split leaf: `splitTerminal` waits up to 10s for it, and an abandoned wait
+    // rejects long after this test ends, failing whichever file the runner is on by then.
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId,
+          worktreeId: TEST_WORKTREE_ID,
+          title: 'shell',
+          activeLeafId: splitOpts?.newLeafId,
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId,
+          worktreeId: TEST_WORKTREE_ID,
+          leafId: splitOpts?.newLeafId,
+          paneRuntimeId: 2,
+          ptyId: 'pty-renderer-split',
+          paneTitle: null
+        },
+        {
+          tabId,
+          worktreeId: TEST_WORKTREE_ID,
+          leafId: sourceLeafId,
+          paneRuntimeId: 1,
+          ptyId: 'pty-renderer-owned',
+          paneTitle: null
+        }
+      ]
+    })
+    await expect(split).resolves.toMatchObject({ leafId: splitOpts?.newLeafId })
   })
 
   it('returns the exact pre-minted leaf for concurrent renderer-backed splits', async () => {

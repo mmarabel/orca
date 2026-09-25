@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "baseline": "0c6aa7f6fcaf5d90f30c9c602aed83d19768c569",
+  "baseline": "80e0bee23b8153f5db195a0d8c1db114f28bd336",
   "scenarios": [
     {
       "id": "b1",
@@ -15134,7 +15134,7 @@
           }
         },
         {
-          "checkpoint": "clicked-by-fallback"
+          "checkpoint": "tap-settled"
         }
       ]
     },

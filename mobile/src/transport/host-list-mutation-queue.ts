@@ -1,22 +1,38 @@
-// Why: every host-list write is a read-modify-write over one AsyncStorage key, so they run one at
-// a time here — two concurrent writers reading the same base would silently drop one's update.
+import * as hostListLoads from './host-list-load-sharing'
+import { readStoredHostProfilesForMutation, writeStoredHostProfiles } from './host-metadata-store'
+import type { StoredHostProfile } from './types'
+
+// Why: serialize host metadata RMW so concurrent writers cannot drop updates.
 let hostListMutation: Promise<void> = Promise.resolve()
 
-/** Settles once every mutation queued so far has finished. */
-export const settled = (): Promise<void> => hostListMutation
+/** Settles once every mutation queued so far has, so a reader never sees a half-written list. */
+export function hostListMutationsSettled(): Promise<void> {
+  return hostListMutation
+}
 
-export function enqueue(operation: () => Promise<void>): Promise<void> {
+export function enqueueHostListMutation(operation: () => Promise<void>): Promise<void> {
   const mutation = hostListMutation.then(operation)
   hostListMutation = mutation.catch(() => {})
   return mutation
 }
 
-/** Queues work whose result no caller awaits, so a slow or failing operation cannot stall them. */
-export function chain(operation: () => Promise<void>): void {
-  hostListMutation = hostListMutation.then(operation).catch(() => {})
+export async function mutateStoredHosts(
+  update: (hosts: StoredHostProfile[]) => StoredHostProfile[] | Promise<StoredHostProfile[]>
+): Promise<void> {
+  return enqueueHostListMutation(async () => {
+    const current = await readStoredHostProfilesForMutation()
+    const next = await update(current)
+    // Why: an update handing back the list it read changed nothing; a per-connect descriptor
+    // read must not rewrite storage and invalidate every shared host-list load.
+    if (next === current) {
+      return
+    }
+    await writeStoredHostProfiles(next)
+    hostListLoads.dropSharedHostListLoad()
+  })
 }
 
-/** Test-only: drain the module mutation chain between cases. */
-export function resetForTests(): void {
+/** Test-only: drain the mutation chain between cases. */
+export function resetHostListMutationQueueForTests(): void {
   hostListMutation = Promise.resolve()
 }

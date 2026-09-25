@@ -101,7 +101,7 @@ describe('mobile endpoint lifecycle host edits', () => {
   it('keeps an edit made while relay resolution was pending', async () => {
     const { lifecycle, settle } = await startWithPendingResolution()
 
-    await updateHostNameAndEndpoint(host.id, { name: 'Renamed', endpoint: EDITED_ENDPOINT })
+    await updateHostNameAndEndpoint(host.id, { personalName: 'Renamed', endpoint: EDITED_ENDPOINT })
     settle(resolved)
     await vi.waitFor(() => expect(openRelayMock).toHaveBeenCalledTimes(2))
 
@@ -113,7 +113,7 @@ describe('mobile endpoint lifecycle host edits', () => {
 
   it('does not persist a resolution that settles after stop', async () => {
     const { logical, lifecycle, settle } = await startWithPendingResolution()
-    await updateHostNameAndEndpoint(host.id, { name: 'Renamed', endpoint: EDITED_ENDPOINT })
+    await updateHostNameAndEndpoint(host.id, { personalName: 'Renamed', endpoint: EDITED_ENDPOINT })
     const writesBeforeSettle = asyncStorageMock.setItem.mock.calls.length
 
     lifecycle.stop()

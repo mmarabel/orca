@@ -1,7 +1,6 @@
 import { Platform } from 'react-native'
 import type {
   DeviceCredentialInstalled,
-  MobileRelayEndpoint,
   PairingGetEndpointsResult
 } from '../../../src/shared/mobile-relay-credential-contract'
 import type { PairingRelay } from '../../../src/shared/mobile-relay-pairing-offer'
@@ -14,7 +13,7 @@ import {
 } from './mobile-relay-credential-bundle'
 import { resolvePairingInviteThroughDirector } from './mobile-relay-invite-director'
 import type { MobileRelayPairingJournal } from './mobile-relay-pairing-journal'
-import { withRelayRouting } from './mobile-relay-routing'
+import { relayHost } from './pairing-relay-host'
 import {
   clearMobileRelayPairingJournal,
   loadMobileRelayPairingJournal,
@@ -25,7 +24,6 @@ import {
   type PairingCandidateClient
 } from './mobile-relay-physical-client'
 import { createRecoveringPairingRelayCandidate } from './pairing-relay-candidate'
-import type { HostProfile } from './types'
 import {
   relayCredentialProvision,
   relayPairingEndpointsRead
@@ -272,14 +270,6 @@ async function publishCommitted(
   // are news for a row that already exists.
   await dependencies.saveRecoveredPairingHost(relayHost(reconciledJournal, endpoints.relay))
   await dependencies.clearJournal(journal.metadata.journalId)
-}
-
-function relayHost(journal: MobileRelayPairingJournal, relay: MobileRelayEndpoint): HostProfile {
-  return {
-    ...journal.metadata.host,
-    deviceToken: journal.secrets.deviceToken,
-    ...withRelayRouting(relay)
-  }
 }
 
 function pairingRelay(journal: MobileRelayPairingJournal): PairingRelay {

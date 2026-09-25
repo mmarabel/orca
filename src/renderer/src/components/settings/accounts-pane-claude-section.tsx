@@ -154,7 +154,7 @@ export function renderClaudeAccountsSection(model: AccountsPaneSectionModel): Re
                   </Badge>
                 ) : null}
                 {systemClaudeNeedsSignIn ? (
-                  <Badge variant="destructive" className="h-4">
+                  <Badge variant="destructive" size="compact">
                     {translate('auto.components.settings.AccountsPane.93c47b333a', 'Needs sign-in')}
                   </Badge>
                 ) : null}

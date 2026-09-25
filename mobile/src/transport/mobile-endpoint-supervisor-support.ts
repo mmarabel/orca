@@ -86,13 +86,16 @@ function withHostRelayRouting(host: HostProfile, relay: MobileRelayEndpoint): Ho
   return { ...host, ...withRelayRouting(relay) }
 }
 
+// Why: the only production caller is the direct->relay upgrade, whose save leaves the stored
+// row alone; naming the parameter for that contract keeps a future caller from passing a
+// full-profile writer and reintroducing the stale-snapshot overwrite.
 export async function persistRelayHost(
   host: HostProfile,
   relay: MobileRelayEndpoint,
-  saveHost: (host: HostProfile) => Promise<void>
+  saveRelayUpgrade: (host: HostProfile) => Promise<void>
 ): Promise<HostProfile> {
   const updated = withHostRelayRouting(host, relay)
-  await saveHost(updated)
+  await saveRelayUpgrade(updated)
   return updated
 }
 
@@ -102,7 +105,7 @@ export async function persistSupervisedRelay(
   host: HostProfile,
   relay: MobileRelayEndpoint,
   dependencies: Pick<MobileEndpointSupervisorDependencies, 'saveRelayRouting'>,
-  stopped = false
+  stopped: boolean
 ): Promise<HostProfile> {
   if (stopped) {
     return host

@@ -36,7 +36,7 @@ type Dependencies = {
   writeJournal: typeof writeMobileRelayDirectUpgradeJournal
   clearJournal: typeof deleteMobileRelayDirectUpgradeJournal
   writeBundle: typeof writeMobileRelayCredentialBundle
-  saveHost: typeof saveExistingHostRelayUpgrade
+  saveRelayUpgrade: typeof saveExistingHostRelayUpgrade
   deleteBundle: typeof deleteMobileRelayCredentialBundle
   randomBytes: (length: number) => Uint8Array
 }
@@ -54,7 +54,7 @@ export async function upgradeDirectMobileRelay(args: {
     writeJournal: writeMobileRelayDirectUpgradeJournal,
     clearJournal: deleteMobileRelayDirectUpgradeJournal,
     writeBundle: writeMobileRelayCredentialBundle,
-    saveHost: saveExistingHostRelayUpgrade,
+    saveRelayUpgrade: saveExistingHostRelayUpgrade,
     deleteBundle: deleteMobileRelayCredentialBundle,
     randomBytes: ExpoCrypto.getRandomBytes,
     ...args.dependencies
@@ -122,7 +122,7 @@ async function publishCommitted(
   await dependencies.writeBundle(bundle)
   let updatedHost: HostProfile
   try {
-    updatedHost = await persistRelayHost(host, endpoints.relay, dependencies.saveHost)
+    updatedHost = await persistRelayHost(host, endpoints.relay, dependencies.saveRelayUpgrade)
   } catch (error) {
     if (error instanceof MobileRelayUpgradeHostRemovedError) {
       await dependencies.deleteBundle(host.id)

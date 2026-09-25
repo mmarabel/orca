@@ -288,6 +288,27 @@ describe('host edits with a relay overlay', () => {
     expect(host?.endpoints?.map(({ url }) => url)).not.toContain(OLD_ENDPOINT)
   })
 
+  // Pins the disclosed asymmetry (#22790): the inline pairing commit would take the offer's
+  // address here, but a replay cannot date its snapshot against the row, so the row wins.
+  it('leaves a re-pair replay from taking the offer address over the stored one', async () => {
+    const REPAIRED_ENDPOINT = 'ws://10.0.0.7:6768'
+
+    await saveRecoveredPairingHost({
+      id: 'host-1',
+      name: 'Rescanned desk',
+      endpoint: REPAIRED_ENDPOINT,
+      publicKeyB64: 'pk',
+      deviceToken: 'device-token',
+      lastConnected: 5,
+      ...withRelayRouting(relay)
+    })
+
+    const [host] = await loadHosts()
+    // The relay routing the replay actually learned lands; the address it only re-asserted does not.
+    expect(host).toMatchObject({ name: 'Desk', endpoint: OLD_ENDPOINT, relay })
+    expect(host?.endpoints?.map(({ url }) => url)).not.toContain(REPAIRED_ENDPOINT)
+  })
+
   it('creates the row when a pairing replay finds it was never written', async () => {
     storage.set('orca:hosts', '[]')
     storage.set(OVERLAY_KEY, '[]')

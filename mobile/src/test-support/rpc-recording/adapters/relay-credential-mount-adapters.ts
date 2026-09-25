@@ -106,7 +106,7 @@ export function relayCredentialMountAdapters(
               writeBundle: async (written: { current: { version: number } }) => {
                 effect('bundle-written', { version: written.current.version })
               },
-              saveHost: async () => {
+              saveRelayUpgrade: async () => {
                 effect('host-saved', HOST_ID)
               },
               deleteBundle: async () => {

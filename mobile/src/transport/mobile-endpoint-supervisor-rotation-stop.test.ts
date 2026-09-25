@@ -53,6 +53,6 @@ describe('mobile endpoint supervisor credential rotation after stop', () => {
 
     // The rotated bundle itself stays durable; only the stale relay routing write is skipped.
     expect(writeBundle).toHaveBeenCalledTimes(2)
-    expect(deps.saveRelayEndpoint).not.toHaveBeenCalled()
+    expect(deps.saveRelayRouting).not.toHaveBeenCalled()
   })
 })

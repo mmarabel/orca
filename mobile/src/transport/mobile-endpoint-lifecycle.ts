@@ -101,7 +101,7 @@ function createSupervisor(
     resolveRelay: resolveMobileRelayEndpoint,
     readBundle: readMobileRelayCredentialBundle,
     writeBundle: writeMobileRelayCredentialBundle,
-    saveRelayEndpoint: saveMobileRelayHostRouting,
+    saveRelayRouting: saveMobileRelayHostRouting,
     onLog,
     now: Date.now,
     randomBytes: ExpoCrypto.getRandomBytes,

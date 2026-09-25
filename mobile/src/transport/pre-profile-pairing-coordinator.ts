@@ -33,6 +33,7 @@ import { attributePairingLogPath } from './pairing-log-path'
 import { resolvePairingInviteThroughDirector } from './mobile-relay-invite-director'
 import { createRecoveringPairingRelayCandidate } from './pairing-relay-candidate'
 import { createPairingRelayLogger } from './pairing-relay-log'
+import { withRelayRouting } from './mobile-relay-routing'
 import { redactSocketEndpoint } from './socket-event-debug'
 
 export type PreProfilePairingAttempt = {
@@ -266,24 +267,11 @@ function baseHost(
 }
 
 function relayHost(journal: MobileRelayPairingJournal, relay: MobileRelayEndpoint): HostProfile {
-  const host = journal.metadata.host
   return {
-    ...host,
+    ...journal.metadata.host,
     deviceToken: journal.secrets.deviceToken,
-    endpoints: [
-      { id: 'direct-primary', kind: 'lan', url: host.endpoint },
-      { id: 'relay-primary', kind: 'relay', url: relayWebSocketUrl(relay) }
-    ],
-    relayHostId: relay.relayHostId,
-    relay
+    ...withRelayRouting(relay)
   }
-}
-
-function relayWebSocketUrl(relay: MobileRelayEndpoint): string {
-  const url = new URL(relay.cellUrl)
-  url.protocol = 'wss:'
-  url.pathname = `/v1/connect/${encodeURIComponent(relay.relayHostId)}`
-  return url.toString()
 }
 
 function assertCommittedInstall(

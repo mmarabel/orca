@@ -1,4 +1,5 @@
 import type { MobileRelayHostOverlay } from './mobile-relay-host-overlay'
+import { directAccessEndpoints } from './mobile-relay-routing'
 import type { HostListSnapshot } from './host-list-load-sharing'
 import type { HostCatalogEntry, StoredHostProfile } from './types'
 
@@ -36,10 +37,13 @@ export async function joinHostCatalogCredentials(args: {
       ...stored,
       ...(overlay
         ? {
-            // Why: the stored row owns the paired address; an edit must not leave the old one probed.
-            endpoints: overlay.endpoints.map((endpoint) =>
-              endpoint.id === 'direct-primary' ? { ...endpoint, url: stored.endpoint } : endpoint
-            ),
+            // Why: the stored row owns the paired address, so the direct entries are derived
+            // here and any direct copy an older build wrote into the overlay is discarded —
+            // otherwise an edited host keeps probing its pre-edit address.
+            endpoints: [
+              ...directAccessEndpoints(stored.endpoint),
+              ...overlay.endpoints.filter(({ kind }) => kind === 'relay')
+            ],
             relayHostId: overlay.relayHostId,
             relay: overlay.relay
           }

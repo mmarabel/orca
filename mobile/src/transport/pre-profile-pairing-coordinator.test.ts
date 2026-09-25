@@ -280,8 +280,9 @@ describe('pre-profile pairing coordinator', () => {
         id: `host-${now}`,
         endpoint: directOffer.endpoint,
         relayHostId: relayOffer.relay!.relayHostId,
+        // Relay routing only: the direct address lives in the stored row, and the catalog
+        // derives its endpoint entry from there so an edit cannot leave a stale copy behind.
         endpoints: [
-          { id: 'direct-primary', kind: 'lan', url: directOffer.endpoint },
           {
             id: 'relay-primary',
             kind: 'relay',

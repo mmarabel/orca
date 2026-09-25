@@ -5,7 +5,7 @@ import type {
   PairingGetEndpointsResult
 } from '../../../src/shared/mobile-relay-credential-contract'
 import type { PairingRelay } from '../../../src/shared/mobile-relay-pairing-offer'
-import { loadHosts, saveHost } from './host-store'
+import { loadHosts, saveRecoveredPairingHost } from './host-store'
 import {
   promotePairingJournalCredential,
   readMobileRelayCredentialBundle,
@@ -14,6 +14,7 @@ import {
 } from './mobile-relay-credential-bundle'
 import { resolvePairingInviteThroughDirector } from './mobile-relay-invite-director'
 import type { MobileRelayPairingJournal } from './mobile-relay-pairing-journal'
+import { withRelayRouting } from './mobile-relay-routing'
 import {
   clearMobileRelayPairingJournal,
   loadMobileRelayPairingJournal,
@@ -39,7 +40,7 @@ type RecoveryDependencies = {
   readCredentialBundle: typeof readMobileRelayCredentialBundle
   writeCredentialBundle: typeof writeMobileRelayCredentialBundle
   loadHosts: typeof loadHosts
-  saveHost: typeof saveHost
+  saveRecoveredPairingHost: typeof saveRecoveredPairingHost
   connectRelay: typeof connectMobileRelayForPairing
   resolveInviteDirector: typeof resolvePairingInviteThroughDirector
   now: () => number
@@ -53,7 +54,7 @@ const defaultDependencies: RecoveryDependencies = {
   readCredentialBundle: readMobileRelayCredentialBundle,
   writeCredentialBundle: writeMobileRelayCredentialBundle,
   loadHosts,
-  saveHost,
+  saveRecoveredPairingHost,
   connectRelay: connectMobileRelayForPairing,
   resolveInviteDirector: resolvePairingInviteThroughDirector,
   now: Date.now,
@@ -266,24 +267,18 @@ async function publishCommitted(
   await dependencies.writeCredentialBundle(
     promotePairingJournalCredential({ journal: reconciledJournal, installed })
   )
-  await dependencies.saveHost(relayHost(reconciledJournal, endpoints.relay))
+  // Why: the replayed journal carries a pairing-time host snapshot, so a name or address the
+  // user edited between capture and replay must survive; only the credential and relay routing
+  // are news for a row that already exists.
+  await dependencies.saveRecoveredPairingHost(relayHost(reconciledJournal, endpoints.relay))
   await dependencies.clearJournal(journal.metadata.journalId)
 }
 
 function relayHost(journal: MobileRelayPairingJournal, relay: MobileRelayEndpoint): HostProfile {
-  const host = journal.metadata.host
-  const url = new URL(relay.cellUrl)
-  url.protocol = 'wss:'
-  url.pathname = `/v1/connect/${encodeURIComponent(relay.relayHostId)}`
   return {
-    ...host,
+    ...journal.metadata.host,
     deviceToken: journal.secrets.deviceToken,
-    endpoints: [
-      { id: 'direct-primary', kind: 'lan', url: host.endpoint },
-      { id: 'relay-primary', kind: 'relay', url: url.toString() }
-    ],
-    relayHostId: relay.relayHostId,
-    relay
+    ...withRelayRouting(relay)
   }
 }
 

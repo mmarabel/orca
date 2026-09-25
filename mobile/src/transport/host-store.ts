@@ -24,6 +24,7 @@ import {
   resetHostCredentialWriteRevisionsForTests
 } from './host-credential-write-revision'
 import { createUnpairedHostCredentialDeletion } from './unpaired-host-credential-deletion'
+import * as hostListMutations from './host-list-mutation-queue'
 import {
   loadStoredHostProfiles,
   readStoredHostProfilesForMutation,
@@ -40,8 +41,6 @@ async function commitDeviceToken(hostId: string, token: string): Promise<void> {
 
 // Why: Keychain reads are slow (50-200ms) and loadHosts() runs on every screen mount; cache per-hostId in memory, invalidate on save/remove.
 const tokenCache = new Map<string, string>()
-// Why: serialize host metadata RMW so concurrent writers cannot drop updates.
-let hostListMutation: Promise<void> = Promise.resolve()
 
 export const loadHosts = async (): Promise<HostProfile[]> => (await loadHostListSnapshot()).profiles
 export const loadHostCatalog = async (): Promise<HostCatalogEntry[]> =>
@@ -49,7 +48,7 @@ export const loadHostCatalog = async (): Promise<HostCatalogEntry[]> =>
 
 async function loadHostListSnapshot(): Promise<hostListLoads.HostListSnapshot> {
   // Why: writers hold the mutation chain across their full RMW; wait so a load doesn't race a half-written list.
-  await hostListMutation
+  await hostListMutations.settled()
   // Why: deduplicate concurrent loadHosts() calls so simultaneously mounting screens share one Keychain read pass.
   return hostListLoads.shareHostListLoad(doLoadHostListSnapshot)
 }
@@ -85,7 +84,7 @@ export async function resolvePairingHostIdentity(
   newHostId: string
 ): Promise<{ id: string; name: string }> {
   // Why: one durable read both preserves an existing identity and names a new host, avoiding duplicate cards.
-  await hostListMutation
+  await hostListMutations.settled()
   const hosts = await readStoredHostProfilesForMutation()
   const match = hosts.find((host) => host.publicKeyB64 === publicKeyB64)
   return match
@@ -94,7 +93,7 @@ export async function resolvePairingHostIdentity(
 }
 
 const deleteUnpairedHostCredentials = createUnpairedHostCredentialDeletion({
-  waitForHostMutations: () => hostListMutation,
+  waitForHostMutations: hostListMutations.settled,
   hasStoredHost: async (hostId) =>
     (await readStoredHostProfilesForMutation()).some(({ id }) => id === hostId),
   onDeleted: (hostId) => {
@@ -111,36 +110,31 @@ function scheduleUnpairedHostCredentialCleanup(hostId: string): Promise<void> {
 }
 
 function cancelCleanupForStoredHost(hostId: string): void {
-  const cancellation = hostListMutation.then(async () => {
+  hostListMutations.chain(async () => {
     const hosts = await readStoredHostProfilesForMutation()
     if (hosts.some(({ id }) => id === hostId)) {
       // Register before later removals enqueue their intent, without blocking host loads on cleanup storage.
       void cancelPendingHostCredentialCleanup(hostId).catch(() => undefined)
     }
   })
-  hostListMutation = cancellation.catch(() => {})
 }
 
 async function cancelCleanupForDurablyStoredHosts(hostIds: Iterable<string>): Promise<void> {
   const targets = [...hostIds]
-  return enqueueHostListMutation(async () => {
-    const storedIds = new Set((await readStoredHostProfilesForMutation()).map(({ id }) => id))
-    await Promise.all(
-      targets
-        .filter((hostId) => storedIds.has(hostId))
-        .map((hostId) => cancelPendingHostCredentialCleanup(hostId).catch(() => undefined))
-    )
-  }).catch(() => undefined)
-}
-
-function enqueueHostListMutation(operation: () => Promise<void>): Promise<void> {
-  const mutation = hostListMutation.then(operation)
-  hostListMutation = mutation.catch(() => {})
-  return mutation
+  return hostListMutations
+    .enqueue(async () => {
+      const storedIds = new Set((await readStoredHostProfilesForMutation()).map(({ id }) => id))
+      await Promise.all(
+        targets
+          .filter((hostId) => storedIds.has(hostId))
+          .map((hostId) => cancelPendingHostCredentialCleanup(hostId).catch(() => undefined))
+      )
+    })
+    .catch(() => undefined)
 }
 
 function removeOrphanOverlayIfUnpaired(hostId: string): Promise<void> {
-  return enqueueHostListMutation(async () => {
+  return hostListMutations.enqueue(async () => {
     const hosts = await readStoredHostProfilesForMutation()
     if (!hosts.some(({ id }) => id === hostId)) {
       await removeMobileRelayHostOverlay(hostId)
@@ -151,7 +145,7 @@ function removeOrphanOverlayIfUnpaired(hostId: string): Promise<void> {
 async function mutateStoredHosts(
   update: (hosts: StoredHostProfile[]) => StoredHostProfile[] | Promise<StoredHostProfile[]>
 ): Promise<void> {
-  return enqueueHostListMutation(async () => {
+  return hostListMutations.enqueue(async () => {
     const current = await readStoredHostProfilesForMutation()
     const next = await update(current)
     await writeStoredHostProfiles(next)
@@ -161,12 +155,30 @@ async function mutateStoredHosts(
 
 export class MobileRelayUpgradeHostRemovedError extends Error {}
 
-export const saveHost = (host: HostProfile): Promise<void> => persistHost(host, false)
+/**
+ * The stored-row policy each entry point needs.
+ *
+ * The row holds only {id, name, endpoint, publicKeyB64, lastConnected} — no relay fields — so a
+ * relay-carrying save learns nothing it can store and must not replace it from a snapshot that
+ * may predate a user edit. Those saves still publish the credential and the relay overlay.
+ * They differ only on a row that is not there: an upgrade must refuse (the user removed the
+ * host mid-flight) while a pairing recovery must create it (the pairing never landed).
+ *
+ * - `create-or-update`: insert when missing, replace when present.
+ * - `relay-upgrade`: throw when missing, leave the row untouched when present.
+ * - `pairing-recovery`: insert when missing, leave the row untouched when present.
+ */
+type HostPersistMode = 'create-or-update' | 'relay-upgrade' | 'pairing-recovery'
+
+export const saveHost = (host: HostProfile): Promise<void> => persistHost(host, 'create-or-update')
 
 export const saveExistingHostRelayUpgrade = (host: HostProfile): Promise<void> =>
-  persistHost(host, true)
+  persistHost(host, 'relay-upgrade')
 
-async function persistHost(host: HostProfile, requireExisting: boolean): Promise<void> {
+export const saveRecoveredPairingHost = (host: HostProfile): Promise<void> =>
+  persistHost(host, 'pairing-recovery')
+
+async function persistHost(host: HostProfile, mode: HostPersistMode): Promise<void> {
   const validated = HostProfileSchema.parse(host)
   const stored = toStoredHostProfile(validated)
   const duplicateHostIds = new Set<string>()
@@ -187,9 +199,10 @@ async function persistHost(host: HostProfile, requireExisting: boolean): Promise
         // Why: an authoritative save is the safe point to collapse pre-existing duplicate rows to the preserved host id.
         next = hosts
           .filter(({ id }) => !duplicateHostIds.has(id))
-          // Why: a relay upgrade changes no row field, and its snapshot may predate a name/address edit.
-          .map((candidate) => (candidate.id === stored.id && !requireExisting ? stored : candidate))
-      } else if (requireExisting) {
+          .map((candidate) =>
+            candidate.id === stored.id && mode === 'create-or-update' ? stored : candidate
+          )
+      } else if (mode === 'relay-upgrade') {
         // Why: an in-flight relay upgrade must not resurrect a host the user removed.
         throw new MobileRelayUpgradeHostRemovedError('mobile relay upgrade host was removed')
       } else {
@@ -336,7 +349,7 @@ export async function updateLastConnected(hostId: string): Promise<void> {
 
 /** Test-only: drain module mutation chain between cases. */
 export function resetHostStoreForTests(): void {
-  hostListMutation = Promise.resolve()
+  hostListMutations.resetForTests()
   tokenCache.clear()
   resetHostCredentialWriteRevisionsForTests()
   hostListLoads.dropSharedHostListLoad()

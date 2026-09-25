@@ -102,7 +102,7 @@ function dependencies(args: {
     readCredentialBundle: vi.fn(async () => args.bundle ?? null),
     writeCredentialBundle: vi.fn(async () => {}),
     loadHosts: vi.fn(async () => []),
-    saveHost: vi.fn(async () => {}),
+    saveRecoveredPairingHost: vi.fn(async () => {}),
     connectRelay: args.connectRelay,
     resolveInviteDirector: vi.fn(async () => {
       throw new Error('director not needed')
@@ -139,7 +139,7 @@ describe('mobile relay pairing recovery', () => {
       })
     )
     expect(deps.writeCredentialBundle).toHaveBeenCalledOnce()
-    expect(deps.saveHost).toHaveBeenCalledOnce()
+    expect(deps.saveRecoveredPairingHost).toHaveBeenCalledOnce()
     expect(deps.clearJournal).toHaveBeenCalledOnce()
   })
 

@@ -6,7 +6,7 @@ import type { StableLogicalRpcClient } from './stable-logical-rpc-client'
 import type { HostProfile } from './types'
 import type { MobileEndpointSupervisorDependencies } from './mobile-endpoint-supervisor-contract'
 import type { MobileRelayEndpoint } from '../../../src/shared/mobile-relay-credential-contract'
-import { withRelayRouting } from './mobile-relay-host-overlay'
+import { withRelayRouting } from './mobile-relay-routing'
 
 // Why: a suspect session that survived a failed replacement dial must come down,
 // else the armed unforced retry dead-ends on needsRecovery seeing stale 'connected'.
@@ -83,8 +83,7 @@ export function isDirectorResolutionFailure(error: Error): boolean {
 }
 
 function withHostRelayRouting(host: HostProfile, relay: MobileRelayEndpoint): HostProfile {
-  const endpoints = host.endpoints ?? [{ id: 'direct-primary', kind: 'lan', url: host.endpoint }]
-  return { ...host, ...withRelayRouting(endpoints, relay) }
+  return { ...host, ...withRelayRouting(relay) }
 }
 
 export async function persistRelayHost(
@@ -102,13 +101,13 @@ export async function persistRelayHost(
 export async function persistSupervisedRelay(
   host: HostProfile,
   relay: MobileRelayEndpoint,
-  dependencies: Pick<MobileEndpointSupervisorDependencies, 'saveRelayEndpoint'>,
+  dependencies: Pick<MobileEndpointSupervisorDependencies, 'saveRelayRouting'>,
   stopped = false
 ): Promise<HostProfile> {
   if (stopped) {
     return host
   }
-  await dependencies.saveRelayEndpoint(host.id, relay)
+  await dependencies.saveRelayRouting(host.id, relay)
   return withHostRelayRouting(host, relay)
 }
 

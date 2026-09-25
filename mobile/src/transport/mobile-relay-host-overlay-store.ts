@@ -1,9 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import {
   MobileRelayHostOverlaySchema,
-  withRelayRouting,
   type MobileRelayHostOverlay
 } from './mobile-relay-host-overlay'
+import { withRelayRouting } from './mobile-relay-routing'
 import { dropSharedHostListLoad } from './host-list-load-sharing'
 import type { MobileRelayEndpoint } from '../../../src/shared/mobile-relay-credential-contract'
 
@@ -93,7 +93,9 @@ export async function saveMobileRelayHostOverlay(overlay: MobileRelayHostOverlay
 }
 
 // Why: supervisors persist relay moves from a host snapshot; merging only relay routing onto
-// the stored overlay keeps a concurrent name/endpoint edit, and never recreates a removed host.
+// the stored overlay keeps a concurrent name/endpoint edit. Routing is never created here,
+// because host.relay can only have come from an overlay — a missing overlay means the routing
+// was deliberately dropped (host removal, or a direct-only re-pair) and must stay dropped.
 export async function saveMobileRelayHostRouting(
   hostId: string,
   relay: MobileRelayEndpoint
@@ -105,7 +107,7 @@ export async function saveMobileRelayHostRouting(
     }
     const updated = MobileRelayHostOverlaySchema.parse({
       ...current,
-      ...withRelayRouting(current.endpoints, relay)
+      ...withRelayRouting(relay)
     })
     return overlays.map((overlay) => (overlay === current ? updated : overlay))
   })

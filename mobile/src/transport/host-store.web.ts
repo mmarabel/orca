@@ -24,9 +24,13 @@ export const loadHostCatalog = (): Promise<HostCatalogEntry[]> =>
     pageHosts().map((profile) => ({ ...profile, credentialStatus: 'ready' as const, profile }))
   )
 
+/** Kept in sync with the native sibling so a shared caller's `instanceof` check is never `undefined`. */
+export class MobileRelayUpgradeHostRemovedError extends Error {}
+
 /** Pairing happened natively before this document existed, and the page never re-does it. */
 export const saveHost = (_host: HostProfile): Promise<void> => Promise.resolve()
 export const saveExistingHostRelayUpgrade = (_host: HostProfile): Promise<void> => Promise.resolve()
+export const saveRecoveredPairingHost = (_host: HostProfile): Promise<void> => Promise.resolve()
 export const removeHost = (_hostId: string): Promise<void> => Promise.resolve()
 
 /** A native write the page drops: recency orders the app's host list, which the page does not show. */

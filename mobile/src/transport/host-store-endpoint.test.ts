@@ -3,11 +3,13 @@ import * as SecureStore from 'expo-secure-store'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   loadHosts,
+  MobileRelayUpgradeHostRemovedError,
   resetHostStoreForTests,
   saveExistingHostRelayUpgrade,
+  saveRecoveredPairingHost,
   updateHostNameAndEndpoint
 } from './host-store'
-import { withRelayRouting } from './mobile-relay-host-overlay'
+import { withRelayRouting } from './mobile-relay-routing'
 import {
   resetMobileRelayHostOverlayStoreForTests,
   saveMobileRelayHostRouting
@@ -189,20 +191,104 @@ describe('host edits with a relay overlay', () => {
     await updateHostNameAndEndpoint('host-1', { name: 'Renamed', endpoint: NEW_ENDPOINT })
 
     // Mirrors the direct upgrade's publish: the pre-edit snapshot plus relay routing.
-    const direct = [{ id: 'direct-primary', kind: 'lan' as const, url: snapshot.endpoint }]
-    await saveExistingHostRelayUpgrade({ ...snapshot, ...withRelayRouting(direct, relay) })
+    await saveExistingHostRelayUpgrade({ ...snapshot, ...withRelayRouting(relay) })
 
     const [host] = await loadHosts()
     expect(host).toMatchObject({ name: 'Renamed', endpoint: NEW_ENDPOINT, relay })
     expect(host?.endpoints?.map(({ url }) => url)).not.toContain(OLD_ENDPOINT)
   })
 
-  it('does not recreate relay routing for a removed host', async () => {
+  it('does not create relay routing for a host with no overlay', async () => {
     storage.set('orca:hosts', '[]')
     storage.set(OVERLAY_KEY, '[]')
 
     await saveMobileRelayHostRouting('host-1', relay)
 
     expect(AsyncStorage.setItem).not.toHaveBeenCalled()
+  })
+
+  it('drops the direct URL an older build left in the overlay when relay routing is saved', async () => {
+    await saveMobileRelayHostRouting('host-1', relay)
+
+    const [overlay] = JSON.parse(storage.get(OVERLAY_KEY) ?? '[]')
+    expect(overlay.endpoints).toEqual([
+      {
+        id: 'relay-primary',
+        kind: 'relay',
+        url: 'wss://relay-c1.onorca.dev/v1/connect/AbCdEf0123_-xyZ9'
+      }
+    ])
+  })
+
+  it('leaves every stored row field untouched during a relay upgrade', async () => {
+    await updateHostNameAndEndpoint('host-1', { name: 'Renamed', endpoint: NEW_ENDPOINT })
+
+    await saveExistingHostRelayUpgrade({
+      id: 'host-1',
+      name: 'Host 1',
+      endpoint: OLD_ENDPOINT,
+      publicKeyB64: 'stale-pk',
+      deviceToken: 'device-token',
+      lastConnected: 1,
+      ...withRelayRouting(relay)
+    })
+
+    const stored = JSON.parse(storage.get('orca:hosts') ?? '[]')
+    expect(stored).toMatchObject([
+      { id: 'host-1', name: 'Renamed', endpoint: NEW_ENDPOINT, publicKeyB64: 'pk' }
+    ])
+  })
+
+  it('refuses a relay upgrade for a host the user removed', async () => {
+    storage.set('orca:hosts', '[]')
+
+    await expect(
+      saveExistingHostRelayUpgrade({
+        id: 'host-1',
+        name: 'Desk',
+        endpoint: OLD_ENDPOINT,
+        publicKeyB64: 'pk',
+        deviceToken: 'device-token',
+        lastConnected: 1,
+        ...withRelayRouting(relay)
+      })
+    ).rejects.toBeInstanceOf(MobileRelayUpgradeHostRemovedError)
+  })
+
+  it('keeps an edit made between a pairing journal capture and its replay', async () => {
+    // The journal carries the host exactly as it looked when pairing started.
+    const captured = {
+      id: 'host-1',
+      name: 'Host 1',
+      endpoint: OLD_ENDPOINT,
+      publicKeyB64: 'pk',
+      deviceToken: 'device-token',
+      lastConnected: 1
+    }
+    await updateHostNameAndEndpoint('host-1', { name: 'Tailnet desk', endpoint: NEW_ENDPOINT })
+
+    await saveRecoveredPairingHost({ ...captured, ...withRelayRouting(relay) })
+
+    const [host] = await loadHosts()
+    expect(host).toMatchObject({ name: 'Tailnet desk', endpoint: NEW_ENDPOINT, relay })
+    expect(host?.endpoints?.map(({ url }) => url)).not.toContain(OLD_ENDPOINT)
+  })
+
+  it('creates the row when a pairing replay finds it was never written', async () => {
+    storage.set('orca:hosts', '[]')
+    storage.set(OVERLAY_KEY, '[]')
+
+    await saveRecoveredPairingHost({
+      id: 'host-1',
+      name: 'Host 1',
+      endpoint: OLD_ENDPOINT,
+      publicKeyB64: 'pk',
+      deviceToken: 'device-token',
+      lastConnected: 1,
+      ...withRelayRouting(relay)
+    })
+
+    const [host] = await loadHosts()
+    expect(host).toMatchObject({ id: 'host-1', name: 'Host 1', endpoint: OLD_ENDPOINT, relay })
   })
 })

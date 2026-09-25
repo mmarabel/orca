@@ -19,7 +19,7 @@ export type MobileEndpointSupervisorDependencies = {
   readBundle: (hostId: string) => Promise<MobileRelayCredentialBundle | null>
   writeBundle: (bundle: MobileRelayCredentialBundle) => Promise<void>
   // Merges relay routing onto the current stored host; never writes a whole snapshot.
-  saveRelayEndpoint: (hostId: string, relay: MobileRelayEndpoint) => Promise<void>
+  saveRelayRouting: (hostId: string, relay: MobileRelayEndpoint) => Promise<void>
   now: () => number
   randomBytes: (length: number) => Uint8Array
   setTimer: ScheduleTimer

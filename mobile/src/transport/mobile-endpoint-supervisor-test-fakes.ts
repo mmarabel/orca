@@ -215,7 +215,7 @@ export function dependencies(
     resolveRelay: vi.fn(async ({ relay }) => relay),
     readBundle: vi.fn(async () => bundle),
     writeBundle: vi.fn(async () => {}),
-    saveRelayEndpoint: vi.fn(async () => {}),
+    saveRelayRouting: vi.fn(async () => {}),
     now: Date.now,
     randomBytes: (length) => new Uint8Array(length).fill(1),
     setTimer: defaultScheduleTimer,

@@ -20,7 +20,7 @@ const REPRESENTATIVE_CWD_LINE_LIMIT = 200
 const REPRESENTATIVE_FILE_LIMIT = 3
 const TRANSCRIPT_EXTENSIONS = new Set(['.jsonl'])
 
-// Cache the existing Claude bucket probe; Pi verifies each transcript because cwd encodings collide.
+// Both encodings are lossy; retain Claude’s existing cache and verify each Pi transcript.
 const PROJECT_DIR_CWD_CACHE_MAX = 2048
 const projectDirCwdCache = new Map<string, string>()
 

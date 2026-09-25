@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { WorkspacePort } from '../../../shared/workspace-ports'
-import { getPortOpenBrowserTooltipLabel } from './workspace-port-actions'
-import { clientReachableBrowserUrlForPort, isWildcardBindHost } from './workspace-port-urls'
+import { isWildcardBindHost, type WorkspacePort } from '../../../shared/workspace-ports'
+import { clientReachableBrowserUrlForPort } from './workspace-port-urls'
 
 const TAILNET_ENDPOINT = 'ws://100.64.1.20:6768'
 
@@ -27,10 +26,13 @@ function workspacePort(overrides: Partial<WorkspaceKindPort> = {}): WorkspaceKin
 }
 
 describe('isWildcardBindHost', () => {
-  it('accepts every wildcard the scanners report', () => {
+  it('accepts every wildcard the scanners report, however it is written', () => {
     expect(isWildcardBindHost('0.0.0.0')).toBe(true)
     expect(isWildcardBindHost('::')).toBe(true)
     expect(isWildcardBindHost('*')).toBe(true)
+    // Normalization inherited from the main-process predicate this one replaced.
+    expect(isWildcardBindHost('[::]')).toBe(true)
+    expect(isWildcardBindHost(' 0.0.0.0 ')).toBe(true)
   })
 
   it('rejects loopback and concrete binds', () => {
@@ -68,13 +70,38 @@ describe('clientReachableBrowserUrlForPort', () => {
     expect(clientReachableBrowserUrlForPort(workspacePort(), 'not a url')).toBeNull()
   })
 
-  it('keeps the scheme and path the dev server advertised, replacing only the host', () => {
+  it('keeps the scheme the dev server advertised, replacing only its loopback host', () => {
+    // advertisedUrl is origin-only by construction (AdvertisedUrl.origin), so the result
+    // is an origin too — no trailing-slash artifact from URL.toString().
     expect(
       clientReachableBrowserUrlForPort(
-        workspacePort({ advertisedUrl: 'https://localhost:5173/app' }),
+        workspacePort({ advertisedUrl: 'https://localhost:5173' }),
         TAILNET_ENDPOINT
       )
-    ).toBe('https://100.64.1.20:5173/app')
+    ).toBe('https://100.64.1.20:5173')
+  })
+
+  it('leaves an advertised DNS origin alone, because an IP breaks TLS and Host routing', () => {
+    // `local.example.com` is the name the certificate is issued for and the name any
+    // vhost or reverse proxy keys on. Substituting 100.64.1.20 is strictly worse whenever
+    // the name resolves, and a coin flip when it does not.
+    expect(
+      clientReachableBrowserUrlForPort(
+        workspacePort({ advertisedUrl: 'https://local.example.com:3001', port: 3001 }),
+        TAILNET_ENDPOINT
+      )
+    ).toBe('https://local.example.com:3001')
+  })
+
+  it('refuses a path-bearing endpoint, whose hostname names a gateway and not the host', () => {
+    // parseHostAccessLink allows a path, so a pairing routed through a reverse proxy at
+    // wss://gw.example.com/orca/ws yields a hostname that says nothing about port 5173.
+    expect(
+      clientReachableBrowserUrlForPort(workspacePort(), 'wss://gw.example.com/orca/ws')
+    ).toBeNull()
+    expect(clientReachableBrowserUrlForPort(workspacePort(), 'wss://gw.example.com/')).toBe(
+      'http://gw.example.com:5173'
+    )
   })
 
   it('falls back to the OS-derived shape when the advertised origin will not parse', () => {
@@ -97,10 +124,10 @@ describe('clientReachableBrowserUrlForPort', () => {
     )
     expect(
       clientReachableBrowserUrlForPort(
-        workspacePort({ advertisedUrl: 'http://localhost:5173/app' }),
+        workspacePort({ advertisedUrl: 'http://localhost:5173' }),
         'ws://[2001:db8::1]:6768'
       )
-    ).toBe('http://[2001:db8::1]:5173/app')
+    ).toBe('http://[2001:db8::1]:5173')
   })
 
   it('reaches a container port on a wildcard bind, which has no advertised origin', () => {
@@ -117,20 +144,5 @@ describe('clientReachableBrowserUrlForPort', () => {
         TAILNET_ENDPOINT
       )
     ).toBe('http://100.64.1.20:8080')
-  })
-})
-
-describe('getPortOpenBrowserTooltipLabel', () => {
-  it('advertises the modifier when the system browser can serve the port', () => {
-    expect(getPortOpenBrowserTooltipLabel('Open in Browser', true)).toContain('for system browser')
-    expect(getPortOpenBrowserTooltipLabel('Open in Browser', true, true)).toContain(
-      'for system browser'
-    )
-  })
-
-  it('drops the hint when no reachable address exists, rather than promising a no-op', () => {
-    // A remote loopback-bound port cannot be opened externally at any URL, so the
-    // modifier would silently fall through to the in-app browser.
-    expect(getPortOpenBrowserTooltipLabel('Open in Browser', true, false)).toBe('Open in Browser')
   })
 })

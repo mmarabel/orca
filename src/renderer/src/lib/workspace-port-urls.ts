@@ -37,11 +37,9 @@ export function browserUrlForPort(port: WorkspacePort): string {
   return `${protocol}://${hostForLocalAction(port.connectHost)}:${port.port}`
 }
 
-export { isWildcardBindHost }
-
-// Why: the address this client already uses to reach the runtime is reachable by
-// definition, whatever carries it — LAN, VPN, tailnet, public. Deriving the host from
-// the live connection keeps this transport-agnostic instead of probing for a provider.
+// Why: the address this client already uses to reach the runtime is routable to that
+// host, whatever carries it — LAN, VPN, tailnet, public. Deriving the host from the live
+// connection keeps this transport-agnostic instead of probing for a provider.
 function reachableHostnameForEndpoint(endpoint: string | null | undefined): string | null {
   if (!endpoint) {
     return null
@@ -51,21 +49,35 @@ function reachableHostnameForEndpoint(endpoint: string | null | undefined): stri
     // back to `hostname` silently leaves the original host in place. Passing this
     // value through untouched is what keeps both the substituted and synthesized
     // shapes correct, so do not strip or re-add brackets here.
-    const { hostname } = new URL(endpoint)
-    if (!hostname) {
+    const url = new URL(endpoint)
+    if (!url.hostname) {
+      return null
+    }
+    // A path means the transport is multiplexed by route through a gateway or reverse
+    // proxy, so the bare hostname names the proxy and says nothing about reaching a
+    // dev-server port on the host behind it.
+    if (url.pathname !== '' && url.pathname !== '/') {
       return null
     }
     // An SSH-tunnelled pairing terminates on this client's own loopback, so its address
     // says nothing about how to reach the runtime's dev servers.
-    return classifyRemotePairingHostname(hostname) === 'loopback' ? null : hostname
+    return classifyRemotePairingHostname(url.hostname) === 'loopback' ? null : url.hostname
   } catch {
     return null
   }
 }
 
-/** URL for a remote workspace's port that the client machine can open in any browser,
- *  or null when no such URL exists — a loopback-bound listener, a relay-only or
- *  SSH-tunnelled connection. Null means "do not offer this", never "try anyway". */
+/**
+ * A URL for a remote workspace's port built from an address this client is demonstrably
+ * routing to that host, or null when no such URL can be named — a loopback-bound
+ * listener, an SSH-tunnelled or path-multiplexed endpoint, an unparseable one.
+ *
+ * Null means "do not offer this", never "try anyway". A non-null result is an *offer*,
+ * not a promise: the endpoint proves the client reaches the pairing port, and the
+ * wildcard bind proves the kernel accepts on every interface, but neither proves a
+ * packet to this port survives a security group, a host firewall, or a port-scoped ACL.
+ * Callers must keep a path that works (the embedded browser) as the default.
+ */
 export function clientReachableBrowserUrlForPort(
   port: WorkspacePort,
   runtimeEndpoint: string | null | undefined
@@ -79,12 +91,20 @@ export function clientReachableBrowserUrlForPort(
   }
   const advertisedUrl = port.kind === 'workspace' ? port.advertisedUrl : undefined
   if (advertisedUrl) {
+    // Why: a DNS name in the advertised origin is the name the server answers to.
+    // Substituting an IP there invalidates the certificate and misses any vhost or
+    // reverse proxy keyed on the Host header — strictly worse whenever the name resolves.
+    if (customHostFromAdvertised(advertisedUrl)) {
+      return advertisedUrl
+    }
     try {
       // Why: the advertised origin carries the scheme the dev server actually speaks;
-      // only its host is wrong for this machine. Its port already matches this listener.
+      // only its loopback/wildcard/IP-literal host is wrong for this machine. Its port
+      // already matches this listener. `advertisedUrl` is origin-only by construction
+      // (see WorkspacePort), so rebuilding the origin keeps the shape byte-identical.
       const url = new URL(advertisedUrl)
       url.hostname = hostname
-      return url.toString()
+      return `${url.protocol}//${url.host}`
     } catch {
       // Fall through to the OS-derived shape.
     }

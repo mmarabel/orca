@@ -145,7 +145,8 @@ export class CodexUsageStore extends UsageProviderStoreLifecycle<
   async getAutomationRunUsage(input: AutomationUsageLookupInput): Promise<AutomationRunUsage> {
     return resolveCodexAutomationRunUsage(input, {
       getState: () => this.state,
-      refresh: (force) => this.refresh(force)
+      refresh: (force) => this.refresh(force),
+      isScanning: () => this.getScanState().isScanning
     })
   }
 }

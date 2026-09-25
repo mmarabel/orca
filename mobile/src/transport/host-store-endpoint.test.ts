@@ -290,7 +290,7 @@ describe('host edits with a relay overlay', () => {
 
   // Pins the disclosed asymmetry (#22790): the inline pairing commit would take the offer's
   // address here, but a replay cannot date its snapshot against the row, so the row wins.
-  it('leaves a re-pair replay from taking the offer address over the stored one', async () => {
+  it('keeps a re-pair replay from taking the offer address over the stored one', async () => {
     const REPAIRED_ENDPOINT = 'ws://10.0.0.7:6768'
 
     await saveRecoveredPairingHost({

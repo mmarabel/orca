@@ -163,14 +163,11 @@ export class MobileRelayUpgradeHostRemovedError extends Error {}
  * - `relay-upgrade`: throw when missing, leave the row untouched when present.
  * - `pairing-recovery`: insert when missing, leave the row untouched when present.
  *
- * Known asymmetry, chosen deliberately: re-pairing an existing machine reuses its host id, so a
- * pairing that commits inline replaces `endpoint` with the address the desktop just advertised,
- * while the same pairing replayed from a journal does not. Neither the row nor the journal records
- * when its address was written, so the replay cannot tell a re-pair's fresher address from one the
- * user edited after the journal was captured. It keeps the stored address, because losing a user's
- * edit is the failure this store is being fixed for, and a stale direct address only costs the
- * direct dial - the replay still publishes the relay routing, which is how that host reconnects.
- * Ordering them properly needs a written-at stamp on both sides: #22790.
+ * Deliberate asymmetry: a re-pair reuses the host id, so an inline pairing commit takes the newly
+ * advertised `endpoint` while its journaled replay does not. Neither side dates its address, so
+ * the replay cannot tell a fresher re-pair from an edit made after capture; it keeps the row,
+ * because losing the edit is this store's bug and a stale direct address still reaches the host
+ * over the relay routing the replay does write. Dating both sides is #22790.
  */
 type HostPersistMode = 'create-or-update' | 'relay-upgrade' | 'pairing-recovery'
 

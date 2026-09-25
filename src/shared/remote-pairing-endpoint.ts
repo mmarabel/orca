@@ -28,11 +28,15 @@ function isPrivateIPv4Address(hostname: string): boolean {
 }
 
 function isPrivateIPv6Address(hostname: string): boolean {
-  const firstHextet = Number.parseInt(hostname.split(':')[0] ?? '', 16)
-  return (
-    Number.isInteger(firstHextet) &&
-    ((firstHextet & 0xfe00) === 0xfc00 || (firstHextet & 0xffc0) === 0xfe80)
-  )
+  // Why: a hextet only means anything inside an IPv6 literal. Without the shape gate a
+  // four-hex-character *hostname* such as `fdab` reads as a ULA and is reported as a LAN
+  // address, which is how a plain host ended up being told its address is local-only.
+  const [firstLabel, ...rest] = hostname.split(':')
+  if (rest.length === 0 || !/^[0-9a-f]{1,4}$/i.test(firstLabel ?? '')) {
+    return false
+  }
+  const firstHextet = Number.parseInt(firstLabel ?? '', 16)
+  return (firstHextet & 0xfe00) === 0xfc00 || (firstHextet & 0xffc0) === 0xfe80
 }
 
 export function getEmbeddedIPv4Address(hostname: string): string | null {

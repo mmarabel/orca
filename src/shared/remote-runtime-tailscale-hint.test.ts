@@ -106,6 +106,21 @@ describe('withRemoteRuntimeTailscaleHint', () => {
     expect(result).not.toContain('connect both devices to Tailscale')
   })
 
+  // Why: a schemeless or unparseable endpoint used to reach the classifier through a regex
+  // fallback that had already chopped the host apart, so a plain hostname and a bare bracketed
+  // tailnet literal both came out as "local-network".
+  it('classifies only a host it could really extract', () => {
+    // `fdab` is a four-hex-character hostname, not a ULA hextet.
+    expect(withRemoteRuntimeTailscaleHint(UNREACHABLE, 'ws://fdab:6768')).toContain(
+      'connect both devices to Tailscale'
+    )
+    for (const endpoint of ['[fd7a:115c:a1e0::1]:6768', 'ws://[fd7a:115c:a1e0::1]:6768']) {
+      const result = withRemoteRuntimeTailscaleHint(UNREACHABLE, endpoint)
+      expect(result).toContain('offline on your tailnet')
+      expect(result).not.toContain('local-network address')
+    }
+  })
+
   it('names a tailnet endpoint alongside the tailnet hint', () => {
     const result = withRemoteRuntimeTailscaleHint(
       'Timed out waiting for the remote Orca runtime to respond.',

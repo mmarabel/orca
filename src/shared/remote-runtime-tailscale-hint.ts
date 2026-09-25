@@ -32,9 +32,11 @@ function extractHost(endpoint: string): string | null {
   try {
     host = new URL(endpoint).hostname || null
   } catch {
-    // Why: a bare host (no scheme) isn't a valid URL; strip any scheme and take
-    // the authority up to the first port/path/query delimiter.
-    host = endpoint.replace(/^[a-z]+:\/\//i, '').split(/[/:?#]/, 1)[0] || null
+    // Why: a bare host (no scheme) isn't a valid URL; strip any scheme, take the authority,
+    // and keep a bracketed IPv6 literal whole — splitting it on `:` like a host:port pair
+    // leaves a lone hextet (`[fd7a:…]` -> `fd7a`) that reads as a short hostname downstream.
+    const authority = endpoint.replace(/^[a-z]+:\/\//i, '').split(/[/?#]/, 1)[0] ?? ''
+    host = /^\[[^\]]*\]/.exec(authority)?.[0] || authority.split(':', 1)[0] || null
   }
   if (!host) {
     return null

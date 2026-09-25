@@ -113,6 +113,9 @@ export function bindStartFreshSpawn(session: ConnectPanePtySession): void {
       ...(coldRestoreOverride ? { launchToken: coldRestoreOverride.launchToken } : {}),
       ...(coldRestoreOverride ? { launchAgent: coldRestoreOverride.agent } : {}),
       ...(session.shouldDeclareHiddenAtSpawn() ? { initiallyHidden: true } : {}),
+      ...(session.pendingReplacedPtyId
+        ? { claimReplacedPtyId: session.claimPendingReplacedPtyId }
+        : {}),
       shouldContinue: () =>
         !session.disposed &&
         (findTerminalTabForPane(useAppStore.getState(), session.deps.worktreeId, session.deps.tabId)

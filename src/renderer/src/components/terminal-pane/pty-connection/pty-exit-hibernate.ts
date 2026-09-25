@@ -21,6 +21,7 @@ import type { PtyPaneStartup } from '../pty-connection-types'
 
 import type { ConnectPanePtySession } from './connect-pane-pty-session'
 import { forgetRetainedTerminalKittyState } from '../terminal-kitty-state-retention'
+import { isPtyExitReplacedByRestart } from '../pty-exit-delivery'
 
 /** PTY exit handling, hibernated-pane wake targets, and post-exit focus transfer. */
 export function installPtyExitHibernate(session: ConnectPanePtySession): void {
@@ -221,7 +222,10 @@ export function installPtyExitHibernate(session: ConnectPanePtySession): void {
     // Why: the negotiating application died with its PTY; any replacement
     // session starts with kitty keyboard flags at zero.
     session.kittyKeyboardModes.reset()
-    const isSuppressedExit = session.deps.consumeSuppressedPtyExit(ptyId) || preserveRendererBinding
+    const isSuppressedExit =
+      session.deps.consumeSuppressedPtyExit(ptyId) ||
+      preserveRendererBinding ||
+      isPtyExitReplacedByRestart(ptyId)
     if (!isSuppressedExit && !isUnverifiedExit) {
       session.clearExitedPanePtyLayoutBinding(ptyId)
     }

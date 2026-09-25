@@ -1,5 +1,5 @@
 import type { AgentType } from '../../../../shared/agent-status-types'
-import { getAgentImageHandling } from '../../../../shared/agent-image-handling'
+import { getAgentImageHandling } from '../../../../shared/agent-image-paste'
 import { formatNativeChatFileReference } from '../native-chat/native-chat-composer-target'
 import { shellEscapePath } from './pane-helpers'
 import type { TerminalTargetShell } from './terminal-drop-shell'

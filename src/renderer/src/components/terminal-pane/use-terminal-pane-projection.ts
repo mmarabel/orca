@@ -1,5 +1,5 @@
 import type { AgentType } from '../../../../shared/agent-status-types'
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect } from 'react'
 import type { CSSProperties } from 'react'
 import {
   DEFAULT_TERMINAL_DIVIDER_DARK,
@@ -45,8 +45,6 @@ export function useTerminalPaneProjection(controller: TerminalPaneMobileControll
     setTerminalErrorsByPaneId,
     settings,
     shouldMeasureHiddenStartup,
-    structuredSessionAgent,
-    structuredSessionId,
     tabId,
     sshReconnectOwnsTerminalErrors,
     systemPrefersDark,
@@ -124,8 +122,7 @@ export function useTerminalPaneProjection(controller: TerminalPaneMobileControll
         chatLeafId,
         activeLeafId,
         chatLeafStillMounted,
-        activeLeafIsEligible: isChatEligibleForLeaf(activeLeafId),
-        structuredSessionId
+        activeLeafIsEligible: isChatEligibleForLeaf(activeLeafId)
       })
     )
   }, [
@@ -134,8 +131,7 @@ export function useTerminalPaneProjection(controller: TerminalPaneMobileControll
     activePane?.leafId,
     chatLeafStillMounted,
     applyNativeChatLeafRoute,
-    isChatEligibleForLeaf,
-    structuredSessionId
+    isChatEligibleForLeaf
   ])
   const chatPane =
     isChatViewMode && chatLeafId
@@ -151,8 +147,6 @@ export function useTerminalPaneProjection(controller: TerminalPaneMobileControll
     leafId: chatPane?.leafId ?? null,
     leafIds: getNativeChatLeafIds()
   })
-  const structuredChatAgent = structuredSessionAgent ?? chatPaneResolvedAgent ?? chatPaneLaunchAgent
-  const structuredChatTarget = useMemo(() => ({ kind: 'local' as const }), [])
   const chatPaneOwnsTabWideLaunchDraft = nativeChatLeafOwnsTabWideEvidence({
     ownerLeafId: getTabWideAgentHintLeafId(),
     leafId: chatPane?.leafId ?? null,
@@ -211,9 +205,6 @@ export function useTerminalPaneProjection(controller: TerminalPaneMobileControll
     chatPanePtyId,
     chatPaneResolvedAgent,
     chatPaneLaunchAgent,
-    structuredChatAgent,
-    structuredChatTarget,
-    structuredSessionId,
     chatPaneOwnsTabWideLaunchDraft,
     activePaneIsChatLeaf,
     resolveAgentForLeaf,

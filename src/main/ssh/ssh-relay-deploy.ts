@@ -25,6 +25,12 @@ import {
 import { createRelayInstallMarkerFileName } from './ssh-relay-install-marker'
 import { resolveRemoteNodePath } from './ssh-remote-node-resolution'
 import {
+  ensureRemoteBundledRipgrep,
+  remoteRipgrepLayout,
+  recordRemoteRipgrepReference
+} from './ssh-relay-ripgrep-install'
+import { gcRemoteRipgrepCache } from './ssh-relay-ripgrep-cache-gc'
+import {
   readLocalFullVersion,
   computeRemoteRelayDir,
   isRelayAlreadyInstalled,
@@ -88,6 +94,7 @@ import { powerShellCommand, powerShellLiteral, powerShellNativeArg } from './ssh
 import { relaySocketNameForInstanceId } from './ssh-relay-instance-id'
 import { resolveRelayEndpointBeforeRelaunch } from './ssh-relay-endpoint-takeover'
 import {
+  RelayProbeCleanupUnconfirmedError,
   isRelayEndpointHeldError,
   isRelayEndpointUnresponsiveError
 } from './ssh-relay-endpoint-incumbent'
@@ -572,6 +579,15 @@ async function deployAndLaunchRelayAttempt(
     }
   }
 
+  const ripgrepLayout = remoteRipgrepLayout(hostPlatform, remoteHome)
+  const ripgrepReferenced =
+    ripgrepLayout &&
+    (await recordRemoteRipgrepReference(
+      conn,
+      hostPlatform,
+      remoteRelayDir,
+      ripgrepLayout.entryName
+    ))
   let launched: Awaited<ReturnType<typeof launchRelay>>
   let launchLivenessObserved = false
   try {
@@ -585,7 +601,8 @@ async function deployAndLaunchRelayAttempt(
       nodePath,
       graceTimeSeconds,
       relayInstanceId,
-      deploySignal
+      deploySignal,
+      ripgrepReferenced ? ripgrepLayout.binaryPath : undefined
     )
     launchLivenessObserved = true
   } finally {
@@ -600,11 +617,23 @@ async function deployAndLaunchRelayAttempt(
   }
   console.log('[ssh-relay] Relay started successfully')
 
-  void execHostCommand(
-    conn,
-    hostPlatform,
-    recoverOneStaleRelayUploadStageCommand(hostPlatform, uploadStagePoolDir)
-  )
+  // Keep background commands serial for SSH transports that allow only one exec at a time.
+  const ripgrepEntry = ripgrepLayout?.entryName
+  const ripgrepInstall = (
+    ripgrepReferenced
+      ? ensureRemoteBundledRipgrep(conn, hostPlatform, remoteHome, { signal: deploySignal })
+      : Promise.resolve()
+  ).catch(() => {})
+  const cleanupReady = conn.canRunConcurrentExecCommands() ? Promise.resolve() : ripgrepInstall
+
+  void cleanupReady
+    .then(() =>
+      execHostCommand(
+        conn,
+        hostPlatform,
+        recoverOneStaleRelayUploadStageCommand(hostPlatform, uploadStagePoolDir)
+      )
+    )
     .catch(() => {})
     // Why before GC: a superseded relay pins its version dir via the live-socket probe, so the
     // sweep has to settle first or GC keeps every orphan's tree forever.
@@ -623,7 +652,11 @@ async function deployAndLaunchRelayAttempt(
         nodePath: launched.nodePath
       })
     )
-    .catch(() => {})
+    .catch((error) => {
+      if (error instanceof RelayProbeCleanupUnconfirmedError) {
+        throw error
+      }
+    })
     .then(() =>
       gcOldRelayVersions(conn, remoteHome, remoteRelayDir, hostPlatform, {
         windowsNodePath: launched.nodePath,
@@ -639,6 +672,10 @@ async function deployAndLaunchRelayAttempt(
         ].filter((key): key is string => key !== null)
       })
     )
+    // Why after the version GC and not beside it: that pass is what removes the relay directories
+    // holding the references, so running second is what lets a superseded build become collectable
+    // in the same connect rather than the next one.
+    .then(() => gcRemoteRipgrepCache(conn, hostPlatform, remoteHome, { pinnedEntry: ripgrepEntry }))
     .catch(() => {})
 
   return {
@@ -1675,7 +1712,8 @@ async function launchRelay(
   nodePath: string,
   graceTimeSeconds?: number,
   relayInstanceId?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  ripgrepPath?: string
 ): Promise<{
   transport: MultiplexerTransport
   nodePath: string
@@ -1728,7 +1766,8 @@ async function launchRelay(
         graceTime,
         activePipeMarkerPath,
         reconnectFallback: fallbackEndpoint,
-        credentialFile
+        credentialFile,
+        ripgrepPath
       },
       signal
     )
@@ -1773,6 +1812,7 @@ async function launchRelay(
     // `test -S`. Swallowing a Held/Unresponsive verdict launches a fresh daemon over a live one —
     // the exact collision the probe exists to prevent (it lost the bind, but only by luck).
     if (
+      err instanceof RelayProbeCleanupUnconfirmedError ||
       isUnconfirmedSshCommandTermination(err) ||
       isRelayEndpointHeldError(err) ||
       isRelayEndpointUnresponsiveError(err)
@@ -1793,7 +1833,8 @@ async function launchRelay(
   // Why: the relay derives its hook endpoint dir from the socket path; pin it back under the relay dir when the socket moved to /tmp.
   const endpointDirArg =
     sockFile === defaultSockFile ? '' : ` --endpoint-dir ${shellEscape(endpointDir)}`
-  const launchCmd = `cd ${escapedDir} && nohup ${escapedNode} relay.js --detached --grace-time ${graceTime} --sock-path ${shellEscape(sockFile)}${endpointDirArg} --credential-file ${shellEscape(credentialFile)} --log-file ${shellEscape(logFile)} > ${shellEscape(logFile)} 2>&1 </dev/null &`
+  const ripgrepPathArg = ripgrepPath ? ` --ripgrep-path ${shellEscape(ripgrepPath)}` : ''
+  const launchCmd = `cd ${escapedDir} && nohup ${escapedNode} relay.js --detached --grace-time ${graceTime} --sock-path ${shellEscape(sockFile)}${endpointDirArg} --credential-file ${shellEscape(credentialFile)} --log-file ${shellEscape(logFile)}${ripgrepPathArg} > ${shellEscape(logFile)} 2>&1 </dev/null &`
   const launchChannel = await conn.exec(launchCmd, { signal })
   launchChannel.on('data', () => {})
   launchChannel.on('error', () => {})
@@ -1985,6 +2026,7 @@ type WindowsRelayLaunchOptions = {
   graceTime: number
   activePipeMarkerPath: string
   credentialFile: string
+  ripgrepPath?: string
 } & WindowsRelayEndpoint & {
     reconnectFallback?: WindowsRelayEndpoint
   }
@@ -2067,7 +2109,8 @@ async function launchWindowsRelay(
       launchOpts.graceTime,
       logFile,
       errFile,
-      launchOpts.credentialFile
+      launchOpts.credentialFile,
+      launchOpts.ripgrepPath
     ),
     { signal }
   )
@@ -2159,7 +2202,8 @@ function windowsRelayLaunchCommand(
   graceTime: number,
   logFile: string,
   errFile: string,
-  credentialFile: string
+  credentialFile: string,
+  ripgrepPath?: string
 ): string {
   const relayScript = joinRemotePath(hostPlatform, remoteDir, 'relay.js')
   // Why: Windows sshd kills the exec channel's process tree on close; WMI re-parents the detached relay to survive.
@@ -2179,6 +2223,7 @@ function windowsRelayLaunchCommand(
     // Why: --log-file owns rotation; shell redirects still capture pre-JS boot/crash output.
     '--log-file',
     quoted(logFile),
+    ...(ripgrepPath ? ['--ripgrep-path', quoted(ripgrepPath)] : []),
     `1>${quoted(logFile)}`,
     `2>${quoted(errFile)}`
   ].join(' ')

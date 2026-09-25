@@ -64,6 +64,7 @@ export function createTerminalKeyboardEventHandlers(context: EventContext) {
     persistLayoutSnapshot,
     toggleExpandPane,
     setSearchOpen,
+    focusSearchInput,
     onSearchSelectedText,
     onRequestClosePane,
     onClearPaneScrollback,
@@ -195,6 +196,18 @@ export function createTerminalKeyboardEventHandlers(context: EventContext) {
     }
 
     if (isEditableTarget(e.target)) {
+      if (
+        searchOpenRef.current &&
+        e.target instanceof HTMLElement &&
+        e.target.closest('[data-terminal-search-root]') &&
+        resolveShortcutEvent(e)?.type === 'toggleSearch'
+      ) {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        if (!e.repeat) {
+          focusSearchInput()
+        }
+      }
       return
     }
 
@@ -292,6 +305,8 @@ export function createTerminalKeyboardEventHandlers(context: EventContext) {
       persistLayoutSnapshot,
       toggleExpandPane,
       setSearchOpen,
+      focusSearchInput,
+      searchOpenRef,
       onRequestClosePane,
       onClearPaneScrollback,
       onSetTitle,

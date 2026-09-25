@@ -10,14 +10,18 @@
 // clear the running-turn marker. Draining or closing the sink ahead of that drops them, which
 // leaves the durable journal claiming the agent is still working — a worse outcome than the leak
 // this teardown exists to fix. So: stop the child, drain what it emitted on its way out, then let
-// the sink go.
+// the sink go. The one step ahead of the stop only reads, for quit's resume offer.
 //
 // FAILURE. A step that fails ABORTS the rest. `closeSession` returning false means the child's
 // exit was not proven and the adapter has deliberately kept the session indexed so a retry can
 // reach it; forgetting it anyway stranded the process forever and reported success. Leaving the
 // session in place is what makes the next close a real retry instead of a no-op.
 
-import type { StructuredAgentSessionAdapter } from './structured-agent-session-adapter'
+import {
+  AgentSessionAcquisitionRootExitObservedError,
+  AgentSessionPreSpawnError,
+  type StructuredAgentSessionAdapter
+} from './structured-agent-session-adapter'
 import type { DeferredStructuredAgentSessionEventSink } from './structured-agent-session-event-sink'
 
 export type StructuredAgentSessionEvictionContext = {
@@ -31,6 +35,16 @@ export type StructuredAgentSessionEvictionContext = {
   forget: () => Promise<void>
   /** Drops the cached sink so a later attach mints a fresh one. */
   discardSink: () => void
+  /** Fires right before the stop, while the child's turn and background roster are still live. A
+   *  throw is logged, never allowed to abort the stop. */
+  beforeProviderChildStop?: () => void
+  /** Fires once the adapter has PROVEN the child gone, so host bookkeeping stops claiming one. */
+  onProviderChildStopped?: () => void
+  /** Whether this host still owes the child's wind-down. Distinct from `hasProviderChild`, which a
+   *  proven exit retires mid-run: the two disagree for exactly the steps a retry has to repeat. */
+  owesProviderChildWindDown?: boolean
+  /** Settles work owned by the child after its final callbacks have drained. */
+  settleWork?: () => Promise<void>
   /** Hands the lease back now that this host's child is proven gone. No-ops when the record is
    *  not this host's to release. */
   releaseLease: () => Promise<void>
@@ -44,6 +58,20 @@ export type StructuredAgentSessionEvictionStep = {
 export const STRUCTURED_AGENT_SESSION_EVICTION_STEPS: readonly StructuredAgentSessionEvictionStep[] =
   [
     {
+      // Quit's resume offer: what the sidebar shows, read while the child is still running.
+      name: 'snapshot-before-stop',
+      run: (context) => {
+        if (context.hasProviderChild === false || !context.beforeProviderChildStop) {
+          return
+        }
+        try {
+          context.beforeProviderChildStop()
+        } catch {
+          console.warn('[structured-agent-session] capturing recovery witness failed')
+        }
+      }
+    },
+    {
       name: 'stop-provider-child',
       run: async (context) => {
         if (context.hasProviderChild === false) {
@@ -52,11 +80,22 @@ export const STRUCTURED_AGENT_SESSION_EVICTION_STEPS: readonly StructuredAgentSe
         // An adapter with no close has nothing to stop; anything else must PROVE the exit.
         const stop = context.adapter.disposeSession ?? context.adapter.closeSession
         if (stop) {
-          const stopped = await stop.call(context.adapter, context.sessionId)
-          if (stopped !== true) {
-            throw new Error('provider child exit was not proven')
+          try {
+            const stopped = await stop.call(context.adapter, context.sessionId)
+            if (stopped !== true) {
+              throw new Error('provider child exit was not proven')
+            }
+          } catch (error) {
+            // Why: lease ownership follows the provider root; known-live descendants still throw unproven.
+            if (
+              !(error instanceof AgentSessionAcquisitionRootExitObservedError) &&
+              !(error instanceof AgentSessionPreSpawnError)
+            ) {
+              throw error
+            }
           }
         }
+        context.onProviderChildStopped?.()
       }
     },
     {
@@ -67,6 +106,11 @@ export const STRUCTURED_AGENT_SESSION_EVICTION_STEPS: readonly StructuredAgentSe
           throw barrier.error
         }
       }
+    },
+    {
+      name: 'settle-dead-generation',
+      run: (context) =>
+        context.owesProviderChildWindDown === false ? undefined : context.settleWork?.()
     },
     { name: 'stop-publishing', run: (context) => context.eventSink.unbind() },
     { name: 'close-sink', run: (context) => context.eventSink.close() },

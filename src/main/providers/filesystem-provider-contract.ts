@@ -1,3 +1,4 @@
+import type { PathExistenceResult } from '../../shared/path-existence-batch'
 import type { SearchOptions, SearchResult } from '../../shared/code-search-types'
 import type {
   DocPreviewFileAccessRequest,
@@ -87,6 +88,7 @@ export type IFilesystemProvider = {
   writeFileBase64(filePath: string, contentBase64: string): Promise<void>
   writePrivateFileBase64?(filePath: string, contentBase64: string): Promise<void>
   writeFileBase64Chunk(filePath: string, contentBase64: string, append: boolean): Promise<void>
+  pathsExist?(filePaths: string[]): Promise<PathExistenceResult[]>
   stat(filePath: string): Promise<FileStat>
   lstat?(filePath: string): Promise<FileStat>
   deletePath(targetPath: string, recursive?: boolean): Promise<void>

@@ -90,6 +90,7 @@ export function TerminalPaneSurface({
     saveQuickCommand,
     searchOpen,
     searchStateRef,
+    searchInputRef,
     sessionRestoredBannerPaneIds,
     sessionStateSaveFailureOpen,
     setAgentSessionContinuation,
@@ -212,6 +213,7 @@ export function TerminalPaneSurface({
             onClose={() => setSearchOpen(false)}
             searchAddon={activePane.searchAddon ?? null}
             searchStateRef={searchStateRef}
+            inputRef={searchInputRef}
           />,
           activePane.container
         )}

@@ -40,11 +40,12 @@ export type AiVaultScanOptions = {
   droidProjectsDir?: string
   clineSessionsDir?: string
   kimiSessionsDir?: string
+  museSessionsDir?: string
   limit?: number
   unlimited?: boolean
   limitPerAgent?: number
   // Active workspace/project paths whose sessions must be included regardless of
-  // the recency cap (see discoverInScopeClaudeFiles).
+  // the recency cap (see discoverInScopeCwdBucketFiles).
   scopePaths?: readonly string[]
   platform?: NodeJS.Platform
   executionHostId?: ExecutionHostId
@@ -144,6 +145,7 @@ export type SessionAccumulator = {
   // Recoverable signal for a zero-turn transcript (see AiVaultSession).
   queuedMessageCount: number
   subagentTranscriptCount: number
+  earliestTimestampMs: number
   latestTimestampMs: number
 }
 

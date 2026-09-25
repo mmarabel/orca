@@ -1,5 +1,5 @@
-import { existsSync } from 'fs'
-import { join } from 'path'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { DaemonClient } from '../../main/daemon/client'
 import { getDaemonSocketPath, getDaemonTokenPath } from '../../main/daemon/daemon-spawner'
 import type { ListSessionsResult, SessionInfo } from '../../main/daemon/types'

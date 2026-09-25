@@ -1,6 +1,6 @@
 // Spawn setup: node-pty launch options, Unix shell resolution and daemon cwd repair.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type * as LocalPtyUtils from '../providers/local-pty-utils'
@@ -54,7 +54,8 @@ vi.mock('../providers/local-pty-utils', async (importOriginal) => {
   return {
     ...actual,
     resolveUnixShellPath: resolveUnixShellPathMock,
-    validateWorkingDirectory: validateWorkingDirectoryMock
+    validateWorkingDirectory: validateWorkingDirectoryMock,
+    validateWorkingDirectoryAsync: validateWorkingDirectoryMock
   }
 })
 
@@ -71,8 +72,9 @@ vi.mock('../providers/agent-foreground-process', () => ({
 // fake timers; default to "shell-only" so the degraded-scan guard falls through
 // to its existing retirement logic (the degraded-scan behavior itself is
 // covered in pty-subprocess-foreground-degraded-scan.test.ts).
-vi.mock('../providers/windows-conpty-process-membership', () => ({
-  readWindowsConptyProcessIds: () => Promise.resolve(new Set([12345]))
+vi.mock('../providers/windows-pty-job-membership', () => ({
+  readWindowsPtyJobProcessIds: () => new Set([12345]),
+  isWindowsPtyJobReadable: () => true
 }))
 
 import { createPtySubprocess, checkPtySpawnHealth } from './pty-subprocess'
@@ -80,6 +82,7 @@ import { PREVIOUS_DAEMON_PROTOCOL_VERSIONS, PROTOCOL_VERSION } from './types'
 import {
   mockPtyProcess,
   POWERLEVEL10K_WIZARD_DISABLE_ENV,
+  stubMissingDaemonCwd,
   useDaemonPtySubprocessEnv
 } from './pty-subprocess-test-harness'
 
@@ -95,7 +98,7 @@ describe('createPtySubprocess', () => {
     validateWorkingDirectoryMock
   })
 
-  it('spawns node-pty with correct options', () => {
+  it('spawns node-pty with correct options', async () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     const onMacosTccSpawnStrategy = vi.fn()
@@ -103,7 +106,7 @@ describe('createPtySubprocess', () => {
     Object.defineProperty(process, 'platform', { value: 'linux' })
 
     try {
-      createPtySubprocess({
+      await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24,
@@ -130,7 +133,30 @@ describe('createPtySubprocess', () => {
     expect(onMacosTccSpawnStrategy).toHaveBeenCalledWith('direct')
   })
 
-  it('does not report a spawn strategy when node-pty fails before launch', () => {
+  it('does not spawn after cancellation wins during async cwd validation', async () => {
+    let releaseValidation: () => void = () => {}
+    const validationGate = new Promise<void>((resolve) => {
+      releaseValidation = resolve
+    })
+    validateWorkingDirectoryMock.mockImplementationOnce(() => validationGate)
+    let canceled = false
+
+    const spawning = createPtySubprocess({
+      sessionId: 'canceled-validation',
+      cols: 80,
+      rows: 24,
+      isCanceled: () => canceled
+    })
+    await vi.waitFor(() => expect(validateWorkingDirectoryMock).toHaveBeenCalled())
+
+    canceled = true
+    releaseValidation()
+
+    await expect(spawning).rejects.toThrow('Attach canceled for session canceled-validation')
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+
+  it('does not report a spawn strategy when node-pty fails before launch', async () => {
     spawnMock.mockImplementationOnce(() => {
       throw new Error('spawn failed')
     })
@@ -139,7 +165,7 @@ describe('createPtySubprocess', () => {
     Object.defineProperty(process, 'platform', { value: 'linux' })
 
     try {
-      expect(() =>
+      await expect(
         createPtySubprocess({
           sessionId: 'test',
           cols: 80,
@@ -147,7 +173,7 @@ describe('createPtySubprocess', () => {
           env: { SHELL: '/bin/bash' },
           onMacosTccSpawnStrategy
         })
-      ).toThrow('spawn failed')
+      ).rejects.toThrow('spawn failed')
     } finally {
       if (platform) {
         Object.defineProperty(process, 'platform', platform)
@@ -167,7 +193,7 @@ describe('createPtySubprocess', () => {
     expect(PREVIOUS_DAEMON_PROTOCOL_VERSIONS).toContain(22)
   })
 
-  it('resolves a missing Unix default before spawning node-pty', () => {
+  it('resolves a missing Unix default before spawning node-pty', async () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     resolveUnixShellPathMock.mockReturnValue('/bin/sh')
@@ -178,7 +204,7 @@ describe('createPtySubprocess', () => {
     delete process.env.SHELL
 
     try {
-      createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24, env: {} })
+      await createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24, env: {} })
 
       expect(resolveUnixShellPathMock).toHaveBeenCalledWith('/bin/zsh')
       expect(spawnMock).toHaveBeenCalledWith(
@@ -202,24 +228,24 @@ describe('createPtySubprocess', () => {
     }
   })
 
-  it('derives shell-ready launch config from the resolved fallback shell', () => {
+  it('derives shell-ready launch config from the resolved fallback shell', async () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     resolveUnixShellPathMock.mockReturnValue('/bin/sh')
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
     const previousShell = process.env.SHELL
-    const previousMarker = process.env.ORCA_SHELL_READY_MARKER
+    const previousFeatures = process.env.ORCA_SHELL_FEATURES
     const previousZdotdir = process.env.ZDOTDIR
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     Object.defineProperty(process, 'platform', { configurable: true, value: 'linux' })
     delete process.env.SHELL
     // Why: the test runner itself can execute inside an Orca-wrapped shell
     // whose exported wrapper vars would leak through the process.env spread.
-    delete process.env.ORCA_SHELL_READY_MARKER
+    delete process.env.ORCA_SHELL_FEATURES
     delete process.env.ZDOTDIR
 
     try {
-      const handle = createPtySubprocess({
+      const handle = await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24,
@@ -232,9 +258,9 @@ describe('createPtySubprocess', () => {
       expect(shellPath).toBe('/bin/sh')
       expect(shellArgs).toEqual(['-l'])
       // A launch config derived from the missing preferred zsh would inject
-      // ZDOTDIR and ORCA_SHELL_READY_MARKER; /bin/sh must spawn without them.
+      // ZDOTDIR and ORCA_SHELL_FEATURES; /bin/sh must spawn without them.
       expect(spawnOptions.env.ZDOTDIR).toBeUndefined()
-      expect(spawnOptions.env.ORCA_SHELL_READY_MARKER).toBeUndefined()
+      expect(spawnOptions.env.ORCA_SHELL_FEATURES).toBeUndefined()
       expect(spawnOptions.env.SHELL).toBe('/bin/sh')
     } finally {
       warn.mockRestore()
@@ -246,10 +272,10 @@ describe('createPtySubprocess', () => {
       } else {
         process.env.SHELL = previousShell
       }
-      if (previousMarker === undefined) {
-        delete process.env.ORCA_SHELL_READY_MARKER
+      if (previousFeatures === undefined) {
+        delete process.env.ORCA_SHELL_FEATURES
       } else {
-        process.env.ORCA_SHELL_READY_MARKER = previousMarker
+        process.env.ORCA_SHELL_FEATURES = previousFeatures
       }
       if (previousZdotdir === undefined) {
         delete process.env.ZDOTDIR
@@ -259,7 +285,7 @@ describe('createPtySubprocess', () => {
     }
   })
 
-  it('surfaces the no-executable-shell error before node-pty forks', () => {
+  it('surfaces the no-executable-shell error before node-pty forks', async () => {
     resolveUnixShellPathMock.mockImplementation(() => {
       throw new Error('No executable Unix shell found (tried: /bin/zsh, /bin/bash, /bin/sh)')
     })
@@ -267,9 +293,9 @@ describe('createPtySubprocess', () => {
     Object.defineProperty(process, 'platform', { configurable: true, value: 'linux' })
 
     try {
-      expect(() => createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24, env: {} })).toThrow(
-        'No executable Unix shell found'
-      )
+      await expect(
+        createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24, env: {} })
+      ).rejects.toThrow('No executable Unix shell found')
       expect(spawnMock).not.toHaveBeenCalled()
     } finally {
       if (platform) {
@@ -278,14 +304,14 @@ describe('createPtySubprocess', () => {
     }
   })
 
-  it('uses bundled ConPTY for native Windows daemon terminals', () => {
+  it('uses bundled ConPTY for native Windows daemon terminals', async () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
     Object.defineProperty(process, 'platform', { value: 'win32' })
 
     try {
-      createPtySubprocess({
+      await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24,
@@ -305,14 +331,14 @@ describe('createPtySubprocess', () => {
     )
   })
 
-  it('suppresses the first-run Powerlevel10k wizard for daemon terminals', () => {
+  it('suppresses the first-run Powerlevel10k wizard for daemon terminals', async () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
     Object.defineProperty(process, 'platform', { value: 'linux' })
 
     try {
-      createPtySubprocess({
+      await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24,
@@ -328,29 +354,26 @@ describe('createPtySubprocess', () => {
     expect(spawnCall[2].env[POWERLEVEL10K_WIZARD_DISABLE_ENV]).toBe('true')
   })
 
-  itOnMacHost('repairs a deleted macOS daemon cwd before spawning node-pty', () => {
+  itOnMacHost('repairs a deleted macOS daemon cwd before spawning node-pty', async () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
-    const originalCwd = process.cwd()
-    const deletedDaemonCwd = mkdtempSync(join(tmpdir(), 'orca-deleted-daemon-cwd-'))
+    const terminalCwd = process.cwd()
     Object.defineProperty(process, 'platform', { value: 'darwin' })
+    const { restoreCwdStubs, chdirSpy } = stubMissingDaemonCwd()
 
     try {
-      process.chdir(deletedDaemonCwd)
-      rmSync(deletedDaemonCwd, { recursive: true, force: true })
-
-      createPtySubprocess({
+      await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24,
-        cwd: originalCwd,
+        cwd: terminalCwd,
         env: { SHELL: '/bin/bash' }
       })
 
-      expect(process.cwd()).toBe(realpathSync(ptyEnv.userDataPath))
+      expect(chdirSpy).toHaveBeenCalledWith(ptyEnv.userDataPath)
     } finally {
-      process.chdir(originalCwd)
+      restoreCwdStubs()
       if (platform) {
         Object.defineProperty(process, 'platform', platform)
       }
@@ -361,33 +384,30 @@ describe('createPtySubprocess', () => {
     expect(spawnMock).toHaveBeenCalledWith(
       '/bin/bash',
       expect.any(Array),
-      expect.objectContaining({ cwd: originalCwd })
+      expect.objectContaining({ cwd: terminalCwd })
     )
   })
 
-  itOnPosixHost('repairs a deleted POSIX daemon cwd before Linux node-pty spawn', () => {
+  itOnPosixHost('repairs a deleted POSIX daemon cwd before Linux node-pty spawn', async () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
-    const originalCwd = process.cwd()
-    const deletedDaemonCwd = mkdtempSync(join(tmpdir(), 'orca-deleted-daemon-cwd-'))
+    const terminalCwd = process.cwd()
     Object.defineProperty(process, 'platform', { value: 'linux' })
+    const { restoreCwdStubs, chdirSpy } = stubMissingDaemonCwd()
 
     try {
-      process.chdir(deletedDaemonCwd)
-      rmSync(deletedDaemonCwd, { recursive: true, force: true })
-
-      createPtySubprocess({
+      await createPtySubprocess({
         sessionId: 'test',
         cols: 80,
         rows: 24,
-        cwd: originalCwd,
+        cwd: terminalCwd,
         env: { SHELL: '/bin/bash' }
       })
 
-      expect(process.cwd()).toBe(realpathSync(ptyEnv.userDataPath))
+      expect(chdirSpy).toHaveBeenCalledWith(ptyEnv.userDataPath)
     } finally {
-      process.chdir(originalCwd)
+      restoreCwdStubs()
       if (platform) {
         Object.defineProperty(process, 'platform', platform)
       }
@@ -396,29 +416,29 @@ describe('createPtySubprocess', () => {
     expect(spawnMock).toHaveBeenCalledWith(
       '/bin/bash',
       expect.any(Array),
-      expect.objectContaining({ cwd: originalCwd })
+      expect.objectContaining({ cwd: terminalCwd })
     )
   })
 
-  it('uses SHELL env or defaults to /bin/zsh on non-Windows', () => {
+  it('uses SHELL env or defaults to /bin/zsh on non-Windows', async () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
 
-    createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24 })
+    await createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24 })
 
     const shellArg = spawnMock.mock.calls[0][0]
     expect(typeof shellArg).toBe('string')
     expect(shellArg.length).toBeGreaterThan(0)
   })
 
-  it('allows an explicitly requested plain daemon shell at POSIX root', () => {
+  it('allows an explicitly requested plain daemon shell at POSIX root', async () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
     Object.defineProperty(process, 'platform', { value: 'linux' })
 
     try {
-      createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24, cwd: '/' })
+      await createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24, cwd: '/' })
     } finally {
       if (platform) {
         Object.defineProperty(process, 'platform', platform)
@@ -432,7 +452,7 @@ describe('createPtySubprocess', () => {
     )
   })
 
-  it('falls back to the safe default cwd for daemon agent startup without an explicit cwd', () => {
+  it('falls back to the safe default cwd for daemon agent startup without an explicit cwd', async () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     spawnMock.mockClear()
@@ -445,14 +465,14 @@ describe('createPtySubprocess', () => {
 
     try {
       // Why: omitted cwd resolves to a safe default home; guard must not reject before fallback (#9578).
-      expect(() =>
+      await expect(
         createPtySubprocess({
           sessionId: 'test',
           cols: 80,
           rows: 24,
           command: 'opencode'
         })
-      ).not.toThrow()
+      ).resolves.not.toThrow()
 
       expect(spawnMock).toHaveBeenCalledWith(
         expect.any(String),
@@ -471,13 +491,13 @@ describe('createPtySubprocess', () => {
     }
   })
 
-  it('rejects daemon automatic agent startup at POSIX root', () => {
+  it('rejects daemon automatic agent startup at POSIX root', async () => {
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
     Object.defineProperty(process, 'platform', { value: 'linux' })
     spawnMock.mockClear()
 
     try {
-      expect(() =>
+      await expect(
         createPtySubprocess({
           sessionId: 'test',
           cols: 80,
@@ -485,7 +505,7 @@ describe('createPtySubprocess', () => {
           cwd: '/',
           command: 'claude'
         })
-      ).toThrow(/requires a non-root workspace/)
+      ).rejects.toThrow(/requires a non-root workspace/)
     } finally {
       if (platform) {
         Object.defineProperty(process, 'platform', platform)
@@ -495,20 +515,20 @@ describe('createPtySubprocess', () => {
     expect(spawnMock).not.toHaveBeenCalled()
   })
 
-  it('rejects a missing explicit POSIX cwd before node-pty spawn', () => {
+  it('rejects a missing explicit POSIX cwd before node-pty spawn', async () => {
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
     Object.defineProperty(process, 'platform', { value: 'linux' })
     spawnMock.mockClear()
 
     try {
-      expect(() =>
+      await expect(
         createPtySubprocess({
           sessionId: 'test',
           cols: 80,
           rows: 24,
           cwd: '/definitely-missing-orca-cwd'
         })
-      ).toThrow(/definitely-missing-orca-cwd/)
+      ).rejects.toThrow(/definitely-missing-orca-cwd/)
     } finally {
       if (platform) {
         Object.defineProperty(process, 'platform', platform)
@@ -518,7 +538,7 @@ describe('createPtySubprocess', () => {
     expect(spawnMock).not.toHaveBeenCalled()
   })
 
-  it('combines HOMEDRIVE and HOMEPATH for Windows default cwd', () => {
+  it('combines HOMEDRIVE and HOMEPATH for Windows default cwd', async () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
@@ -532,7 +552,7 @@ describe('createPtySubprocess', () => {
     process.env.HOMEPATH = '\\Users\\orca'
 
     try {
-      createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24 })
+      await createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24 })
     } finally {
       if (platform) {
         Object.defineProperty(process, 'platform', platform)

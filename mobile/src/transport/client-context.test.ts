@@ -416,7 +416,7 @@ describe('useHostClient', () => {
     }
   })
 
-  it('rebuilds a Relay-active client when a host address edit bypasses preservation', async () => {
+  it('rebuilds a Relay-active client when the saved host address changed', async () => {
     const relayClient = makeFakeClient('connected', 'relay')
     const replacement = makeFakeClient('connecting', 'tailscale')
     connectMock.mockReturnValueOnce(relayClient).mockReturnValueOnce(replacement)

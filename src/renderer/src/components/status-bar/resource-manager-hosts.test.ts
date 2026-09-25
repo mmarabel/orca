@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Repo } from '../../../../shared/repo-types'
 import type { RuntimeStatus } from '../../../../shared/runtime-types'
 import type { PublicKnownRuntimeEnvironment } from '../../../../shared/runtime-environments'
-import type { Worktree } from '../../../../shared/worktree/types'
+import { makeWorktree } from '../../store/slices/worktrees-slice-test-fixtures'
 import {
   isRemoteResourceManagerHost,
   listResourceManagerHosts,
@@ -15,9 +15,11 @@ function environment(
   id: string,
   overrides: Partial<PublicKnownRuntimeEnvironment> = {}
 ): PublicKnownRuntimeEnvironment {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: host listing reads only id, name and the user-managed marker; the pairing fields are irrelevant here.
   return { id, name: id, ...overrides } as PublicKnownRuntimeEnvironment
 }
 
+// oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: connection state only asks whether a status was reported, not what it says.
 const connected = { status: {} as RuntimeStatus }
 
 function hostInputs(
@@ -115,7 +117,7 @@ describe('resolveDefaultResourceManagerHostId', () => {
     { id: 'local', label: 'Local', kind: 'local' as const },
     { id: 'runtime:env-1', label: 'Hetzner', kind: 'runtime' as const }
   ]
-  const worktree = { id: 'wt-1', repoId: 'repo-1', hostId: 'runtime:env-1' } as unknown as Worktree
+  const worktree = makeWorktree({ id: 'wt-1', repoId: 'repo-1', hostId: 'runtime:env-1' })
   const worktreeById = new Map([[worktree.id, worktree]])
   const repoById = new Map<string, Repo>()
 
@@ -155,7 +157,7 @@ describe('resolveDefaultResourceManagerHostId', () => {
   // Why: SSH-hosted workspaces have no selectable host of their own; local is the
   // only view we can honestly render for them.
   it('falls back to local for an SSH-hosted workspace', () => {
-    const sshWorktree = { id: 'wt-2', repoId: 'repo-2', hostId: 'ssh:box' } as unknown as Worktree
+    const sshWorktree = makeWorktree({ id: 'wt-2', repoId: 'repo-2', hostId: 'ssh:box' })
     expect(
       resolveDefaultResourceManagerHostId({
         hosts,
@@ -167,8 +169,15 @@ describe('resolveDefaultResourceManagerHostId', () => {
   })
 
   it('derives the host from the repo when the workspace has none', () => {
-    const bareWorktree = { id: 'wt-3', repoId: 'repo-3' } as unknown as Worktree
-    const repo = { id: 'repo-3', executionHostId: 'runtime:env-1' } as unknown as Repo
+    const bareWorktree = makeWorktree({ id: 'wt-3', repoId: 'repo-3' })
+    const repo: Repo = {
+      id: 'repo-3',
+      path: '/srv/repo-3',
+      displayName: 'repo-3',
+      badgeColor: '#737373',
+      addedAt: 0,
+      executionHostId: 'runtime:env-1'
+    }
     expect(
       resolveDefaultResourceManagerHostId({
         hosts,
@@ -206,7 +215,7 @@ describe('resolveDefaultResourceManagerHostIdFromState', () => {
     { id: 'local', label: 'Local', kind: 'local' as const },
     { id: 'runtime:env-1', label: 'Hetzner', kind: 'runtime' as const }
   ]
-  const worktree = { id: 'wt-1', repoId: 'repo-1', hostId: 'runtime:env-1' } as unknown as Worktree
+  const worktree = makeWorktree({ id: 'wt-1', repoId: 'repo-1', hostId: 'runtime:env-1' })
 
   // Why: the panel's own slices are empty while it is closed, and the default is
   // decided on the open edge — reading them there resolved everything to local.

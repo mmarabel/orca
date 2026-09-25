@@ -93,6 +93,21 @@ describe('parseRemoteMemorySnapshot', () => {
     expect(sessions[2].title).toBeUndefined()
   })
 
+  it('carries a Windows host commit metric only as a complete pair', () => {
+    const snapshot = parseRemoteMemorySnapshot({
+      ...minimal,
+      processCommitMetric: 'private-bytes',
+      totalPrivateMemory: 2048
+    })
+    expect(snapshot?.processCommitMetric).toBe('private-bytes')
+    expect(snapshot?.totalPrivateMemory).toBe(2048)
+
+    // Why: absent commit means unknown; a half-sent pair must not read as zero.
+    const partial = parseRemoteMemorySnapshot({ ...minimal, processCommitMetric: 'private-bytes' })
+    expect(partial).not.toHaveProperty('processCommitMetric')
+    expect(partial).not.toHaveProperty('totalPrivateMemory')
+  })
+
   it('ignores unknown fields a newer host may add', () => {
     const snapshot = parseRemoteMemorySnapshot({
       ...minimal,

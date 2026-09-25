@@ -11,7 +11,6 @@
  * only: every failure resolves to an empty map, never a thrown snapshot.
  */
 
-import type { RuntimeTerminalSummary } from '../../shared/runtime-types'
 import { callRuntimeEnvironment } from '../ipc/runtime-environment-transport-routing'
 
 // Why: long enough that a 2s poll almost always reads cache, short enough that a
@@ -33,14 +32,20 @@ const cacheByEnvironmentId = new Map<string, CacheEntry>()
 const inflightByEnvironmentId = new Map<string, Promise<ReadonlyMap<string, string>>>()
 
 function titlesFromResult(value: unknown): ReadonlyMap<string, string> {
-  const terminals = (value as { terminals?: unknown } | null)?.terminals
+  const terminals: unknown =
+    typeof value === 'object' && value !== null && 'terminals' in value ? value.terminals : null
   if (!Array.isArray(terminals)) {
     return new Map()
   }
+  const entries: readonly unknown[] = terminals
   const titles = new Map<string, string>()
-  for (const entry of terminals as RuntimeTerminalSummary[]) {
-    const ptyId = typeof entry?.ptyId === 'string' ? entry.ptyId : ''
-    const title = typeof entry?.title === 'string' ? entry.title.trim() : ''
+  for (const entry of entries) {
+    if (typeof entry !== 'object' || entry === null) {
+      continue
+    }
+    // Why: RuntimeTerminalSummary fields from an untrusted reply, so check each.
+    const ptyId = 'ptyId' in entry && typeof entry.ptyId === 'string' ? entry.ptyId : ''
+    const title = 'title' in entry && typeof entry.title === 'string' ? entry.title.trim() : ''
     if (ptyId && title) {
       titles.set(ptyId, title)
     }

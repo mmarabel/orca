@@ -33,9 +33,11 @@ type Handler = (event: unknown, request?: MemorySnapshotRequest) => Promise<unkn
 
 function handler(): Handler {
   handleMock.mockReset()
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the local collector that reads the store is mocked above.
   registerMemoryHandlers({} as Store)
   const entry = handleMock.mock.calls.find((call) => call[0] === 'memory:getSnapshot')
   expect(entry).toBeTruthy()
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: ipcMain.handle's mock records handlers as a loose tuple; this is the signature registered for this channel.
   return entry![1] as Handler
 }
 
@@ -132,6 +134,7 @@ describe('memory:getSnapshot', () => {
       callRuntimeEnvironmentMock.mockImplementation(
         (..._args: unknown[]) =>
           new Promise(() => {
+            // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: argument 7 is callRuntimeEnvironment's options bag, which carries the abort signal.
             signal = (_args[7] as { signal?: AbortSignal } | undefined)?.signal
           })
       )
@@ -159,13 +162,14 @@ describe('memory:getSnapshot', () => {
     it('names sessions from the host terminal listing', async () => {
       callRuntimeEnvironmentMock.mockResolvedValue({ ok: true, result: withSessions })
       getRemoteTerminalTitlesMock.mockResolvedValue(new Map([['pty-1', 'build watch']]))
-      const snapshot = (await handler()(null, {
-        executionHostId: 'runtime:env-lxc1'
-      })) as { worktrees: { sessions: { sessionId: string; title?: string }[] }[] }
-      const sessions = snapshot.worktrees[0].sessions
-      expect(sessions[0]).toMatchObject({ sessionId: 'pty-1', title: 'build watch' })
+      const snapshot = await handler()(null, { executionHostId: 'runtime:env-lxc1' })
+      expect(snapshot).toMatchObject({
+        worktrees: [
+          { sessions: [{ sessionId: 'pty-1', title: 'build watch' }, { sessionId: 'pty-2' }] }
+        ]
+      })
       // Why: a session the host did not name keeps the pid fallback downstream.
-      expect(sessions[1].title).toBeUndefined()
+      expect(snapshot).not.toHaveProperty(['worktrees', 0, 'sessions', 1, 'title'])
     })
 
     it('asks for titles from the same host it sampled', async () => {
@@ -178,10 +182,12 @@ describe('memory:getSnapshot', () => {
     it('serves the snapshot unchanged when no titles come back', async () => {
       callRuntimeEnvironmentMock.mockResolvedValue({ ok: true, result: withSessions })
       getRemoteTerminalTitlesMock.mockResolvedValue(new Map())
-      const snapshot = (await handler()(null, {
-        executionHostId: 'runtime:env-lxc1'
-      })) as { worktrees: { sessions: { title?: string }[] }[] }
-      expect(snapshot.worktrees[0].sessions.every((s) => s.title === undefined)).toBe(true)
+      const snapshot = await handler()(null, { executionHostId: 'runtime:env-lxc1' })
+      expect(snapshot).toMatchObject({
+        worktrees: [{ sessions: [{ sessionId: 'pty-1' }, { sessionId: 'pty-2' }] }]
+      })
+      expect(snapshot).not.toHaveProperty(['worktrees', 0, 'sessions', 0, 'title'])
+      expect(snapshot).not.toHaveProperty(['worktrees', 0, 'sessions', 1, 'title'])
     })
 
     it('never asks a local snapshot for remote titles', async () => {

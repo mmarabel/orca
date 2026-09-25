@@ -19,8 +19,12 @@ import type {
 
 type Rec = Record<string, unknown>
 
+function isRec(value: unknown): value is Rec {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
 function asRecord(value: unknown): Rec | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Rec) : null
+  return isRec(value) ? value : null
 }
 
 function num(value: unknown): number {
@@ -120,6 +124,20 @@ function worktrees(value: unknown): WorktreeMemory[] {
   return rows
 }
 
+// Why: commit is optional and only meaningful as a pair; absence means the host cannot
+// report it, so a missing or malformed half drops both rather than reading as zero.
+function commitMetric(
+  record: Rec
+): Pick<MemorySnapshot, 'processCommitMetric' | 'totalPrivateMemory'> {
+  const total = record.totalPrivateMemory
+  return record.processCommitMetric === 'private-bytes' &&
+    typeof total === 'number' &&
+    Number.isFinite(total) &&
+    total >= 0
+    ? { processCommitMetric: 'private-bytes', totalPrivateMemory: total }
+    : {}
+}
+
 /**
  * Returns null when the payload is not recognizably a snapshot at all, which
  * the caller reports as an unreachable host rather than as an idle one.
@@ -138,6 +156,7 @@ export function parseRemoteMemorySnapshot(value: unknown): MemorySnapshot | null
     processMemoryMetric: metric,
     totalCpu: num(record.totalCpu),
     totalMemory: num(record.totalMemory),
+    ...commitMetric(record),
     collectedAt: num(record.collectedAt) || Date.now()
   }
 }

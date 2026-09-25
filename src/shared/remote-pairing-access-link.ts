@@ -5,8 +5,6 @@ import {
   type RemotePairingEndpointKind
 } from './remote-pairing-endpoint'
 
-export { classifyRemotePairingHostname, type RemotePairingEndpointKind }
-
 export type ParsedHostAccessLink = {
   pairing: PairingOffer
   displayEndpoint: string

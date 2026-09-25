@@ -73,6 +73,7 @@ describe('fs:importExternalPaths', () => {
           size: 12,
           ino: 1,
           dev: 1,
+          mtimeMs: 1700000000000,
           isFile: () => true,
           isDirectory: () => false,
           isSymbolicLink: () => false
@@ -94,6 +95,7 @@ describe('fs:importExternalPaths', () => {
           size: entry.isDir ? 0 : 12,
           ino: entry.isDir ? 2 : 3,
           dev: 1,
+          mtimeMs: 1700000000000,
           isFile: () => !entry.isDir,
           isDirectory: () => entry.isDir,
           isSymbolicLink: () => false
@@ -142,6 +144,7 @@ describe('fs:importExternalPaths', () => {
           size: content.byteLength,
           ino: 1,
           dev: 1,
+          mtimeMs: 1700000000000,
           isFile: () => true
         }),
         createReadStream: () => Readable.from([content]),
@@ -216,6 +219,7 @@ describe('fs:importExternalPaths', () => {
           size: 12,
           ino: 1,
           dev: 1,
+          mtimeMs: 1700000000000,
           isFile: () => true
         }),
         createReadStream: () => Readable.from([Buffer.from('file-content')]),
@@ -484,6 +488,7 @@ describe('fs:importExternalPaths', () => {
           size: 4,
           ino: 1,
           dev: 1,
+          mtimeMs: 1700000000000,
           isFile: () => true,
           isDirectory: () => false,
           isSymbolicLink: () => false
@@ -498,6 +503,7 @@ describe('fs:importExternalPaths', () => {
         size: 4,
         ino: 1,
         dev: 1,
+        mtimeMs: 1700000000000,
         isFile: () => true
       }),
       readFile: readFileHandleMock,
@@ -514,7 +520,16 @@ describe('fs:importExternalPaths', () => {
         status: 'staged',
         name: 'logo.png',
         kind: 'file',
-        entries: [{ relativePath: '', kind: 'file', byteLength: 4 }]
+        entries: [
+          {
+            relativePath: '',
+            kind: 'file',
+            byteLength: 4,
+            inode: 1,
+            deviceId: 1,
+            modifiedAtMs: 1700000000000
+          }
+        ]
       }
     ])
     expect(copyFileMock).not.toHaveBeenCalled()
@@ -534,6 +549,7 @@ describe('fs:importExternalPaths', () => {
           size: 0,
           ino: 1,
           dev: 1,
+          mtimeMs: 1700000000000,
           isFile: () => false,
           isDirectory: () => true,
           isSymbolicLink: () => false
@@ -544,6 +560,7 @@ describe('fs:importExternalPaths', () => {
           size: 4,
           ino: 2,
           dev: 1,
+          mtimeMs: 1700000000000,
           isFile: () => true,
           isDirectory: () => false,
           isSymbolicLink: () => false
@@ -579,6 +596,7 @@ describe('fs:importExternalPaths', () => {
         size: 4,
         ino: 2,
         dev: 1,
+        mtimeMs: 1700000000000,
         isFile: () => true
       }),
       readFile: vi.fn().mockResolvedValue(Buffer.from('icon')),
@@ -598,7 +616,14 @@ describe('fs:importExternalPaths', () => {
         entries: [
           { relativePath: '', kind: 'directory' },
           { relativePath: '..assets', kind: 'directory' },
-          { relativePath: '..assets/icon.txt', kind: 'file', byteLength: 4 }
+          {
+            relativePath: '..assets/icon.txt',
+            kind: 'file',
+            byteLength: 4,
+            inode: 2,
+            deviceId: 1,
+            modifiedAtMs: 1700000000000
+          }
         ]
       }
     ])
@@ -613,6 +638,7 @@ describe('fs:importExternalPaths', () => {
           size: 0,
           ino: 1,
           dev: 1,
+          mtimeMs: 1700000000000,
           isFile: () => false,
           isDirectory: () => true,
           isSymbolicLink: () => false
@@ -656,6 +682,7 @@ describe('fs:importExternalPaths', () => {
           size: 0,
           ino: 1,
           dev: 1,
+          mtimeMs: 1700000000000,
           isFile: () => false,
           isDirectory: () => true,
           isSymbolicLink: () => false
@@ -668,6 +695,7 @@ describe('fs:importExternalPaths', () => {
           size,
           ino: fileIndex + 2,
           dev: 1,
+          mtimeMs: 1700000000000,
           isFile: () => true,
           isDirectory: () => false,
           isSymbolicLink: () => false
@@ -691,6 +719,7 @@ describe('fs:importExternalPaths', () => {
             size: regularSize,
             ino: fileIndex + 2,
             dev: 1,
+            mtimeMs: 1700000000000,
             isFile: () => true
           }),
           readFile: readFileMock,
@@ -719,6 +748,7 @@ describe('fs:importExternalPaths', () => {
           size: 4,
           ino: 1,
           dev: 1,
+          mtimeMs: 1700000000000,
           isFile: () => true,
           isDirectory: () => false,
           isSymbolicLink: () => false
@@ -732,6 +762,7 @@ describe('fs:importExternalPaths', () => {
         size: 4,
         ino: 2,
         dev: 1,
+        mtimeMs: 1700000000000,
         isFile: () => true
       }),
       readFile: readFileHandleMock,
@@ -744,7 +775,7 @@ describe('fs:importExternalPaths', () => {
 
     expect(result.sources[0]).toMatchObject({
       status: 'failed',
-      reason: "File changed during upload staging: ''"
+      reason: "File changed during upload staging: 'logo.png'"
     })
     expect(readFileHandleMock).not.toHaveBeenCalled()
   })

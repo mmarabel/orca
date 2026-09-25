@@ -17,7 +17,7 @@ export function formatTerminalDropUploadHeading({
   const plural = rowCount === 1 ? '' : 's'
   if (!settled) {
     return translate(
-      'auto.components.terminal.pane.terminal.drop.upload.heading',
+      'auto.components.terminal.pane.terminal.drop.upload.heading.uploading',
       'Uploading {{value0}} file{{value1}} to runtime',
       { value0: rowCount, value1: plural }
     )

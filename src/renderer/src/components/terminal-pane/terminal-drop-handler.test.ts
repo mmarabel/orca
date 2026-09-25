@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { RuntimeImportProgressHandlers } from '@/runtime/runtime-upload-progress-tracker'
 
 const mocks = vi.hoisted(() => ({
   toastLoading: vi.fn(() => 'toast-1'),
-  toastCustom: vi.fn(() => 'toast-1'),
+  toastCustom: vi.fn((_render: unknown, _options?: Record<string, unknown>) => 'toast-1'),
   toastDismiss: vi.fn(),
   toastError: vi.fn(),
   importExternalPathsToRuntime: vi.fn(),
@@ -88,10 +89,10 @@ function createTerminalTransport(
 
 // Why: the drop panel is only created once rows exist, so a mock that never
 // announces a row leaves nothing for the dismissal assertions to observe.
-function startAndFinishRow(options: never): void {
-  const progress = (
-    options as { progress?: { onStart: (r: unknown[]) => void; onFinish: () => void } }
-  )?.progress
+type ImportOptions = { progress?: Pick<RuntimeImportProgressHandlers, 'onStart' | 'onFinish'> }
+
+function startAndFinishRow(options: ImportOptions | undefined): void {
+  const progress = options?.progress
   progress?.onStart([
     { uploadId: 'u-1', name: 'logo.png', totalBytes: 10, sourcePath: '/Users/me/logo.png' }
   ])
@@ -99,7 +100,7 @@ function startAndFinishRow(options: never): void {
 }
 
 function announceRowThenResolve(value: unknown) {
-  return async (_context: unknown, _paths: unknown, _dest: unknown, options: never) => {
+  return async (_context: unknown, _paths: unknown, _dest: unknown, options?: ImportOptions) => {
     startAndFinishRow(options)
     return value
   }
@@ -201,7 +202,7 @@ describe('handleTerminalFileDrop', () => {
   it('does not paste runtime-uploaded paths when the target PTY changed', async () => {
     let ptyId = 'pty-1'
     mocks.importExternalPathsToRuntime.mockImplementation(
-      async (_context: unknown, _paths: unknown, _dest: unknown, options: never) => {
+      async (_context: unknown, _paths: unknown, _dest: unknown, options?: ImportOptions) => {
         ptyId = 'pty-2'
         startAndFinishRow(options)
         return {
@@ -260,16 +261,14 @@ describe('handleTerminalFileDrop', () => {
     // `id: undefined` registers the toast under an id it never returns and every
     // re-issue stacks another panel instead of updating the first.
     expect(mocks.toastCustom).toHaveBeenCalledTimes(1)
-    const options = (mocks.toastCustom.mock.calls as unknown as unknown[][])[0]?.[1] as Record<
-      string,
-      unknown
-    >
-    expect(Object.hasOwn(options, 'id')).toBe(false)
+    const options = mocks.toastCustom.mock.calls[0]?.[1]
+    expect(options).toBeDefined()
+    expect(Object.keys(options ?? {})).not.toContain('id')
   })
 
   it('tears the upload panel down immediately when the import throws', async () => {
     mocks.importExternalPathsToRuntime.mockImplementation(
-      async (_context: unknown, _paths: unknown, _dest: unknown, options: never) => {
+      async (_context: unknown, _paths: unknown, _dest: unknown, options?: ImportOptions) => {
         startAndFinishRow(options)
         throw new Error('runtime unreachable')
       }

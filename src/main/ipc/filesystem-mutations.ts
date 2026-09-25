@@ -16,10 +16,15 @@ import type {
   ImportSkipReason,
   ResolveDroppedPathsResult,
   StagedExternalImportSource
-} from './filesystem-import-result-types'
+} from '../../shared/filesystem-import-result-types'
 import { importOneSource } from './filesystem-import-local'
-import { stageOneSourceForRuntimeUpload } from './filesystem-runtime-upload-staging'
+import {
+  stagedRuntimeUploadByteLength,
+  stageOneSourceForRuntimeUpload
+} from './filesystem-runtime-upload-staging'
 import { streamExternalFileToRuntime } from './runtime-upload-file-stream'
+import { abortWhenRendererGone } from './renderer-lifetime-abort'
+import { sweepAbandonedRuntimeUploadTempPath } from './runtime-upload-temp-sweep'
 import {
   RUNTIME_UPLOAD_PROGRESS_CHANNEL,
   throttleRuntimeUploadProgress
@@ -29,6 +34,8 @@ import {
   forgetRuntimeUploadCancellation,
   registerCancellableUpload
 } from './runtime-upload-cancellation'
+import type { RuntimeUploadFileStreamRequest } from '../../shared/runtime-upload-staging-contract'
+import { resolveEnvironment } from '../../shared/runtime-environment-store'
 
 /**
  * IPC handlers for file/folder creation and renaming.
@@ -206,8 +213,13 @@ export function registerFilesystemMutationHandlers(store: Store): void {
       args: { sourcePaths: string[] }
     ): Promise<{ sources: StagedExternalImportSource[] }> => {
       const sources: StagedExternalImportSource[] = []
+      // Why: one budget for the whole drop — per-source counters would let five
+      // 2 GB files through a ceiling meant to cap the drop.
+      let totalBytes = 0
       for (const sourcePath of args.sourcePaths) {
-        sources.push(await stageOneSourceForRuntimeUpload(sourcePath))
+        const source = await stageOneSourceForRuntimeUpload(sourcePath, totalBytes)
+        totalBytes += stagedRuntimeUploadByteLength(source)
+        sources.push(source)
       }
       return { sources }
     }
@@ -218,19 +230,18 @@ export function registerFilesystemMutationHandlers(store: Store): void {
   // and never sees file contents.
   ipcMain.handle(
     'fs:uploadExternalFileToRuntime',
-    async (
-      event,
-      args: {
-        environmentId: string
-        sourceRootPath: string
-        entryRelativePath: string
-        worktree: string
-        relativePath: string
-        expectedByteLength?: number
-        uploadId?: string
-        expectedEnvironmentPairingRevision?: number
-      } & SshMutationExpectation
-    ): Promise<{ byteLength: number }> => {
+    async (event, args: RuntimeUploadFileStreamRequest): Promise<{ byteLength: number }> => {
+      const userDataPath = app.getPath('userData')
+      // Why: the streamer's manual-disconnect check keys on the environment id,
+      // and the renderer may pass any selector the store resolves.
+      const request = {
+        ...args,
+        environmentId: resolveEnvironment(userDataPath, args.environmentId).id
+      }
+      // Why: the renderer's own loop died with its window. Now that the bytes
+      // move in main, a reload or close has to stop the transfer explicitly,
+      // or a multi-GB upload outlives the window that asked for it.
+      const lifetime = abortWhenRendererGone(event.sender)
       const uploadId = args.uploadId
       // Why: replies to the frame that asked, so a second window's drop cannot
       // move this one's progress bar.
@@ -244,25 +255,25 @@ export function registerFilesystemMutationHandlers(store: Store): void {
       const cancellation = uploadId ? registerCancellableUpload(uploadId) : null
       try {
         return await streamExternalFileToRuntime({
-          userDataPath: app.getPath('userData'),
-          environmentId: args.environmentId,
-          sourceRootPath: args.sourceRootPath,
-          entryRelativePath: args.entryRelativePath,
-          expectedByteLength: args.expectedByteLength,
-          worktree: args.worktree,
-          relativePath: args.relativePath,
-          expectedExecutionHostId: args.expectedExecutionHostId,
-          expectedSshTargetId: args.expectedSshTargetId,
-          expectedSshConnectionGeneration: args.expectedSshConnectionGeneration,
-          expectedEnvironmentPairingRevision: args.expectedEnvironmentPairingRevision,
-          signal: cancellation?.signal,
+          ...request,
+          userDataPath,
+          signal: lifetime.signal,
+          cancelSignal: cancellation?.signal,
           onProgress:
             emit && uploadId
               ? ({ sentBytes, totalBytes }) => emit({ uploadId, sentBytes, totalBytes })
               : undefined
         })
+      } catch (error) {
+        if (lifetime.signal.aborted) {
+          // Why: the renderer owns temp cleanup, and it is gone — so the
+          // abandoned temp path is only collectable from here.
+          await sweepAbandonedRuntimeUploadTempPath(userDataPath, request)
+        }
+        throw error
       } finally {
         cancellation?.release()
+        lifetime.dispose()
       }
     }
   )

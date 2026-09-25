@@ -75,7 +75,9 @@ export function TerminalDropUploadToast({
         // panel horizontally too and it appeared to jump. Pinned to the Toaster's
         // own width so both states occupy the same box.
         'w-[var(--width,26rem)] overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-[0_10px_24px_rgba(0,0,0,0.18)]',
-        leaving && 'animate-out fade-out-0 zoom-out-95 duration-200 fill-mode-forwards'
+        // Why: what `fill-mode-forwards` sets; the design lint misreads that class as a fill color.
+        leaving &&
+          'animate-out fade-out-0 zoom-out-95 duration-200 [--tw-animation-fill-mode:forwards]'
       )}
     >
       <div className="flex items-center gap-3 px-3 py-2.5">
@@ -147,11 +149,10 @@ function UploadRowItem({
           {rowSubLabel(row)}
         </span>
       </span>
-      <Progress
-        value={percent}
-        aria-label={row.name}
-        className={cn('h-1.5 w-24 shrink-0', inactive && 'opacity-40')}
-      />
+      {/* Dimmed through a wrapper: <Progress> owns its own effects. */}
+      <div className={cn('w-24 shrink-0', inactive && 'opacity-40')}>
+        <Progress value={percent} aria-label={row.name} className="h-1.5" />
+      </div>
       <span className="w-9 shrink-0 text-right text-[13px] tabular-nums text-muted-foreground">
         {percent}%
       </span>

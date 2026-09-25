@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -15,7 +15,8 @@ vi.mock('./runtime-import-limits', async (importOriginal) => ({
   REMOTE_IMPORT_MAX_TOTAL_BYTES: 16 * 1024
 }))
 
-const { stageOneSourceForRuntimeUpload } = await import('./filesystem-runtime-upload-staging')
+const { stagedRuntimeUploadByteLength, stageOneSourceForRuntimeUpload } =
+  await import('./filesystem-runtime-upload-staging')
 
 let workDir: string
 
@@ -43,6 +44,26 @@ describe('stageOneSourceForRuntimeUpload', () => {
     expect(JSON.stringify(staged)).not.toContain('contentBase64')
   })
 
+  it('records the identity the uploader re-checks, not just the size', async () => {
+    const filePath = join(workDir, 'note.txt')
+    await writeFile(filePath, 'hello world')
+    const stat = await lstat(filePath)
+
+    const staged = await stageOneSourceForRuntimeUpload(filePath)
+
+    expect(staged).toMatchObject({
+      status: 'staged',
+      entries: [
+        {
+          byteLength: 11,
+          inode: stat.ino,
+          deviceId: stat.dev,
+          modifiedAtMs: stat.mtimeMs
+        }
+      ]
+    })
+  })
+
   it('stages a file with no cap error, where the old buffering path refused', async () => {
     const filePath = join(workDir, 'big.bin')
     await writeFile(filePath, Buffer.alloc(3 * 1024))
@@ -53,15 +74,61 @@ describe('stageOneSourceForRuntimeUpload', () => {
     })
   })
 
-  it('names the limit and the actual size when a file is over the ceiling', async () => {
-    const filePath = join(workDir, 'huge.bin')
+  it('names the file, the actual size and the limit when a file is over the ceiling', async () => {
+    const filePath = join(workDir, 'clip.mp4')
     await writeFile(filePath, Buffer.alloc(6 * 1024))
 
     const staged = await stageOneSourceForRuntimeUpload(filePath)
 
     expect(staged).toMatchObject({ status: 'failed' })
-    expect(staged.status === 'failed' && staged.reason).toContain('6 KB')
-    expect(staged.status === 'failed' && staged.reason).toContain('4 KB')
+    // Why: a dropped file's relative path is '', so this is the regression that
+    // would otherwise report "'' is 6 KB, over the 4 KB ... limit".
+    expect(staged.status === 'failed' && staged.reason).toBe(
+      "'clip.mp4' is 6 KB, over the 4 KB per-file remote import limit"
+    )
+  })
+
+  it('names the offending entry by its path inside a dropped directory', async () => {
+    const rootPath = join(workDir, 'media')
+    await mkdir(join(rootPath, 'clips'), { recursive: true })
+    await writeFile(join(rootPath, 'clips', 'big.mp4'), Buffer.alloc(6 * 1024))
+
+    const staged = await stageOneSourceForRuntimeUpload(rootPath)
+
+    expect(staged.status === 'failed' && staged.reason).toContain("'clips/big.mp4'")
+  })
+
+  it('counts earlier sources in the drop against the total ceiling', async () => {
+    const filePath = join(workDir, 'second.bin')
+    await writeFile(filePath, Buffer.alloc(3 * 1024))
+
+    // Alone it fits; after 14 KB of earlier sources the 16 KB drop ceiling is gone.
+    await expect(stageOneSourceForRuntimeUpload(filePath, 0)).resolves.toMatchObject({
+      status: 'staged'
+    })
+    const overBudget = await stageOneSourceForRuntimeUpload(filePath, 14 * 1024)
+    expect(overBudget).toMatchObject({ status: 'failed' })
+    expect(overBudget.status === 'failed' && overBudget.reason).toContain(
+      'total remote import limit'
+    )
+  })
+
+  it('reports the bytes a source contributes to the drop budget', async () => {
+    const rootPath = join(workDir, 'tree')
+    await mkdir(join(rootPath, 'nested'), { recursive: true })
+    await writeFile(join(rootPath, 'a.txt'), 'aa')
+    await writeFile(join(rootPath, 'nested', 'b.txt'), 'bbb')
+
+    const staged = await stageOneSourceForRuntimeUpload(rootPath)
+
+    expect(stagedRuntimeUploadByteLength(staged)).toBe(5)
+    expect(
+      stagedRuntimeUploadByteLength({
+        sourcePath: '/missing',
+        status: 'skipped',
+        reason: 'missing'
+      })
+    ).toBe(0)
   })
 
   // symlink() needs privileges or Developer Mode on Windows.
@@ -90,9 +157,9 @@ describe('stageOneSourceForRuntimeUpload', () => {
     expect(entries).toEqual(
       expect.arrayContaining([
         { relativePath: '', kind: 'directory' },
-        { relativePath: 'a.txt', kind: 'file', byteLength: 2 },
+        expect.objectContaining({ relativePath: 'a.txt', kind: 'file', byteLength: 2 }),
         { relativePath: 'nested', kind: 'directory' },
-        { relativePath: 'nested/b.txt', kind: 'file', byteLength: 3 }
+        expect.objectContaining({ relativePath: 'nested/b.txt', kind: 'file', byteLength: 3 })
       ])
     )
   })

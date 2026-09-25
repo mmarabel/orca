@@ -6,7 +6,7 @@ import type { AiVaultScope, AiVaultSession } from '../../../../shared/ai-vault-t
 import type { AiVaultResumeStartup } from '@/lib/ai-vault-resume-command'
 import { translate } from '@/i18n/i18n'
 import { getActiveStickyHeaderIndexForScroll } from '../sidebar/worktree-list/viewport/virtual-rows'
-import { EmptyState, SessionLoadingState } from './AiVaultSessionListStates'
+import { aiVaultEmptyListTitle, EmptyState, SessionLoadingState } from './AiVaultSessionListStates'
 import type { AiVaultSessionListGroup } from './ai-vault-session-filters'
 import type { AiVaultOriginalPaneTarget } from './ai-vault-original-pane'
 import type {
@@ -187,27 +187,7 @@ export function AiVaultSessionVirtualList({
 
         {sessionsCount > 0 && filteredSessionsCount === 0 ? (
           <EmptyState
-            title={
-              noAgentsSelected
-                ? translate(
-                    'auto.components.right.sidebar.AiVaultPanel.noAgentsSelected',
-                    'No agents selected'
-                  )
-                : scopedSessionsCount === 0 && vaultScope === 'workspace'
-                  ? translate(
-                      'sessionSearch.panel.noWorkspaceSessions',
-                      'No sessions in this workspace'
-                    )
-                  : scopedSessionsCount === 0 && vaultScope === 'project'
-                    ? translate(
-                        'sessionSearch.panel.noProjectSessions',
-                        'No sessions in this project'
-                      )
-                    : translate(
-                        'auto.components.right.sidebar.AiVaultPanel.noSessionsMatchFilters',
-                        'No sessions match the current filters'
-                      )
-            }
+            title={aiVaultEmptyListTitle({ noAgentsSelected, scopedSessionsCount, vaultScope })}
           />
         ) : null}
 

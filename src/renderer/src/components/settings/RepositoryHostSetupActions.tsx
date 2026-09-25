@@ -231,7 +231,9 @@ export function RepositoryHostSetupActions({
           value={setupTargetHostId ?? undefined}
           onValueChange={(value) => {
             // Why: project paths belong to one host and must never carry into another machine.
-            setSelectedSetupHostId(value as ExecutionHostId)
+            setSelectedSetupHostId(
+              setupHostOptions.find((option) => option.id === value)?.id ?? null
+            )
             setSetupPath('')
             setCloneDestination('')
           }}

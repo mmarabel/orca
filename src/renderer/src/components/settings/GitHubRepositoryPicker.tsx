@@ -49,7 +49,6 @@ export function GitHubRepositoryPicker({
           type="button"
           variant="outline"
           size="sm"
-          className="h-8 gap-1.5 px-2.5 text-xs"
           disabled={disabled}
           role="combobox"
           aria-expanded={open}
@@ -62,7 +61,7 @@ export function GitHubRepositoryPicker({
           <ChevronsUpDown className="size-3 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[28rem] max-w-[85vw] p-0">
+      <PopoverContent align="start" className="w-[28rem] max-w-[85vw]">
         <Command>
           <CommandInput
             placeholder={translate(
@@ -112,7 +111,7 @@ export function GitHubRepositoryPicker({
                       onSelect(prefersSsh ? repository.sshUrl : repository.httpsUrl)
                       setOpen(false)
                     }}
-                    className="items-start gap-2.5 py-2.5"
+                    className="items-start"
                   >
                     <Github className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1">

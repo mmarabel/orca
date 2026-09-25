@@ -40,6 +40,7 @@ describe('github RPC methods', () => {
 
   it('lists repositories for the authenticated GitHub account', async () => {
     const repositories = [{ nameWithOwner: 'acme/orca' }]
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: github.listRepositories reaches only listGitHubRepositories plus dispatcher getRuntimeId.
     const runtime = {
       getRuntimeId: () => 'test-runtime',
       listGitHubRepositories: vi.fn().mockResolvedValue(repositories)
@@ -462,6 +463,28 @@ describe('github RPC methods', () => {
     )
 
     expect(runtime.setRepoPRAutoMerge).toHaveBeenCalledWith('repo-1', 7, true, 'squash', {
+      owner: 'acme',
+      repo: 'widgets'
+    })
+    expect(response).toMatchObject({ ok: true, result: { ok: true } })
+  })
+
+  it('marks PRs ready for review on the runtime server', async () => {
+    const runtime = {
+      getRuntimeId: () => 'test-runtime',
+      markRepoPRReadyForReview: vi.fn().mockResolvedValue({ ok: true })
+    } as unknown as OrcaRuntimeService
+    const dispatcher = new RpcDispatcher({ runtime, methods: GITHUB_METHODS })
+
+    const response = await dispatcher.dispatch(
+      makeRequest('github.markPRReadyForReview', {
+        repo: 'repo-1',
+        prNumber: 7,
+        prRepo: { owner: 'acme', repo: 'widgets' }
+      })
+    )
+
+    expect(runtime.markRepoPRReadyForReview).toHaveBeenCalledWith('repo-1', 7, {
       owner: 'acme',
       repo: 'widgets'
     })

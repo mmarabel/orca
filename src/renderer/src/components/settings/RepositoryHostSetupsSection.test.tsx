@@ -70,7 +70,7 @@ function connectedSshState(targetId: string) {
 }
 
 beforeEach(() => {
-  ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true
   browseDir.mockClear()
   Object.defineProperty(window, 'api', {
     configurable: true,
@@ -306,6 +306,7 @@ describe('RepositoryHostSetupsSection', () => {
                 }
               ]
             ]),
+            targetGenerations: new Map(),
             targetLabels: new Map([
               ['direct', 'Direct box'],
               ['jump', 'Jump box']

@@ -104,7 +104,7 @@ export function RepositoryHostCloneStep({
       />
       <div className="space-y-1.5">
         <div className="flex items-center justify-between gap-3">
-          <Label className="text-xs">
+          <Label>
             {translate(
               'auto.components.settings.RepositoryHostCloneStep.2d9b8fcbe2',
               'Repository URL'
@@ -120,7 +120,7 @@ export function RepositoryHostCloneStep({
           value={cloneUrl}
           onChange={(event) => onCloneUrlChange(event.target.value)}
           placeholder={translate(
-            'auto.components.settings.RepositoryPane.cloneUrlPlaceholder',
+            'auto.components.settings.RepositoryHostCloneStep.971ed2889d',
             'https://github.com/owner/repository.git'
           )}
           className="h-9 min-w-0"
@@ -129,7 +129,7 @@ export function RepositoryHostCloneStep({
         />
       </div>
       <div className="space-y-1.5">
-        <Label className="text-xs">
+        <Label>
           {translate(
             'auto.components.settings.RepositoryHostCloneStep.dfb6632216',
             'Parent folder'
@@ -140,10 +140,10 @@ export function RepositoryHostCloneStep({
             value={cloneDestination}
             onChange={(event) => onCloneDestinationChange(event.target.value)}
             placeholder={translate(
-              'auto.components.settings.RepositoryPane.cloneDestinationPlaceholder',
+              'auto.components.settings.RepositoryHostCloneStep.a00ce5f80b',
               '/parent/directory/on/host'
             )}
-            className="h-9 min-w-0 flex-1 font-mono text-xs"
+            className="h-9 min-w-0 flex-1"
             disabled={isCloning}
             spellCheck={false}
           />

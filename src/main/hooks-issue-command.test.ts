@@ -37,6 +37,10 @@ vi.mock('./git/runner', async () => ({
   gitExecFileSync: gitExecFileSyncMock
 }))
 
+vi.mock('./git/check-ignored-paths', () => ({
+  checkIgnoredPaths: vi.fn().mockResolvedValue([])
+}))
+
 describe('readIssueCommand', () => {
   it('prefers the local override over the shared orca.yaml command', async () => {
     const fs = await import('node:fs')
@@ -53,7 +57,7 @@ describe('readIssueCommand', () => {
       return ''
     })
 
-    const { readIssueCommand } = await import('./hooks')
+    const { readIssueCommand } = await import('./issue-command-file')
     expect(readIssueCommand(TEST_REPO_PATH)).toEqual({
       localContent: 'local command',
       sharedContent: 'shared command',
@@ -73,7 +77,7 @@ describe('readIssueCommand', () => {
       return ''
     })
 
-    const { readIssueCommand } = await import('./hooks')
+    const { readIssueCommand } = await import('./issue-command-file')
     expect(readIssueCommand(TEST_REPO_PATH)).toEqual({
       localContent: null,
       sharedContent: 'shared command',
@@ -85,6 +89,25 @@ describe('readIssueCommand', () => {
 })
 
 describe('writeIssueCommand', () => {
+  it('checks file ignore rules in the selected WSL distro', async () => {
+    const { writeIssueCommand } = await import('./issue-command-file')
+    const { checkIgnoredPaths } = await import('./git/check-ignored-paths')
+    const fs = await import('node:fs')
+    vi.mocked(checkIgnoredPaths).mockResolvedValueOnce(['.orca/issue-command'])
+    vi.mocked(fs.writeFileSync).mockClear()
+
+    await writeIssueCommand(TEST_REPO_PATH, 'local command', { wslDistro: 'Ubuntu' })
+
+    expect(checkIgnoredPaths).toHaveBeenLastCalledWith(TEST_REPO_PATH, ['.orca/issue-command'], {
+      wslDistro: 'Ubuntu'
+    })
+    expect(fs.writeFileSync).toHaveBeenCalledExactlyOnceWith(
+      TEST_ISSUE_COMMAND_PATH,
+      'local command\n',
+      'utf-8'
+    )
+  })
+
   it('writes only the local override file and keeps .orca ignored locally', async () => {
     const fs = await import('node:fs')
     vi.mocked(fs.existsSync).mockImplementation(
@@ -97,8 +120,8 @@ describe('writeIssueCommand', () => {
       return ''
     })
 
-    const { writeIssueCommand } = await import('./hooks')
-    writeIssueCommand(TEST_REPO_PATH, 'local command')
+    const { writeIssueCommand } = await import('./issue-command-file')
+    await writeIssueCommand(TEST_REPO_PATH, 'local command')
 
     expect(vi.mocked(fs.writeFileSync)).toHaveBeenCalledWith(
       TEST_GITIGNORE_PATH,
@@ -113,9 +136,9 @@ describe('writeIssueCommand', () => {
   })
 
   it('deletes the local override when the override is cleared', async () => {
-    const { writeIssueCommand } = await import('./hooks')
+    const { writeIssueCommand } = await import('./issue-command-file')
     const fs = await import('node:fs')
-    writeIssueCommand(TEST_REPO_PATH, '   ')
+    await writeIssueCommand(TEST_REPO_PATH, '   ')
 
     expect(vi.mocked(fs.rmSync)).toHaveBeenCalledWith(TEST_ISSUE_COMMAND_PATH, {
       force: true
@@ -136,7 +159,7 @@ describe('createIssueCommandRunnerScript', () => {
     Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
 
     try {
-      const { createIssueCommandRunnerScript } = await import('./hooks')
+      const { createIssueCommandRunnerScript } = await import('./worktree-runner-script')
       const result = createIssueCommandRunnerScript(
         makeRepo(),
         'C:\\repo-worktree',
@@ -167,7 +190,7 @@ describe('createIssueCommandRunnerScript', () => {
     Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
 
     try {
-      const { createIssueCommandRunnerScript } = await import('./hooks')
+      const { createIssueCommandRunnerScript } = await import('./worktree-runner-script')
       const result = createIssueCommandRunnerScript(
         makeRepo(),
         'C:\\repo-worktree',
@@ -194,7 +217,7 @@ describe('createIssueCommandRunnerScript', () => {
     Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
 
     try {
-      const { createIssueCommandRunnerScript } = await import('./hooks')
+      const { createIssueCommandRunnerScript } = await import('./worktree-runner-script')
       const result = createIssueCommandRunnerScript(
         makeRepo(),
         'C:\\repo-worktree',

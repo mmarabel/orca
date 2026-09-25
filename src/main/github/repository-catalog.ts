@@ -24,11 +24,11 @@ export async function listAuthenticatedGitHubRepositories(): Promise<
     throw new Error('GitHub returned an invalid repository list')
   }
 
-  return parsed.flatMap((value): GitHubRepositoryCatalogItem[] => {
+  return parsed.flatMap((value: unknown): GitHubRepositoryCatalogItem[] => {
     if (!value || typeof value !== 'object') {
       return []
     }
-    const repository = value as GitHubApiRepository
+    const repository: GitHubApiRepository = value
     if (
       typeof repository.full_name !== 'string' ||
       typeof repository.clone_url !== 'string' ||

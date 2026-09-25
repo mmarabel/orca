@@ -58,7 +58,7 @@ vi.mock(
 )
 
 import { registerFilesystemHandlers } from './filesystem'
-import { invalidateAuthorizedRootsCache } from './filesystem-auth'
+import { invalidateAuthorizedRootsCache } from './registered-worktree-roots-cache'
 
 describe('registerFilesystemHandlers', () => {
   beforeEach(() => {
@@ -80,7 +80,9 @@ describe('registerFilesystemHandlers', () => {
       })
     ).resolves.toEqual({ success: true })
 
-    expect(commitChangesMock).toHaveBeenCalledWith(WORKTREE_FEATURE_PATH, 'feat: ship commit', {})
+    expect(commitChangesMock).toHaveBeenCalledWith(WORKTREE_FEATURE_PATH, 'feat: ship commit', {
+      admissionTier: 'interactive'
+    })
   })
 
   it('returns local commit hook failure payload from git:commit', async () => {

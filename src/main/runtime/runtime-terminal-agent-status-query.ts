@@ -1,6 +1,7 @@
 import {
   detectAgentStatusFromTitle,
   isOpenCodeNativeTitle,
+  isShellProcess,
   isQuarterCircleSpinnerOnlyAgentTitle,
   type AgentStatus
 } from '../../shared/agent-detection'
@@ -9,6 +10,7 @@ import { shareCompatibleTitleIdentityGroup } from '../../shared/agent-title-owne
 import { resolveExplicitTerminalTitleAgentType } from '../../shared/terminal-title-agent-type'
 import { ptyForegroundIsShell } from './pty-shell-foreground-evidence'
 import type { RuntimeTerminalAgentStatus } from '../../shared/runtime-types'
+import type { TuiAgent } from '../../shared/tui-agent'
 import type { RuntimePtyController } from './runtime-pty-controller-contract'
 import type { RuntimeLeafRecord, RuntimePtyWorktreeRecord } from './runtime-terminal-state-records'
 import {
@@ -248,13 +250,18 @@ export class RuntimeTerminalAgentStatusQuery {
     if (!titleAgent || !controller) {
       return true
     }
-    let foreground: string | null
+    let foregroundAgent: TuiAgent | null
     try {
-      foreground = await controller.getForegroundProcess(ptyId)
+      const foreground = await controller.getForegroundProcess(ptyId)
+      // Why: behind a cached shell, presence accepts an agent only from fresh evidence; so must this.
+      const evidence =
+        foreground && isShellProcess(foreground)
+          ? await controller.confirmForegroundProcess?.(ptyId)
+          : foreground
+      foregroundAgent = recognizeAgentProcess(evidence)?.agent ?? null
     } catch {
       return true
     }
-    const foregroundAgent = recognizeAgentProcess(foreground)?.agent ?? null
     return (
       foregroundAgent === null || shareCompatibleTitleIdentityGroup(titleAgent, foregroundAgent)
     )

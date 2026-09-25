@@ -381,6 +381,24 @@ describe('inventory-adopted daemon session title seed (#22809)', () => {
     await expect(runtime.getTerminalInteractiveWait(handle)).resolves.toBeNull()
   })
 
+  it('compares a restored title with the agent fresh evidence finds behind a cached shell', async () => {
+    const { runtime } = createHeadlessRuntime({
+      serializeProviderBuffer: async () => providerSnapshot({ lastTitle: GEMINI_PERMISSION_TITLE }),
+      getForegroundProcess: async () => 'bash',
+      confirmForegroundProcess: async () => 'claude'
+    })
+    await runtime.listTerminals()
+    await vi.waitFor(() => expect(runtime.record()?.lastOscTitle).toBe(GEMINI_PERMISSION_TITLE))
+    const { handle } = await onlyTerminal(runtime)
+
+    await expect(runtime.getTerminalAgentStatus(handle)).resolves.toEqual({
+      handle,
+      isRunningAgent: true,
+      status: null
+    })
+    await expect(runtime.getTerminalInteractiveWait(handle)).resolves.toBeNull()
+  })
+
   it('rereads the title when a live one lands while the restored one is verified', async () => {
     let liveTitleOnRead: string | null = null
     const { runtime } = createHeadlessRuntime({

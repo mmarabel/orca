@@ -15,7 +15,9 @@ function setupEffects(): WorkerEffect[] {
   return [{ kind: 'setup', action: 'spawned', terminalId: 'term_setup' }]
 }
 
-describe('awaitStructuredWorkerSetupGate', () => {
+// Why this file and not `worker-start-structured-setup-gate.test.ts`: that name is taken by the
+// open setup-observer-timeout change, and two branches adding the same new path collide on merge.
+describe('awaitStructuredWorkerSetupGate verdicts', () => {
   it.each([
     { exitCode: 0, satisfied: true },
     { exitCode: 1, satisfied: false },

@@ -30,6 +30,15 @@ describe('terminal path-exists cache', () => {
     expect(cache.has('k')).toBe(false)
   })
 
+  it('ignores an older probe result that lands after a newer one', () => {
+    const cache: TerminalPathExistsCache = new Map()
+    writeTerminalPathExistsCache(cache, 'k', true, 2000)
+    writeTerminalPathExistsCache(cache, 'k', false, 1000)
+    expect(cache.get('k')).toEqual({ exists: true, checkedAt: 2000 })
+    writeTerminalPathExistsCache(cache, 'k', false, 3000)
+    expect(cache.get('k')).toEqual({ exists: false, checkedAt: 3000 })
+  })
+
   it('returns undefined for an unknown key', () => {
     expect(readTerminalPathExistsCache(new Map(), 'missing')).toBeUndefined()
   })

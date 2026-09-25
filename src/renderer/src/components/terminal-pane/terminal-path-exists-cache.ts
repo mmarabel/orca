@@ -58,9 +58,15 @@ export function writeTerminalPathExistsCache(
   cache: TerminalPathExistsCache,
   key: string,
   exists: boolean,
-  now: number = Date.now()
+  checkedAt: number = Date.now()
 ): void {
-  if (cache.has(key)) {
+  const existing = cache.get(key)
+  // Why: overlapping probes can resolve out of order; an older result (e.g. a
+  // stale "missing") must not replace a newer one.
+  if (existing && existing.checkedAt > checkedAt) {
+    return
+  }
+  if (existing) {
     cache.delete(key)
   } else {
     // Why: terminal output can contain unbounded unique paths during long
@@ -73,5 +79,5 @@ export function writeTerminalPathExistsCache(
       cache.delete(oldestKey)
     }
   }
-  cache.set(key, { exists, checkedAt: now })
+  cache.set(key, { exists, checkedAt })
 }

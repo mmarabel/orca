@@ -205,6 +205,35 @@ describe('createFilePathLinkProvider range bounds', () => {
     now.mockRestore()
   })
 
+  it('keeps a newer found result when an older missing probe resolves last', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(11_000)
+    const cacheKey = 'active\0/repo/eventually-created.ts'
+    const pathExistsCache: TerminalPathExistsCache = new Map()
+    const { provider } = createProviderSetup(
+      [makeBufferLine('eventually-created.ts')],
+      pathExistsCache
+    )
+    const olderProbe = createDeferred<boolean>()
+    vi.mocked(window.api.shell.pathExists)
+      .mockImplementationOnce(() => olderProbe.promise)
+      .mockResolvedValueOnce(true)
+
+    const olderLinks = new Promise<ILink[]>((resolve) => {
+      provider.provideLinks(1, (provided) => resolve(provided ?? []))
+    })
+    await flushAsyncWork()
+    now.mockReturnValue(12_000)
+    const newerLinks = await new Promise<ILink[]>((resolve) => {
+      provider.provideLinks(1, (provided) => resolve(provided ?? []))
+    })
+    olderProbe.resolve(false)
+
+    expect(await olderLinks).toEqual([])
+    expect(newerLinks.map((link) => link.text)).toEqual(['eventually-created.ts'])
+    expect(pathExistsCache.get(cacheKey)).toEqual({ exists: true, checkedAt: 12_000 })
+    now.mockRestore()
+  })
+
   it('does not reuse SSH path-exists cache entries across connections', async () => {
     setPlatform('Macintosh')
     const pathExistsCache = makeExistsCache()

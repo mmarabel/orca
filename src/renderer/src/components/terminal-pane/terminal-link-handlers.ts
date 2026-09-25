@@ -173,13 +173,14 @@ export function createFilePathLinkProvider(
               // Why: exact known workspace roots must stay clickable for SSH or
               // stale local paths even when filesystem probing says "missing".
               if (!worktreeRootLink) {
+                const probeStartedAt = Date.now()
                 const cachedExists = readTerminalPathExistsCache(pathExistsCache, cacheKey)
                 const exists =
                   cachedExists ?? (await pathExists(fileContext, mappedPath, isRemoteRuntimePath))
                 // Why: refreshing a cached negative's timestamp on every hover
                 // would keep frequently scanned missing paths stale forever.
                 if (cachedExists === undefined) {
-                  writeTerminalPathExistsCache(pathExistsCache, cacheKey, exists)
+                  writeTerminalPathExistsCache(pathExistsCache, cacheKey, exists, probeStartedAt)
                 }
                 if (!exists) {
                   return null

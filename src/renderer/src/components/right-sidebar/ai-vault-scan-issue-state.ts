@@ -17,19 +17,41 @@ export function aiVaultSessionFileKey(session: AiVaultSession): string {
   return sessionFileKey(session.executionHostId, session.filePath)
 }
 
-/** Notices about one listed session's transcript (e.g. a skipped oversized record), keyed by that session's file. */
+/** Scanner notes about one listed session's own transcript, keyed by that session's file. */
+export type AiVaultSessionReadNotices = ReadonlyMap<string, readonly string[]>
+
+export const NO_AI_VAULT_SESSION_READ_NOTICES: AiVaultSessionReadNotices = new Map()
+
+/**
+ * Pair each `notice` issue (e.g. a skipped oversized record) with the listed
+ * session whose transcript it is about.
+ *
+ * Main holds this pairing directly — the session and its notice come out of one
+ * candidate — but it flattens it into a path-keyed `issues[]`. The renderer has
+ * to rebuild it anyway to keep those notices out of the panel-wide banners, so
+ * the same map serves both. Host id is part of the key because two execution
+ * hosts can hold the same absolute path.
+ */
 export function aiVaultSessionReadNotices(
   result: AiVaultListResult | null
-): ReadonlyMap<string, string> {
-  const notices = new Map<string, string>()
+): AiVaultSessionReadNotices {
+  const notices = new Map<string, string[]>()
   if (!result) {
     return notices
   }
   const sessionKeys = new Set(result.sessions.map(aiVaultSessionFileKey))
   for (const issue of result.issues) {
     const key = sessionFileKey(issue.executionHostId, issue.path)
-    if (issue.kind === 'notice' && sessionKeys.has(key)) {
-      notices.set(key, notices.has(key) ? `${notices.get(key)} ${issue.message}` : issue.message)
+    if (issue.kind !== 'notice' || !sessionKeys.has(key)) {
+      continue
+    }
+    // Separate entries, not one concatenated run-on: the scanner's messages are
+    // each a whole sentence and are not written to compose.
+    const existing = notices.get(key)
+    if (existing) {
+      existing.push(issue.message)
+    } else {
+      notices.set(key, [issue.message])
     }
   }
   return notices
@@ -50,14 +72,16 @@ export function blockingAiVaultScanIssue(
 // skipped transcript file, and an unreadable *source* (a whole locked
 // opencode.db holding every OpenCode session) must not read as "1 transcript
 // skipped".
-export function aiVaultScanNoticeIssues(result: AiVaultListResult | null): AiVaultScanIssue[] {
+export function aiVaultScanNoticeIssues(
+  result: AiVaultListResult | null,
+  // Why: a notice about one session's transcript belongs on that session, not in a
+  // panel-wide banner that every rescan re-emits for sessions outside the view.
+  sessionNotices: AiVaultSessionReadNotices
+): AiVaultScanIssue[] {
   if (!result) {
     return []
   }
   const blocking = blockingAiVaultScanIssue(result)
-  // Why: a notice about one session's transcript belongs on that session, not in a
-  // panel-wide banner that every rescan re-emits for sessions outside the view.
-  const sessionNotices = aiVaultSessionReadNotices(result)
   return result.issues.filter(
     (issue) =>
       Boolean(issue.kind) &&

@@ -1,5 +1,5 @@
 import type React from 'react'
-import { ArrowDownWideNarrow } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -33,7 +33,13 @@ export function aiVaultSessionCountLabel(shown: number, loaded: number, atLimit 
             value1: loaded
           }
         )
-      : translate('sessionSearch.panel.sessionsAtLimit', '{{count}}+ sessions', { count: shown })
+      : shown === 1
+        ? translate('sessionSearch.panel.sessionsAtLimitOne', '{{count}}+ session', {
+            count: shown
+          })
+        : translate('sessionSearch.panel.sessionsAtLimitOther', '{{count}}+ sessions', {
+            count: shown
+          })
   }
   if (shown !== loaded) {
     return translate('sessionSearch.panel.sessionsOfLoaded', '{{value0}} of {{value1}} sessions', {
@@ -48,8 +54,7 @@ export function aiVaultSessionCountLabel(shown: number, loaded: number, atLimit 
 
 /**
  * The bar above the session list: what the list is showing on the left, the order that
- * produced it on the right — the one place sort is both reported and changed. Kept quiet
- * to match the header's icon controls; the button's label and menu name the current order.
+ * produced it on the right — the one place sort is both reported and changed.
  */
 export function AiVaultSessionListBar<Value extends string>({
   label,
@@ -63,24 +68,21 @@ export function AiVaultSessionListBar<Value extends string>({
   onChange: (value: Value) => void
 }): React.JSX.Element {
   const selected = menu.options.find((option) => option.value === value)
-  const sortLabel = menu.ariaLabel(selected?.label ?? '')
   return (
-    <div className="flex h-7 shrink-0 items-center gap-2 border-b border-sidebar-border px-2.5">
-      <span className="min-w-0 flex-1 truncate text-[11px] tabular-nums text-muted-foreground">
+    <div className="flex h-8 shrink-0 items-center gap-2 border-y border-sidebar-border bg-sidebar-accent/60 pl-3 pr-1.5">
+      <span className="min-w-0 flex-1 truncate text-xs font-semibold tabular-nums text-foreground">
         {label}
       </span>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            type="button"
             variant="ghost"
-            size="icon-xs"
-            className="size-6 shrink-0"
-            aria-label={sortLabel}
-            title={sortLabel}
+            size="xs"
+            className="shrink-0"
+            aria-label={menu.ariaLabel(selected?.label ?? '')}
           >
-            {/* Mirrored so the arrow sits on the right. */}
-            <ArrowDownWideNarrow className="size-3 -scale-x-100" />
+            {selected?.label}
+            <ChevronDown className="text-muted-foreground" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-0">

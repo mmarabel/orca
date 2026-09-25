@@ -9,6 +9,11 @@ import {
   skippedAiVaultTranscriptReasons
 } from './ai-vault-scan-issue-state'
 
+// The panel builds the notice map once and hands the same one to the banners.
+function noticeIssues(scan: AiVaultListResult | null) {
+  return aiVaultScanNoticeIssues(scan, aiVaultSessionReadNotices(scan))
+}
+
 describe('blockingAiVaultScanIssue', () => {
   it('surfaces the cause when a scan returns no sessions', () => {
     const issue = {
@@ -53,7 +58,7 @@ describe('aiVaultScanNoticeIssues', () => {
     const truncated = result([], [scopeIssue])
 
     expect(blockingAiVaultScanIssue(truncated)).toBeNull()
-    expect(aiVaultScanNoticeIssues(truncated)).toEqual([scopeIssue])
+    expect(noticeIssues(truncated)).toEqual([scopeIssue])
     expect(skippedAiVaultTranscriptCount(truncated)).toBe(0)
   })
 
@@ -76,7 +81,7 @@ describe('aiVaultScanNoticeIssues', () => {
       [hostIssue, scopeIssue, { agent: 'codex', path: '/bad.jsonl', message: 'Malformed' }]
     )
 
-    expect(aiVaultScanNoticeIssues(partial)).toEqual([hostIssue, scopeIssue])
+    expect(noticeIssues(partial)).toEqual([hostIssue, scopeIssue])
     expect(skippedAiVaultTranscriptCount(partial)).toBe(1)
   })
 
@@ -95,7 +100,7 @@ describe('aiVaultScanNoticeIssues', () => {
 
     expect(skippedAiVaultTranscriptCount(empty)).toBe(0)
     expect(skippedAiVaultTranscriptReasons(empty)).toEqual([])
-    expect(aiVaultScanNoticeIssues(empty)).toEqual([sourceIssue])
+    expect(noticeIssues(empty)).toEqual([sourceIssue])
   })
 
   it('does not repeat the blocking issue as a notice row', () => {
@@ -107,11 +112,11 @@ describe('aiVaultScanNoticeIssues', () => {
       message: 'Remote connection dropped.'
     }
 
-    expect(aiVaultScanNoticeIssues(result([], [hostIssue]))).toEqual([])
+    expect(noticeIssues(result([], [hostIssue]))).toEqual([])
   })
 
   it('reports nothing before the first scan', () => {
-    expect(aiVaultScanNoticeIssues(null)).toEqual([])
+    expect(noticeIssues(null)).toEqual([])
     expect(skippedAiVaultTranscriptCount(null)).toBe(0)
   })
 })
@@ -128,17 +133,17 @@ describe('aiVaultSessionReadNotices', () => {
   it('moves a notice about a listed session onto that session instead of a banner', () => {
     const scan = result([{ id: 'big' }], [oversized])
 
-    expect(aiVaultScanNoticeIssues(scan)).toEqual([])
-    expect(aiVaultSessionReadNotices(scan).get(aiVaultSessionFileKey(scan.sessions[0]))).toBe(
+    expect(noticeIssues(scan)).toEqual([])
+    expect(aiVaultSessionReadNotices(scan).get(aiVaultSessionFileKey(scan.sessions[0]))).toEqual([
       oversized.message
-    )
+    ])
   })
 
   it('keeps a notice that matches no listed session as a banner', () => {
     const overflow = { ...oversized, path: '/sessions' }
     const scan = result([{ id: 'big' }], [overflow])
 
-    expect(aiVaultScanNoticeIssues(scan)).toEqual([overflow])
+    expect(noticeIssues(scan)).toEqual([overflow])
     expect(aiVaultSessionReadNotices(scan).size).toBe(0)
   })
 

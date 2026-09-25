@@ -49,6 +49,22 @@ beforeEach(() => {
   mocks.toastError.mockReset()
 })
 
+describe('sidebar reveal actions', () => {
+  it('switch the sidebar body back to Spaces so the worktree list can consume the reveal', () => {
+    const store = createUIStore()
+    store.getState().setSidebarBody('agents')
+
+    store.getState().revealWorktreeInSidebar('wt-1', { highlight: true })
+    expect(store.getState().sidebarBody).toBe('workspaces')
+    expect(store.getState().pendingRevealWorktree?.worktreeId).toBe('wt-1')
+
+    store.getState().setSidebarBody('agents')
+    store.getState().revealSidebarRow('repo:r1')
+    expect(store.getState().sidebarBody).toBe('workspaces')
+    expect(store.getState().pendingRevealSidebarRow?.rowKey).toBe('repo:r1')
+  })
+})
+
 describe('createUISlice hydratePersistedUI', () => {
   it('defaults persisted right sidebar visibility to open', () => {
     expect(getDefaultUIState().rightSidebarOpen).toBe(true)
@@ -126,24 +142,13 @@ describe('createUISlice hydratePersistedUI', () => {
     expect(store.getState().activeView).toBe('terminal')
   })
 
-  // Why: the Skills page was removed after being unreachable since #4535, so a
-  // profile written before then can still carry `activeView: 'skills'` on disk.
-  // Dropping it from TopLevelView is what demotes it — this pins that the removal
-  // is a migration and not a blank main surface on next launch.
-  it('demotes a persisted skills view to terminal now that the page is gone', () => {
+  it('restores a persisted skills view', () => {
     const store = createUIStore()
-    // Why: the default is already 'terminal', so seed a different view first —
-    // otherwise this passes whether hydration demoted the value or never ran.
     store.setState({ activeView: 'tasks' })
 
-    store.getState().hydratePersistedUI(
-      makePersistedUI({
-        activeView: 'skills' as unknown as PersistedUIState['activeView']
-      }),
-      'startup'
-    )
+    store.getState().hydratePersistedUI(makePersistedUI({ activeView: 'skills' }), 'startup')
 
-    expect(store.getState().activeView).toBe('terminal')
+    expect(store.getState().activeView).toBe('skills')
   })
 
   it('falls back to terminal when the persisted active view is not a known view', () => {
@@ -159,22 +164,11 @@ describe('createUISlice hydratePersistedUI', () => {
     expect(store.getState().activeView).toBe('terminal')
   })
 
-  it('drops a persisted activity view when experimental activity is disabled', () => {
+  it('keeps a persisted activity view when the settings fetch failed', () => {
+    // A failed window.api.settings.get() leaves settings null; downgrading here would let the
+    // persisted-UI writer overwrite the saved view with terminal.
     const store = createUIStore()
-    store.setState({
-      settings: { experimentalActivity: false } as AppState['settings']
-    })
-
-    store.getState().hydratePersistedUI(makePersistedUI({ activeView: 'activity' }), 'startup')
-
-    expect(store.getState().activeView).toBe('terminal')
-  })
-
-  it('restores a persisted activity view when experimental activity is enabled', () => {
-    const store = createUIStore()
-    store.setState({
-      settings: { experimentalActivity: true } as AppState['settings']
-    })
+    store.setState({ settings: null as unknown as AppState['settings'] })
 
     store.getState().hydratePersistedUI(makePersistedUI({ activeView: 'activity' }), 'startup')
 

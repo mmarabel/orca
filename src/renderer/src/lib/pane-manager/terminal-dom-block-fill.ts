@@ -77,9 +77,8 @@ export function applyDomBlockFills(root: ParentNode): void {
   if (typeof root.querySelectorAll !== 'function') {
     return
   }
-  const spans = root.querySelectorAll('.xterm-rows span')
-  for (const node of spans) {
-    const span = node as HTMLElement
+  const spans = root.querySelectorAll<HTMLElement>('.xterm-rows span')
+  for (const span of spans) {
     const text = span.textContent ?? ''
     const fill = backgroundImageForUniformBlockRun(text)
     if (!fill) {

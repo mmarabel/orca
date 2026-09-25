@@ -67,10 +67,18 @@ vi.mock('@/lib/new-workspace', () => ({
   CLIENT_PLATFORM: 'win32'
 }))
 
+vi.mock('@/lib/browser-uuid', () => ({
+  createBrowserUuid: () => 'session-1'
+}))
+
 vi.mock('./terminal-input-activity', () => ({
   recordTerminalUserInputForLeaf: mocks.recordTerminalUserInputForLeaf
 }))
 
+import {
+  endRuntimeUploadSession,
+  getRuntimeUploadSession
+} from '@/runtime/runtime-upload-session-state'
 import { handleTerminalFileDrop } from './terminal-drop-handler'
 import { wrapTerminalBracketedPasteText } from './terminal-bracketed-paste'
 
@@ -89,14 +97,23 @@ function createTerminalTransport(
 
 // Why: the drop panel is only created once rows exist, so a mock that never
 // announces a row leaves nothing for the dismissal assertions to observe.
-type ImportOptions = { progress?: Pick<RuntimeImportProgressHandlers, 'onStart' | 'onFinish'> }
+type ImportOptions = { progress?: RuntimeImportProgressHandlers }
 
+const ROW = { uploadId: 'u-1', name: 'logo.png', totalBytes: 10, sourcePath: '/Users/me/logo.png' }
+
+/** A successful import: the row moves all its bytes and settles before the drop finishes. */
 function startAndFinishRow(options: ImportOptions | undefined): void {
   const progress = options?.progress
-  progress?.onStart([
-    { uploadId: 'u-1', name: 'logo.png', totalBytes: 10, sourcePath: '/Users/me/logo.png' }
-  ])
+  progress?.onStart([ROW])
+  progress?.onRowProgress(ROW.uploadId, ROW.totalBytes)
+  progress?.onRowSettled(ROW.uploadId, 'done')
   progress?.onFinish()
+}
+
+/** An import that throws mid-drop: rows never settle, the finally still finishes. */
+function startRowThenAbort(options: ImportOptions | undefined): void {
+  options?.progress?.onStart([ROW])
+  options?.progress?.onFinish()
 }
 
 function announceRowThenResolve(value: unknown) {
@@ -109,6 +126,7 @@ function announceRowThenResolve(value: unknown) {
 describe('handleTerminalFileDrop', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    endRuntimeUploadSession('session-1')
     mocks.storeState.activeRepoId = 'repo1'
     mocks.storeState.activeWorktreeId = 'wt-1'
     vi.stubGlobal('window', {
@@ -194,6 +212,9 @@ describe('handleTerminalFileDrop', () => {
     expect(mocks.recordTerminalUserInputForLeaf).toHaveBeenCalledWith('tab-1', 'leaf-1')
     expect(mocks.toastError).not.toHaveBeenCalled()
     expect(mocks.toastCustom).toHaveBeenCalled()
+    const session = getRuntimeUploadSession('session-1')
+    expect(session?.settled).toBe(true)
+    expect(session?.rows).toEqual([expect.objectContaining({ status: 'done', sentBytes: 10 })])
     // The panel holds briefly to show the outcome and dismisses itself; cutting
     // that short here is what made a cancelled drop vanish with nothing to read.
     expect(mocks.toastDismiss).not.toHaveBeenCalled()
@@ -269,7 +290,7 @@ describe('handleTerminalFileDrop', () => {
   it('tears the upload panel down immediately when the import throws', async () => {
     mocks.importExternalPathsToRuntime.mockImplementation(
       async (_context: unknown, _paths: unknown, _dest: unknown, options?: ImportOptions) => {
-        startAndFinishRow(options)
+        startRowThenAbort(options)
         throw new Error('runtime unreachable')
       }
     )
@@ -287,6 +308,7 @@ describe('handleTerminalFileDrop', () => {
 
     expect(mocks.toastDismiss).toHaveBeenCalledWith('toast-1')
     expect(mocks.toastError).toHaveBeenCalled()
+    expect(getRuntimeUploadSession('session-1')).toBeUndefined()
   })
 
   it('uses Windows shell paths for forward-slash UNC runtime worktrees', async () => {

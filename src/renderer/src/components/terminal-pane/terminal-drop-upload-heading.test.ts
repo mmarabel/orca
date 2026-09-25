@@ -66,5 +66,13 @@ describe('formatTerminalDropUploadHeading', () => {
         cancelledCount: 0
       })
     ).toBe('Uploading 1 file to runtime')
+    expect(
+      formatTerminalDropUploadHeading({
+        rowCount: 1,
+        settled: true,
+        doneCount: 1,
+        cancelledCount: 0
+      })
+    ).toBe('Uploaded 1 file to runtime')
   })
 })

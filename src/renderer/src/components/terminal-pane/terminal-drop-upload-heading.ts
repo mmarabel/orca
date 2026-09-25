@@ -14,12 +14,11 @@ export function formatTerminalDropUploadHeading({
   doneCount,
   cancelledCount
 }: HeadingInput): string {
-  const plural = rowCount === 1 ? '' : 's'
   if (!settled) {
     return translate(
       'auto.components.terminal.pane.terminal.drop.upload.heading.uploading',
-      'Uploading {{value0}} file{{value1}} to runtime',
-      { value0: rowCount, value1: plural }
+      'Uploading {{count}} files to runtime',
+      { count: rowCount }
     )
   }
   if (doneCount === 0 && cancelledCount > 0) {
@@ -37,13 +36,13 @@ export function formatTerminalDropUploadHeading({
   if (doneCount < rowCount) {
     return translate(
       'auto.components.terminal.pane.terminal.drop.upload.heading.partial',
-      'Uploaded {{value0}} of {{value1}} to runtime',
-      { value0: doneCount, value1: rowCount }
+      'Uploaded {{doneCount}} of {{rowCount}} to runtime',
+      { doneCount, rowCount }
     )
   }
   return translate(
     'auto.components.terminal.pane.terminal.drop.upload.heading.done',
-    'Uploaded {{value0}} file{{value1}} to runtime',
-    { value0: rowCount, value1: plural }
+    'Uploaded {{count}} files to runtime',
+    { count: rowCount }
   )
 }

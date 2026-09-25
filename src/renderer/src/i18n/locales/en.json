@@ -3346,9 +3346,13 @@
                 "heading": {
                   "cancelled": "Upload cancelled",
                   "failed": "Upload failed",
-                  "partial": "Uploaded {{value0}} of {{value1}} to runtime",
-                  "done": "Uploaded {{value0}} file{{value1}} to runtime",
-                  "uploading": "Uploading {{value0}} file{{value1}} to runtime"
+                  "partial": "Uploaded {{doneCount}} of {{rowCount}} to runtime",
+                  "done": "Uploaded {{count}} files to runtime",
+                  "done_one": "Uploaded {{count}} file to runtime",
+                  "done_other": "Uploaded {{count}} files to runtime",
+                  "uploading": "Uploading {{count}} files to runtime",
+                  "uploading_one": "Uploading {{count}} file to runtime",
+                  "uploading_other": "Uploading {{count}} files to runtime"
                 }
               }
             }

@@ -1,3 +1,4 @@
+import type { MinidumpSource } from './minidump-stream-reader'
 import { mkdtemp, mkdir, readdir, rm, utimes, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -200,8 +201,8 @@ describe('captureMinidumpSignature', () => {
       Buffer.from('renderer')
     )
     await writeDump(path.join('reports', 'gpu.dmp'), CRASHED_AT + 200, Buffer.from('gpu-process'))
-    parseMinidumpCrashSignatureMock.mockImplementation((dump: Buffer) => ({
-      processType: dump.toString('utf8'),
+    parseMinidumpCrashSignatureMock.mockImplementation(async (dump: MinidumpSource) => ({
+      processType: (await dump.read(0, dump.byteLength)).toString('utf8'),
       annotations: {}
     }))
 
@@ -259,9 +260,34 @@ describe('Crashpad dump pruning', () => {
 
     await _pruneCrashpadDumpsForTest(16)
 
+    expect((await readdir(path.join(dumpDir, 'reports'))).sort()).toEqual(['middle.dmp', 'new.dmp'])
+  })
+
+  it('caps the dump count even when every dump fits the byte budget', async () => {
+    await writeDump(path.join('reports', 'old.dmp'), CRASHED_AT, Buffer.alloc(8))
+    await writeDump(path.join('reports', 'middle.dmp'), CRASHED_AT + 100, Buffer.alloc(8))
+    await writeDump(path.join('reports', 'new.dmp'), CRASHED_AT + 200, Buffer.alloc(8))
+
+    await _pruneCrashpadDumpsForTest(1024, 2)
+
+    expect((await readdir(path.join(dumpDir, 'reports'))).sort()).toEqual(['middle.dmp', 'new.dmp'])
+  })
+
+  it('keeps a dump already claimed by a persisted crash report', async () => {
+    await writeDump(path.join('reports', 'claimed.dmp'), CRASHED_AT + 200, Buffer.alloc(8))
+    const captured = await captureMinidumpSignature(CRASHED_AT, {
+      timeoutMs: 0,
+      now: () => CRASHED_AT
+    })
+    expect(captured?.filePath).toBe(path.join(dumpDir, 'reports', 'claimed.dmp'))
+    // Newer than the claimed dump, so the claim is what protects it, not index 0.
+    await writeDump(path.join('reports', 'newest.dmp'), CRASHED_AT + 400, Buffer.alloc(8))
+
+    await _pruneCrashpadDumpsForTest(8)
+
     expect((await readdir(path.join(dumpDir, 'reports'))).sort()).toEqual([
-      'middle.dmp',
-      'new.dmp'
+      'claimed.dmp',
+      'newest.dmp'
     ])
   })
 })

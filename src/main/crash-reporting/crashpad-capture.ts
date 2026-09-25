@@ -6,10 +6,12 @@
 // bundle. We keep dumps on disk and lift the *text* signature out of them, so
 // a CHECK failure becomes nameable without shipping raw memory anywhere.
 
+import { constants as fsConstants } from 'node:fs'
 import type { Dirent } from 'node:fs'
-import { readdir, readFile, rm, stat } from 'node:fs/promises'
+import { open, readdir, rm, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { app, crashReporter } from 'electron'
+import { createMinidumpFileSource, observeMinidumpExtent } from './minidump-file-source'
 import {
   parseMinidumpCrashSignature,
   type MinidumpCrashSignature
@@ -27,6 +29,9 @@ const MAX_DUMP_BYTES = 64 * 1024 * 1024
 // Match Crashpad's default budget, but enforce it after crashes instead of
 // waiting for its first 10-minute and later daily pruning passes.
 const MAX_STORED_DUMP_BYTES = 128 * 1024 * 1024
+// A burst of small dumps stays under the byte budget while still growing the
+// directory walk, so cap the file count too.
+const MAX_STORED_DUMPS = 64
 const DUMP_PRUNE_DELAY_MS = 2_000
 
 type DumpCandidate = {
@@ -35,8 +40,9 @@ type DumpCandidate = {
   readonly size: number
 }
 
-// Why: `app.getPath('crashDumps')` is derived from userData, which shifts when
-// app.setName runs at whenReady. Snapshot where Crashpad was actually pointed.
+// Why: `app.getPath('crashDumps')` is derived from userData, which shifts when app.setName runs
+// (at whenReady for packaged builds; before startCrashpadCapture in dev). Snapshot where Crashpad
+// was actually pointed.
 let crashpadDumpDirectory: string | null = null
 let captureStarted = false
 let captureStartedAtMs: number | null = null
@@ -74,6 +80,14 @@ export function startCrashpadCapture(options: CrashpadCaptureOptions = {}): bool
     return false
   }
   crashpadDumpDirectory = options.dumpDirectory ?? resolveDumpDirectory()
+  // Why: a dying main process never delivers process-gone, so a crash loop
+  // never reaches the post-crash prune, and Crashpad's own pass runs in the
+  // handler child after a delayed first sweep. Pruning here is the only thing
+  // that bounds disk across repeatedly crashed launches, so it must not be
+  // deferred behind the coalescing timer a crash loop outruns.
+  void pruneCrashpadDumps().catch((error) => {
+    console.error('[crash-reporting] Crashpad startup dump pruning failed:', error)
+  })
   return true
 }
 
@@ -131,7 +145,10 @@ async function collectDumpCandidates(directory: string): Promise<DumpCandidate[]
   return candidates
 }
 
-async function pruneCrashpadDumps(maxBytes = MAX_STORED_DUMP_BYTES): Promise<void> {
+async function pruneCrashpadDumps(
+  maxBytes = MAX_STORED_DUMP_BYTES,
+  maxDumps = MAX_STORED_DUMPS
+): Promise<void> {
   const directory = crashpadDumpDirectory
   if (!directory) {
     return
@@ -140,11 +157,18 @@ async function pruneCrashpadDumps(maxBytes = MAX_STORED_DUMP_BYTES): Promise<voi
     (left, right) => right.mtimeMs - left.mtimeMs
   )
   let retainedBytes = 0
+  let retainedCount = 0
   for (let index = 0; index < candidates.length; index += 1) {
     const candidate = candidates[index]
-    const mustKeep = index === 0 || reservedDumpPaths.has(candidate.filePath)
-    if (mustKeep || retainedBytes + candidate.size <= maxBytes) {
+    // claimed dumps are referenced by a persisted report; pruning one leaves a
+    // dangling minidumpPath behind.
+    const mustKeep =
+      index === 0 ||
+      reservedDumpPaths.has(candidate.filePath) ||
+      claimedDumpPaths.has(candidate.filePath)
+    if (mustKeep || (retainedBytes + candidate.size <= maxBytes && retainedCount < maxDumps)) {
       retainedBytes += candidate.size
+      retainedCount += 1
       continue
     }
     try {
@@ -172,9 +196,12 @@ export function scheduleCrashpadDumpPrune(): void {
   dumpPruneTimer.unref()
 }
 
-/** Test seam for byte-budget behavior without a real Crashpad database. */
-export async function _pruneCrashpadDumpsForTest(maxBytes: number): Promise<void> {
-  await pruneCrashpadDumps(maxBytes)
+/** Test seam for byte/count-budget behavior without a real Crashpad database. */
+export async function _pruneCrashpadDumpsForTest(
+  maxBytes: number,
+  maxDumps = MAX_STORED_DUMPS
+): Promise<void> {
+  await pruneCrashpadDumps(maxBytes, maxDumps)
 }
 
 type DumpPollingOptions = {
@@ -205,7 +232,7 @@ function freshDumpCandidates(candidates: DumpCandidate[], crashedAtMs: number): 
 async function pollDumpCandidates<T>(
   crashedAtMs: number,
   options: DumpPollingOptions,
-  select: (candidate: DumpCandidate) => Promise<T | null>
+  select: (candidate: DumpCandidate, deadlineMs: number) => Promise<T | null>
 ): Promise<T | null> {
   const directory = crashpadDumpDirectory
   if (!directory) {
@@ -220,7 +247,7 @@ async function pollDumpCandidates<T>(
   for (;;) {
     const fresh = freshDumpCandidates(await collectDumpCandidates(directory), crashedAtMs)
     for (const candidate of fresh) {
-      const selected = await select(candidate)
+      const selected = await select(candidate, deadline)
       if (selected !== null) {
         return selected
       }
@@ -257,7 +284,7 @@ export async function captureMinidumpSignature(
 ): Promise<CapturedMinidump | null> {
   const rejectedDumpPaths = new Set<string>()
   try {
-    return await pollDumpCandidates(crashedAtMs, options, async (dump) => {
+    return await pollDumpCandidates(crashedAtMs, options, async (dump, deadlineMs) => {
       if (
         rejectedDumpPaths.has(dump.filePath) ||
         claimedDumpPaths.has(dump.filePath) ||
@@ -267,7 +294,39 @@ export async function captureMinidumpSignature(
       }
       reservedDumpPaths.add(dump.filePath)
       try {
-        const signature = parseMinidumpCrashSignature(await readFile(dump.filePath))
+        // Reject symlink swaps where the platform exposes O_NOFOLLOW; the regular-file
+        // check below covers descriptors opened on every platform.
+        const noFollow = fsConstants.O_NOFOLLOW ?? 0
+        const handle = await open(
+          dump.filePath,
+          noFollow === 0 ? 'r' : fsConstants.O_RDONLY | noFollow
+        ).catch(() => {
+          rejectedDumpPaths.add(dump.filePath)
+          return null
+        })
+        if (handle === null) {
+          return null
+        }
+        let signature: MinidumpCrashSignature | null
+        let sizeBytes: number
+        try {
+          const stats = await handle.stat()
+          if (!stats.isFile()) {
+            rejectedDumpPaths.add(dump.filePath)
+            return null
+          }
+          sizeBytes = await observeMinidumpExtent(handle, stats.size, {
+            deadlineMs,
+            now: options.now
+          })
+          const source = createMinidumpFileSource(handle, sizeBytes)
+          signature = await parseMinidumpCrashSignature(source, {
+            expectedProcessType: options.expectedProcessType
+          })
+          sizeBytes = source.byteLength
+        } finally {
+          await handle.close()
+        }
         if (
           !signature ||
           (options.expectedProcessType !== undefined &&
@@ -277,7 +336,7 @@ export async function captureMinidumpSignature(
           return null
         }
         claimedDumpPaths.set(dump.filePath, dump.mtimeMs)
-        return { filePath: dump.filePath, sizeBytes: dump.size, signature }
+        return { filePath: dump.filePath, sizeBytes, signature }
       } finally {
         reservedDumpPaths.delete(dump.filePath)
       }

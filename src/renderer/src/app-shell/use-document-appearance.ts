@@ -6,50 +6,58 @@ import { applyTabGroupSplitDividerAppearance } from '../lib/tab-group-split-divi
 import { scheduleRuntimeGraphSync } from '../runtime/sync-runtime-graph'
 import { useAppStore } from '../store'
 
-function applyWorkspaceSplitDivider(settings: GlobalSettings): void {
-  applyTabGroupSplitDividerAppearance(
-    document.documentElement,
-    settings,
-    resolveDocumentTheme(settings.theme)
-  )
+type SplitDividerColors = Parameters<typeof applyTabGroupSplitDividerAppearance>[1]
+
+function applyWorkspaceSplitDivider(
+  theme: GlobalSettings['theme'],
+  colors: SplitDividerColors
+): void {
+  applyTabGroupSplitDividerAppearance(document.documentElement, colors, resolveDocumentTheme(theme))
 }
 
 /** Applies the settings-driven theme and app font to the document root. */
 export function useDocumentAppearance(): void {
-  const settings = useAppStore((s) => s.settings)
+  const theme = useAppStore((s) => s.settings?.theme)
+  const appFontFamily = useAppStore((s) => s.settings?.appFontFamily)
+  const splitDividerDark = useAppStore((s) => s.settings?.tabGroupSplitDividerColorDark)
+  const splitDividerLight = useAppStore((s) => s.settings?.tabGroupSplitDividerColorLight)
 
   useEffect(() => {
-    if (!settings) {
+    if (!theme) {
       return
     }
+    const dividerColors: SplitDividerColors = {
+      tabGroupSplitDividerColorDark: splitDividerDark,
+      tabGroupSplitDividerColorLight: splitDividerLight
+    }
 
-    if (settings.theme === 'dark') {
+    if (theme === 'dark') {
       applyDocumentTheme('dark')
-      applyWorkspaceSplitDivider(settings)
+      applyWorkspaceSplitDivider(theme, dividerColors)
       return undefined
-    } else if (settings.theme === 'light') {
+    } else if (theme === 'light') {
       applyDocumentTheme('light')
-      applyWorkspaceSplitDivider(settings)
+      applyWorkspaceSplitDivider(theme, dividerColors)
       return undefined
     }
     // system
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     applyDocumentTheme('system')
-    applyWorkspaceSplitDivider(settings)
+    applyWorkspaceSplitDivider(theme, dividerColors)
     const handler = (): void => {
       applyDocumentTheme('system')
-      applyWorkspaceSplitDivider(settings)
+      applyWorkspaceSplitDivider(theme, dividerColors)
       // System theme changes don't mutate the store, so mobile terminal colors need an explicit graph republish.
       scheduleRuntimeGraphSync()
     }
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
-  }, [settings])
+  }, [theme, splitDividerDark, splitDividerLight])
 
   useEffect(() => {
     document.documentElement.style.setProperty(
       '--app-font-family',
-      buildAppFontFamily(settings?.appFontFamily)
+      buildAppFontFamily(appFontFamily)
     )
-  }, [settings?.appFontFamily])
+  }, [appFontFamily])
 }

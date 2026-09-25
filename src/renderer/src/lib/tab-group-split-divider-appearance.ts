@@ -5,9 +5,8 @@ import {
   resolveTabGroupSplitDividerColor
 } from '../../../shared/tab-group-split-divider'
 
-type TabGroupSplitDividerSettings = Pick<
-  GlobalSettings,
-  'tabGroupSplitDividerColorDark' | 'tabGroupSplitDividerColorLight'
+type TabGroupSplitDividerSettings = Partial<
+  Pick<GlobalSettings, 'tabGroupSplitDividerColorDark' | 'tabGroupSplitDividerColorLight'>
 >
 
 export function resolveTabGroupSplitDividerAppearance(

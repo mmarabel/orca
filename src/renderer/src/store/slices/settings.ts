@@ -58,10 +58,6 @@ function normalizeRuntimeEnvironmentId(value: string | null | undefined): string
   return trimmed ? trimmed : null
 }
 
-function createOpenInApplicationId(): string {
-  return createBrowserUuid()
-}
-
 function normalizeSettingsUpdates(
   updates: Partial<GlobalSettings>,
   currentSettings: GlobalSettings | null
@@ -95,7 +91,7 @@ function normalizeSettingsUpdates(
   }
   if ('openInApplications' in updates) {
     sanitizedUpdates.openInApplications = normalizeOpenInApplications(updates.openInApplications, {
-      createId: createOpenInApplicationId
+      createId: createBrowserUuid
     })
   }
   if ('disabledTuiAgents' in updates) {

@@ -129,7 +129,8 @@ export type CliStatusResult = {
   }
   daemon?: {
     reachable: boolean
-    sessionCount: number
+    /** Null when a daemon may be live but its sessions could not be counted. */
+    sessionCount: number | null
   }
 }
 

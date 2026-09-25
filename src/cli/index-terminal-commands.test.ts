@@ -47,6 +47,7 @@ vi.mock('child_process', async () => {
 })
 
 import { main } from './index'
+import { RuntimeClientError } from './runtime/types'
 import { buildWorktree, okFixture, queueFixtures, worktreeListFixture } from './test-fixtures'
 import { useWorktreeAwarenessEnvironment } from './index-test-harness'
 
@@ -697,12 +698,35 @@ describe('orca cli worktree awareness', () => {
   it('reports remaining local daemon sessions when not all could be stopped', async () => {
     stopAllLocalDaemonSessionsMock.mockResolvedValueOnce({ stopped: 2, remaining: 1 })
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const priorExitCode = process.exitCode
 
     await main(['terminal', 'stop', '--all'], '/tmp/repo')
 
     expect(stopAllLocalDaemonSessionsMock).toHaveBeenCalledWith('/tmp/orca-user-data')
     expect(callMock).not.toHaveBeenCalled()
     expect(logSpy.mock.calls[0][0]).toBe('Stopped 2 terminals; 1 still running.')
+    expect(process.exitCode).toBe(1)
+
+    process.exitCode = priorExitCode
+  })
+
+  it('fails terminal stop all when the local daemon cannot be reached', async () => {
+    stopAllLocalDaemonSessionsMock.mockRejectedValueOnce(
+      new RuntimeClientError('daemon_unavailable', 'Could not connect to the local terminal daemon')
+    )
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const priorExitCode = process.exitCode
+
+    await main(['terminal', 'stop', '--all'], '/tmp/repo')
+
+    expect(logSpy).not.toHaveBeenCalled()
+    expect(errorSpy.mock.calls.flat().join('\n')).toContain(
+      'Could not connect to the local terminal daemon'
+    )
+    expect(process.exitCode).toBe(1)
+
+    process.exitCode = priorExitCode
   })
 
   it('rejects terminal stop with both all and worktree', async () => {

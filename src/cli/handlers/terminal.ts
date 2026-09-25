@@ -163,6 +163,10 @@ export const TERMINAL_HANDLERS: Record<string, CommandHandler> = {
             ? `Stopped ${value.stopped} terminals; ${value.remaining} still running.`
             : `Stopped ${value.stopped} terminals.`
       )
+      if (stopped.remaining > 0) {
+        // Why: scripts chaining cleanup must not proceed while terminals may still be running.
+        process.exitCode = 1
+      }
       return
     }
     const result = await client.call<{ stopped: number }>('terminal.stop', {

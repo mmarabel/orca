@@ -141,7 +141,7 @@ export function formatCliStatus(status: CliStatusResult): string {
   if (status.daemon) {
     lines.push(
       `daemonReachable: ${status.daemon.reachable}`,
-      `daemonSessionCount: ${status.daemon.sessionCount}`
+      `daemonSessionCount: ${status.daemon.sessionCount ?? 'unknown'}`
     )
   }
   return lines.join('\n')

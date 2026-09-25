@@ -10,6 +10,10 @@ import {
   clearWebSessionReorderIntent,
   recordWebSessionReorderIntent
 } from './web-session-reorder-intent'
+import {
+  markWebSessionTerminalPlacementUserMoved,
+  webTerminalPlacementParentTabId
+} from './web-session-terminal-placement'
 import { isWebTerminalSurfaceTabId, toHostSessionTabId } from './web-terminal-surface-id'
 import {
   captureRuntimeEnvironmentCall,
@@ -42,6 +46,14 @@ export async function moveWebRuntimeSessionTab(
       args.tabOrder,
       Date.now()
     )
+  }
+  if (isWebTerminalSurfaceTabId(args.tabId)) {
+    // Why: synchronous, so a create still settling this tab cannot move it back to its requested pane.
+    markWebSessionTerminalPlacementUserMoved({
+      environmentId,
+      worktreeId: args.worktreeId,
+      hostTabId: webTerminalPlacementParentTabId(toHostSessionTabId(args.tabId))
+    })
   }
 
   try {

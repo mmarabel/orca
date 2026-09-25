@@ -2,6 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { moveWebRuntimeSessionTab } from './web-runtime-session'
 import { resetWebSessionFocusIntentForTests } from './web-session-focus-intent'
 import { resetWebSessionCloseIntentForTests } from './web-session-close-intent'
+import {
+  isWebSessionTerminalPlacementUserMoved,
+  peekWebSessionTerminalPlacementGroup,
+  recordWebSessionTerminalPlacement,
+  resetWebSessionTerminalPlacementsForTests
+} from './web-session-terminal-placement'
 import { ENVIRONMENT_ID, WORKTREE_ID } from './web-runtime-session-test-harness'
 
 const mocks = vi.hoisted(() => ({
@@ -80,6 +86,7 @@ describe('moveWebRuntimeSessionTab', () => {
 
   afterEach(() => {
     resetWebSessionFocusIntentForTests()
+    resetWebSessionTerminalPlacementsForTests()
     vi.unstubAllGlobals()
     vi.clearAllMocks()
   })
@@ -264,5 +271,28 @@ describe('moveWebRuntimeSessionTab', () => {
     ).resolves.toBe(false)
 
     expect(runtimeCall).not.toHaveBeenCalled()
+  })
+
+  // #22792: a drag made while the create settles must beat the pane the create asked for.
+  it('marks a still-settling terminal as user-placed before the host move resolves', async () => {
+    const placement = {
+      environmentId: ENVIRONMENT_ID,
+      worktreeId: WORKTREE_ID,
+      hostTabId: 'host-tab-2'
+    }
+    recordWebSessionTerminalPlacement({ ...placement, groupId: 'group-left' })
+    const runtimeCall = vi.fn(() => new Promise(() => {}))
+    vi.stubGlobal('window', { api: { runtimeEnvironments: { call: runtimeCall } } })
+
+    void moveWebRuntimeSessionTab({
+      worktreeId: WORKTREE_ID,
+      tabId: 'web-terminal-host-tab-2%3A%3Aleaf-2',
+      targetGroupId: 'group-left',
+      kind: 'split',
+      splitDirection: 'right'
+    })
+
+    expect(isWebSessionTerminalPlacementUserMoved(placement)).toBe(true)
+    expect(peekWebSessionTerminalPlacementGroup(placement)).toBeUndefined()
   })
 })

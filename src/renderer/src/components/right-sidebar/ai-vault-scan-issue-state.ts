@@ -1,7 +1,8 @@
-import type {
-  AiVaultListResult,
-  AiVaultScanIssue,
-  AiVaultSession
+import {
+  isSkippedAiVaultTranscriptIssue,
+  type AiVaultListResult,
+  type AiVaultScanIssue,
+  type AiVaultSession
 } from '../../../../shared/ai-vault-types'
 import { LOCAL_EXECUTION_HOST_ID } from '../../../../shared/execution-host'
 import { normalizeRuntimePathForComparison } from '../../../../shared/cross-platform-path'
@@ -94,7 +95,7 @@ export function aiVaultScanNoticeIssues(
 }
 
 export function skippedAiVaultTranscriptCount(result: AiVaultListResult | null): number {
-  return result ? result.issues.filter((issue) => !issue.kind).length : 0
+  return result ? result.issues.filter(isSkippedAiVaultTranscriptIssue).length : 0
 }
 
 const SKIPPED_TRANSCRIPT_REASON_LIMIT = 3
@@ -105,7 +106,7 @@ const SKIPPED_TRANSCRIPT_REASON_LIMIT = 3
 export function skippedAiVaultTranscriptReasons(result: AiVaultListResult | null): string[] {
   const reasons = new Set<string>()
   for (const issue of result?.issues ?? []) {
-    if (issue.kind) {
+    if (!isSkippedAiVaultTranscriptIssue(issue)) {
       continue
     }
     const message = issue.message.trim()

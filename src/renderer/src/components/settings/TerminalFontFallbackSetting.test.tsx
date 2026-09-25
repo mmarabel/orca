@@ -63,8 +63,8 @@ describe('TerminalFontFallbackSetting', () => {
     )
 
     expect(
-      Array.from(container.querySelectorAll('ol input')).map(
-        (input) => (input as HTMLInputElement).value
+      Array.from(container.querySelectorAll<HTMLInputElement>('ol input')).map(
+        (input) => input.value
       )
     ).toEqual(['Microsoft YaHei UI', 'Noto Sans Arabic'])
 
@@ -72,8 +72,8 @@ describe('TerminalFontFallbackSetting', () => {
       container.querySelectorAll<HTMLButtonElement>('button[aria-label="Move up"]')[1]!.click()
     )
     expect(
-      Array.from(container.querySelectorAll('ol input')).map(
-        (input) => (input as HTMLInputElement).value
+      Array.from(container.querySelectorAll<HTMLInputElement>('ol input')).map(
+        (input) => input.value
       )
     ).toEqual(['Noto Sans Arabic', 'Microsoft YaHei UI'])
 

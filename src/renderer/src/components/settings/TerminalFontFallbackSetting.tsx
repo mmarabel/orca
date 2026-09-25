@@ -138,7 +138,7 @@ export function TerminalFontFallbackSetting({
           type="button"
           variant="outline"
           size="sm"
-          className="shrink-0 gap-1.5"
+          className="shrink-0"
           disabled={
             !draft.trim() || draftIsDuplicate || fallbacks.length >= MAX_TERMINAL_FONT_FALLBACKS
           }

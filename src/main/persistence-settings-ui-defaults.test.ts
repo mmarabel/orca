@@ -135,7 +135,7 @@ describe('Store', () => {
           'Noto Sans Arabic',
           'microsoft yahei ui'
         ]
-      } as unknown as GlobalSettings
+      }
     })
 
     const store = await createStore()

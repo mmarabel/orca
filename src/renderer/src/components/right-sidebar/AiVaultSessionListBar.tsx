@@ -33,13 +33,9 @@ export function aiVaultSessionCountLabel(shown: number, loaded: number, atLimit 
             value1: loaded
           }
         )
-      : shown === 1
-        ? translate('sessionSearch.panel.sessionsAtLimitOne', '{{count}}+ session', {
-            count: shown
-          })
-        : translate('sessionSearch.panel.sessionsAtLimitOther', '{{count}}+ sessions', {
-            count: shown
-          })
+      : // No singular form on purpose: "+" makes the number a lower bound, so
+        // "1+ sessions" is the reading even when exactly one row is shown.
+        translate('sessionSearch.panel.sessionsAtLimit', '{{count}}+ sessions', { count: shown })
   }
   if (shown !== loaded) {
     return translate('sessionSearch.panel.sessionsOfLoaded', '{{value0}} of {{value1}} sessions', {

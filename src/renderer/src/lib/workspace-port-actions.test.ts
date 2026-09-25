@@ -29,6 +29,7 @@ vi.mock('@/store', () => ({
 }))
 
 import {
+  mergeWorkspacePortScans,
   openWorkspacePortInBrowser,
   runtimeTargetForWorkspacePortScanKey,
   workspacePortScanKeyForTarget
@@ -194,5 +195,20 @@ describe('runtimeTargetForWorkspacePortScanKey', () => {
     expect(runtimeTargetForWorkspacePortScanKey('environment::all')).toBeNull()
     expect(runtimeTargetForWorkspacePortScanKey('local')).toBeNull()
     expect(runtimeTargetForWorkspacePortScanKey(undefined)).toBeNull()
+  })
+})
+
+describe('mergeWorkspacePortScans', () => {
+  it('stamps the owning host on a single-host projection too', () => {
+    // Regression: the one-entry fast path returned the scan untouched, so every row in the
+    // status bar's projection fell back to the active workspace's host — the exact
+    // misattribution the scan key exists to prevent, just with one host scanned.
+    const merged = mergeWorkspacePortScans({
+      'environment:env-1:all': { platform: 'darwin', scannedAt: 10, ports: [PORT] }
+    })
+    expect(merged?.ports.map((port) => port.hostScanKey)).toEqual(['environment:env-1:all'])
+    // The id prefix stays off: one host's ids are already unique, and prefixing would
+    // churn every React row key the moment a second host appears or disappears.
+    expect(merged?.ports.map((port) => port.id)).toEqual([PORT.id])
   })
 })

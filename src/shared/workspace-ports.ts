@@ -41,9 +41,9 @@ type WorkspacePortBase = {
    *  Normalized for a consumer on the *execution host*; on a paired runtime `localhost`
    *  names the client, so a client-side surface must not treat it as reachable. */
   connectHost: string
-  /** Scan key of the host that reported this listener. Stamped by the renderer's
-   *  all-hosts merge, which is the only view where rows from different hosts sit side by
-   *  side; a single-host scan leaves it unset because every row belongs to that host.
+  /** Scan key of the host that reported this listener. The renderer's merge projection
+   *  always stamps it, single-host or not, so a row can name its own host instead of
+   *  inheriting the active workspace's; only a raw per-host scan leaves it unset.
    *  Never sent over the wire. */
   hostScanKey?: string
   port: number

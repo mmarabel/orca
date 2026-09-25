@@ -259,8 +259,12 @@ export function mergeWorkspacePortScans(
   if (entries.length === 0) {
     return null
   }
+  // Why the stamp happens on both paths: a row resolves its own host from hostScanKey, and
+  // a single-host projection is still read by surfaces whose active workspace lives
+  // somewhere else. Only the id prefix is skipped here — one host's ids are already unique.
   if (entries.length === 1) {
-    return entries[0][1]
+    const [key, scan] = entries[0]!
+    return { ...scan, ports: scan.ports.map((port) => ({ ...port, hostScanKey: key })) }
   }
   const ports = entries.flatMap(([key, scan]) =>
     scan.ports.map((port) => ({

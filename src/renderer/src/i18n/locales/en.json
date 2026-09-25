@@ -5361,7 +5361,8 @@
           "imageReadFailed": "Could not read the attached images. Try attaching them again.",
           "attachWhileSending": "Wait for the current feedback to finish sending before attaching more images.",
           "imagesNotDelivered": "Feedback sent, but image delivery could not be confirmed.",
-          "imagesRejected": "Feedback sent. Your screenshots were too large to upload and were not included."
+          "imagesRejected": "Feedback sent. Your screenshots were too large to upload and were not included.",
+          "imagesNotIncluded": "Feedback sent. Your screenshots could not be uploaded and were not included."
         },
         "SidebarFilter": {
           "e3b3898218": "Add project",

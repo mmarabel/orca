@@ -327,6 +327,46 @@ describe('SidebarFeedbackDialog image submission', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
+  // Why: 413 is the only shed-the-attachment status that means "too big". A
+  // corporate filter's 403 sheds the same attachment for a different reason.
+  it('does not blame the size when the host rejected the images for another reason', async () => {
+    mocks.readFeedbackImageFiles.mockResolvedValue({
+      images: [
+        {
+          id: 'shot',
+          name: 'shot.png',
+          contentType: 'image/png',
+          bytes: 1,
+          data: new Uint8Array([1]),
+          previewUrl: 'blob:shot'
+        }
+      ],
+      errors: []
+    })
+    mocks.submit.mockResolvedValue({
+      ok: true,
+      imagesDelivered: false,
+      imagesFailure: { status: 403, error: 'status 403' }
+    })
+    const { container } = render(<SidebarFeedbackDialog open onOpenChange={vi.fn()} />)
+    fireEvent.change(screen.getByPlaceholderText('What could we improve?'), {
+      target: { value: 'Screenshot attached' }
+    })
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')
+    fireEvent.change(input!, {
+      target: { files: [new File(['x'], 'shot.png', { type: 'image/png' })] }
+    })
+    await screen.findByRole('button', { name: 'Remove shot.png' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+
+    await waitFor(() =>
+      expect(mocks.toastWarning).toHaveBeenCalledWith(
+        'Feedback sent. Your screenshots could not be uploaded and were not included.'
+      )
+    )
+  })
+
   it('releases image previews when the sidebar unmounts the dialog', async () => {
     mocks.readFeedbackImageFiles.mockResolvedValue({
       images: [
@@ -525,5 +565,54 @@ describe('SidebarFeedbackDialog draft survival', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send' }))
 
     await waitFor(() => expect(useAppStore.getState().feedbackDraft.feedback).toBe(''))
+  })
+
+  // Why: collapsing the sidebar while the request is in flight unmounts the
+  // dialog. The delivery still lands, so the draft has to go with it or the
+  // sent report comes back on the next open and invites a duplicate send.
+  it('clears the draft when the sidebar unmounts before the submit resolves', async () => {
+    let resolveSubmit: ((result: { ok: true }) => void) | undefined
+    mocks.submit.mockReturnValue(
+      new Promise<{ ok: true }>((resolve) => {
+        resolveSubmit = resolve
+      })
+    )
+    const { unmount } = render(<SidebarFeedbackDialog open onOpenChange={vi.fn()} />)
+    fireEvent.change(textarea(), { target: { value: REPORT } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    await waitFor(() => expect(mocks.submit).toHaveBeenCalled())
+    unmount()
+    await act(async () => {
+      resolveSubmit?.({ ok: true })
+    })
+
+    expect(useAppStore.getState().feedbackDraft.feedback).toBe('')
+  })
+
+  // Why: the unmounted handler's mountedRef stays false forever, so an
+  // unconditional clear would wipe whatever the user typed after reopening.
+  it('keeps a report typed after remount while the previous submit is still in flight', async () => {
+    const SECOND_REPORT = 'Different bug, typed after reopening the dialog'
+    let resolveSubmit: ((result: { ok: true }) => void) | undefined
+    mocks.submit.mockReturnValue(
+      new Promise<{ ok: true }>((resolve) => {
+        resolveSubmit = resolve
+      })
+    )
+    const first = render(<SidebarFeedbackDialog open onOpenChange={vi.fn()} />)
+    fireEvent.change(textarea(), { target: { value: REPORT } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    await waitFor(() => expect(mocks.submit).toHaveBeenCalled())
+    first.unmount()
+
+    render(<SidebarFeedbackDialog open onOpenChange={vi.fn()} />)
+    fireEvent.change(textarea(), { target: { value: SECOND_REPORT } })
+    await act(async () => {
+      resolveSubmit?.({ ok: true })
+    })
+
+    expect(useAppStore.getState().feedbackDraft.feedback).toContain(SECOND_REPORT)
+    expect(textarea().value).toContain(SECOND_REPORT)
   })
 })

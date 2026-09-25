@@ -21,6 +21,7 @@ import {
   hasAttachableFeedbackImage
 } from '@/lib/feedback-image-attachments'
 import { stripClientEnvironmentFooter } from '../../../../shared/client-environment-info'
+import { FEEDBACK_PAYLOAD_TOO_LARGE_STATUS } from '../../../../shared/feedback-image-limits'
 import { SidebarFeedbackImageAttachments } from './SidebarFeedbackImageAttachments'
 import { useSidebarFeedbackEnvironmentPrefill } from './use-sidebar-feedback-environment-prefill'
 import { useSidebarFeedbackImages } from './use-sidebar-feedback-images'
@@ -174,16 +175,38 @@ export function SidebarFeedbackDialog({
         throw new Error(`Feedback request failed: ${result.error}`)
       }
 
+      // Why: the report landed, so the draft has to go even if the sidebar
+      // collapsed mid-flight — otherwise it reappears on remount and invites a
+      // duplicate send. Store actions outlive the component but `mountedRef`
+      // does not, so this runs unguarded and instead compares what the user
+      // wrote: a different report typed after a remount must survive this
+      // stale handler. The env footer is stripped from both sides because the
+      // remount's prefill re-appends it on its own.
+      if (
+        stripClientEnvironmentFooter(useAppStore.getState().feedbackDraft.feedback).trim() ===
+        userText
+      ) {
+        clearFeedbackDraft()
+      }
+
       if (mountedRef.current) {
         // Why: the text reached us but the screenshots did not. The dialog
         // closes either way, so the copy states the outcome rather than
         // implying the screenshots are still recoverable from here.
         if (result.imagesFailure) {
           toast.warning(
-            translate(
-              'auto.components.sidebar.SidebarFeedbackDialog.imagesRejected',
-              'Feedback sent. Your screenshots were too large to upload and were not included.'
-            )
+            // Why: only 413 means the upload was over the host's size limit.
+            // The other shed-the-attachment statuses (403 from a corporate
+            // filter, 415, 422…) would be a false explanation.
+            result.imagesFailure.status === FEEDBACK_PAYLOAD_TOO_LARGE_STATUS
+              ? translate(
+                  'auto.components.sidebar.SidebarFeedbackDialog.imagesRejected',
+                  'Feedback sent. Your screenshots were too large to upload and were not included.'
+                )
+              : translate(
+                  'auto.components.sidebar.SidebarFeedbackDialog.imagesNotIncluded',
+                  'Feedback sent. Your screenshots could not be uploaded and were not included.'
+                )
           )
         } else if (result.imagesDelivered === false) {
           toast.warning(
@@ -200,7 +223,6 @@ export function SidebarFeedbackDialog({
             )
           )
         }
-        clearFeedbackDraft()
         clearImages()
         onOpenChange(false)
       }

@@ -17,3 +17,9 @@ export const MAX_FEEDBACK_IMAGE_TOTAL_BYTES = 4 * 1024 * 1024
 // Why: equal to the total today because one screenshot may spend the whole
 // budget, but kept separate so the oversized file can be named on its own.
 export const MAX_FEEDBACK_IMAGE_BYTES = 4 * 1024 * 1024
+
+// Why: the one status that means "the body was over the host's size limit", as
+// opposed to the other shed-the-attachment statuses (a corporate filter's 403,
+// an unsupported 415…). Named so the guard above and the copy the user reads
+// cannot disagree about what 413 stands for.
+export const FEEDBACK_PAYLOAD_TOO_LARGE_STATUS = 413

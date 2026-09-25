@@ -17,6 +17,7 @@ function createBatch(): PendingStreamDataBatch {
     queue: [],
     queuedChars: 0,
     queuedCharsBySession: new Map(),
+    queuedMetadataBytesBySession: new Map(),
     droppableQueuedSessionIds: new Set()
   }
 }

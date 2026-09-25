@@ -10,6 +10,10 @@
 import { clampToSafeSplitIndex } from './daemon-stream-data-split'
 import { recordDaemonStreamBacklogEvent } from './daemon-stream-backlog-probe'
 import type { DaemonEvent } from './types'
+import {
+  accountDaemonStreamEntry,
+  releaseDaemonStreamEntry
+} from './daemon-stream-entry-accounting'
 
 // A control entry carries a whole pre-shaped stream event (background marker,
 // data gap, transient fact) that must ride at its exact position in the
@@ -25,6 +29,7 @@ export type StreamQueueEntry = {
   incarnationId?: string
   transformed?: boolean
   control?: DaemonEvent
+  retainedBytes?: number
 }
 
 export type PendingStreamDataBatch = {
@@ -34,6 +39,7 @@ export type PendingStreamDataBatch = {
   // Per-session held totals so the flush hold can spare small talkers
   // (echo/replies) from waiting behind other sessions' floods.
   queuedCharsBySession: Map<string, number>
+  queuedMetadataBytesBySession: Map<string, number>
   // Membership is reconciled when queued data first appears and on rare
   // background lifecycle changes, keeping steady-state enqueue constant-time.
   droppableQueuedSessionIds: Set<string>
@@ -126,17 +132,19 @@ export function dropOldestQueuedForSession(
       payload.sequenceChars = (payload.sequenceChars ?? payload.droppedChars) + cutSequenceChars
       payload.droppedChars += cut
     } else {
-      retained.push({
-        sessionId,
-        data: '',
-        ...source,
-        control: {
-          type: 'event',
-          event: 'dataGap',
+      retained.push(
+        accountDaemonStreamEntry(batch, {
           sessionId,
-          payload: { droppedChars: cut, sequenceChars: cutSequenceChars, ...source }
-        }
-      })
+          data: '',
+          ...source,
+          control: {
+            type: 'event',
+            event: 'dataGap',
+            sessionId,
+            payload: { droppedChars: cut, sequenceChars: cutSequenceChars, ...source }
+          }
+        })
+      )
     }
     const salvaged =
       salvagedChars >= DROPPED_QUERY_SALVAGE_MAX_CHARS
@@ -146,7 +154,9 @@ export function dropOldestQueuedForSession(
             DROPPED_QUERY_SALVAGE_MAX_CHARS - salvagedChars
           )
     if (salvaged.length > 0) {
-      retained.push({ sessionId, data: salvaged, sequenceChars: 0, ...source })
+      retained.push(
+        accountDaemonStreamEntry(batch, { sessionId, data: salvaged, sequenceChars: 0, ...source })
+      )
       salvagedChars += salvaged.length
     }
     dropped += cut
@@ -157,6 +167,8 @@ export function dropOldestQueuedForSession(
       entry.sequenceChars =
         remainingSequenceChars === entry.data.length ? undefined : remainingSequenceChars
       retained.push(entry)
+    } else {
+      releaseDaemonStreamEntry(batch, entry)
     }
   }
   if (dropped === 0) {

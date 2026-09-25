@@ -2,15 +2,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConnectPanePtySession } from './connect-pane-pty-session'
 import { retireRemotePtyIncarnation } from './remote-pty-incarnation-replacement'
 
-const { state } = vi.hoisted(() => ({
-  state: {
-    agentStatusByPaneKey: {} as Record<string, { terminalHandle?: string }>,
-    agentLaunchConfigByPaneKey: {} as Record<string, { identity: { terminalHandle?: string } }>,
-    removeAgentStatus: vi.fn(),
-    clearAgentLaunchConfig: vi.fn(),
-    clearPaneForegroundAgent: vi.fn()
+const { state } = vi.hoisted(() => {
+  const agentStatusByPaneKey: Record<string, { terminalHandle?: string }> = {}
+  const agentLaunchConfigByPaneKey: Record<string, { identity: { terminalHandle?: string } }> = {}
+  return {
+    state: {
+      agentStatusByPaneKey,
+      agentLaunchConfigByPaneKey,
+      removeAgentStatus: vi.fn(),
+      clearAgentLaunchConfig: vi.fn(),
+      clearPaneForegroundAgent: vi.fn()
+    }
   }
-}))
+})
 vi.mock('@/store', () => ({ useAppStore: { getState: () => state } }))
 
 function createSession() {
@@ -59,6 +63,7 @@ describe('remote PTY incarnation replacement publication ownership', () => {
     state.agentStatusByPaneKey.pane = { terminalHandle: rowHandle }
     state.agentLaunchConfigByPaneKey.pane = { identity: { terminalHandle: rowHandle } }
     retireRemotePtyIncarnation(
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the fixture supplies every session member retireRemotePtyIncarnation reads.
       session as unknown as ConnectPanePtySession,
       'remote:env@@old',
       `remote:env@@${successorHandle}`

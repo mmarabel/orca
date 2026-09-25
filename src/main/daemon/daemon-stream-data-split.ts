@@ -4,7 +4,6 @@
  * clamp shared by the batcher's bulk write slicing and keep-tail dropping.
  */
 import { encodeNdjson } from './ndjson'
-import type { Socket } from 'node:net'
 
 export function encodeStreamDataEvent(
   sessionId: string,
@@ -81,6 +80,22 @@ export function splitStreamDataForNdjson(
     return [data]
   }
 
+  return splitOversizedStreamDataForNdjson(
+    sessionId,
+    data,
+    maxLineBytes,
+    sequenceChars,
+    incarnationId
+  )
+}
+
+function splitOversizedStreamDataForNdjson(
+  sessionId: string,
+  data: string,
+  maxLineBytes: number,
+  sequenceChars?: number,
+  incarnationId?: string
+): string[] {
   const chunks: string[] = []
   let start = 0
   while (start < data.length) {
@@ -116,7 +131,7 @@ export function splitStreamDataForNdjson(
 }
 
 export function writeStreamDataEvents(
-  streamSocket: Pick<Socket, 'write'>,
+  streamSocket: { write(data: string): void },
   sessionId: string,
   data: string,
   maxLineBytes: number,
@@ -131,13 +146,36 @@ export function writeStreamDataEvents(
     return
   }
   const carriesMetadata = explicitRawLength !== undefined || seq !== undefined
-  const chunks = splitStreamDataForNdjson(
-    sessionId,
-    data,
-    carriesMetadata ? Math.max(1, maxLineBytes - 96) : maxLineBytes,
-    explicitRawLength,
-    incarnationId
-  )
+  let chunks: string[]
+  if (!carriesMetadata) {
+    const line = encodeStreamDataEvent(
+      sessionId,
+      data,
+      undefined,
+      undefined,
+      undefined,
+      incarnationId
+    )
+    if (Buffer.byteLength(line, 'utf8') <= maxLineBytes) {
+      streamSocket.write(line)
+      return
+    }
+    chunks = splitOversizedStreamDataForNdjson(
+      sessionId,
+      data,
+      maxLineBytes,
+      undefined,
+      incarnationId
+    )
+  } else {
+    chunks = splitStreamDataForNdjson(
+      sessionId,
+      data,
+      Math.max(1, maxLineBytes - 96),
+      explicitRawLength,
+      incarnationId
+    )
+  }
   let consumed = 0
   for (const chunk of chunks) {
     consumed += chunk.length

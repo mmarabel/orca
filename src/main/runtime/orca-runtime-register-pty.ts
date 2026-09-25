@@ -6,6 +6,7 @@ import type { TuiAgent } from '../../shared/tui-agent'
 import { isValidTerminalTabId } from '../../shared/terminal-tab-id'
 import { isTerminalLeafId, makePaneKey } from '../../shared/stable-pane-id'
 import { isTuiAgent } from '../../shared/tui-agent-config'
+import { spawnSurfaceClaimSequence } from './pty-recorded-surface-topology'
 
 export class OrcaRuntimeWithRegisterPty extends OrcaRuntimeWithInvalidateAllHandlesForPty {
   registerPty(
@@ -28,6 +29,7 @@ export class OrcaRuntimeWithRegisterPty extends OrcaRuntimeWithInvalidateAllHand
     observationAdmission?: PreparedPtyObservationAdmission | null
   ): void {
     this.assertPtyDidNotExitBeforeRegistration(ptyId, binding?.incarnationId)
+    this.invalidatePtyControllerInventoryForLifecycle(ptyId, connectionId)
     const existingPty = this.ptysById.get(ptyId)
     const replacementHandle = binding?.terminalHandle?.trim()
     const pendingReplacement = this.pendingPtyHandleReplacementFences.get(ptyId)
@@ -79,7 +81,13 @@ export class OrcaRuntimeWithRegisterPty extends OrcaRuntimeWithInvalidateAllHand
         ? { runtimeSessionOwned: true }
         : {}),
       ...(isWsl !== undefined ? { isWsl } : {}),
-      ...(binding && paneKey ? { tabId: binding.tabId, paneKey } : {}),
+      ...(binding && paneKey
+        ? {
+            tabId: binding.tabId,
+            paneKey,
+            surfaceRecordedAtGraphSequence: spawnSurfaceClaimSequence(this.graphSequence)
+          }
+        : {}),
       ...(binding?.incarnationId ? { incarnationId: binding.incarnationId } : {})
     })
     const hostScope = this.getOrchestrationCompatibilityHostScope(pty)

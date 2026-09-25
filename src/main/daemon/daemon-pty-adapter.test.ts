@@ -1,3 +1,4 @@
+import './mock-descendant-sweep'
 /* Core IPtyProvider surface of DaemonPtyAdapter: spawn, io, sizing, teardown. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { rmSync } from 'node:fs'
@@ -116,7 +117,7 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
     it('carries classified startup spans from the daemon source to the adapter', async () => {
       const onData = vi.fn()
       adapter.onData(onData)
-      const { id } = await adapter.spawn({
+      const { id, incarnationId } = await adapter.spawn({
         cols: 80,
         rows: 24,
         startupIngress: {
@@ -134,16 +135,12 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       expect(onData).toHaveBeenCalledWith({
         id,
         data: '',
-        incarnationId: adapter['sessionIncarnations'].get(id),
+        incarnationId,
         sequenceChars: query.length,
         seq: query.length,
         transformed: true
       })
-      expect(onData).toHaveBeenCalledWith({
-        id,
-        data: 'prompt',
-        incarnationId: adapter['sessionIncarnations'].get(id)
-      })
+      expect(onData).toHaveBeenCalledWith({ id, data: 'prompt', incarnationId })
       await expect(adapter.getBufferSnapshot(id)).resolves.toMatchObject({
         data: expect.not.stringContaining(']10;rgb')
       })
@@ -678,30 +675,24 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       const dataPayloads: { id: string; data: string }[] = []
       adapter.onData((payload) => dataPayloads.push(payload))
 
-      const { id } = await adapter.spawn({ cols: 80, rows: 24 })
+      const { id, incarnationId } = await adapter.spawn({ cols: 80, rows: 24 })
       lastSubprocess._simulateData('hello')
 
       await waitFor(() => dataPayloads.length > 0)
-      expect(dataPayloads[0]).toEqual({
-        id,
-        data: 'hello',
-        incarnationId: adapter['sessionIncarnations'].get(id)
-      })
+      expect(dataPayloads[0]).toEqual({ id, data: 'hello', incarnationId })
     })
 
     it('coalesces burst data events before serializing daemon stream output', async () => {
       const dataPayloads: { id: string; data: string }[] = []
       adapter.onData((payload) => dataPayloads.push(payload))
 
-      const { id } = await adapter.spawn({ cols: 80, rows: 24 })
+      const { id, incarnationId } = await adapter.spawn({ cols: 80, rows: 24 })
       lastSubprocess._simulateData('a')
       lastSubprocess._simulateData('b')
       lastSubprocess._simulateData('c')
 
       await waitFor(() => dataPayloads.length > 0)
-      expect(dataPayloads).toEqual([
-        { id, data: 'abc', incarnationId: adapter['sessionIncarnations'].get(id) }
-      ])
+      expect(dataPayloads).toEqual([{ id, data: 'abc', incarnationId }])
     })
   })
 
@@ -852,6 +843,47 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
   })
 
   describe('fanoutSyntheticExits / getActiveSessionIds (restart primitives)', () => {
+    it.each(['synthetic', 'daemon'])(
+      'snapshots subscriptions and isolates %s exit payloads',
+      async (source) => {
+        const { id } = await adapter.spawn({ cols: 80, rows: 24 })
+        const emitExit =
+          source === 'synthetic'
+            ? () => adapter.fanoutSyntheticExits(-1)
+            : () => lastSubprocess._simulateExit(-1)
+        const calls: string[] = []
+        const secondListener = vi.fn()
+        let unsubscribeSecond = () => {}
+        adapter.onExit((payload) => {
+          calls.push('first')
+          unsubscribeSecond()
+          adapter.onExit(() => calls.push('late'))
+          payload.id = 'mutated'
+          payload.code = 99
+        })
+        unsubscribeSecond = adapter.onExit((payload) => {
+          calls.push('second')
+          secondListener(payload)
+        })
+
+        emitExit()
+        await waitFor(() => calls.length >= 2)
+
+        expect(calls).toEqual(['first', 'second'])
+        expect(secondListener).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id,
+            code: -1,
+            incarnationId: expect.any(String)
+          })
+        )
+        await adapter.spawn({ cols: 80, rows: 24 })
+        emitExit()
+        await waitFor(() => calls.length >= 4)
+        expect(calls).toEqual(['first', 'second', 'first', 'late'])
+      }
+    )
+
     it('reports every live spawn in getActiveSessionIds', async () => {
       const { id: id1 } = await adapter.spawn({ cols: 80, rows: 24 })
       const { id: id2 } = await adapter.spawn({ cols: 80, rows: 24 })
@@ -893,21 +925,6 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
 
       adapter.fanoutSyntheticExits(-1)
       expect(exits).toHaveLength(1)
-    })
-
-    it('propagates to every registered exit listener in order', () => {
-      const aExits: { id: string; code: number }[] = []
-      const bExits: { id: string; code: number }[] = []
-      adapter.onExit((payload) => aExits.push(payload))
-      adapter.onExit((payload) => bExits.push(payload))
-
-      const internals = adapter as unknown as { activeSessionIds: Set<string> }
-      internals.activeSessionIds.add('sess-a')
-
-      adapter.fanoutSyntheticExits(-1)
-
-      expect(aExits).toEqual([{ id: 'sess-a', code: -1 }])
-      expect(bExits).toEqual([{ id: 'sess-a', code: -1 }])
     })
   })
 })

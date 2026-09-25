@@ -368,11 +368,47 @@ describe('fetchCodexRateLimits PTY settle timers', () => {
 
     ptyHandlers.onData?.('>')
     ptyHandlers.onData?.('Limits: refresh requested; run /status again shortly.\n')
+    await vi.advanceTimersByTimeAsync(750)
+    ptyHandlers.onData?.('Limits: refresh requested; run /status again shortly.\n')
     await vi.advanceTimersByTimeAsync(15_000)
 
     await expect(resultPromise).resolves.toMatchObject({
       status: 'error',
       error: 'Codex usage refresh still pending — try again shortly'
+    })
+  })
+
+  it('does not let a stale pending panel mask the retried /status failure', async () => {
+    const ptyHandlers: { onData?: (data: string) => void } = {}
+    const writeMock = vi.fn()
+
+    childSpawnMock.mockImplementation(() => {
+      throw new Error('rpc unavailable')
+    })
+    ptySpawnMock.mockReturnValue({
+      onData: vi.fn((callback) => {
+        ptyHandlers.onData = callback
+        return makeDisposable()
+      }),
+      onExit: vi.fn(() => makeDisposable()),
+      write: writeMock,
+      kill: vi.fn()
+    })
+
+    const resultPromise = fetchCodexRateLimits()
+    await vi.advanceTimersByTimeAsync(0)
+
+    ptyHandlers.onData?.('>')
+    ptyHandlers.onData?.('Limits: refresh requested; run /status again shortly.\n')
+    await vi.advanceTimersByTimeAsync(750)
+    expect(writeMock.mock.calls.filter((call) => call[0] === '/status')).toHaveLength(2)
+
+    ptyHandlers.onData?.('Limits: usage endpoint returned an unexpected response.\n')
+    await vi.advanceTimersByTimeAsync(15_000)
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: 'error',
+      error: 'PTY timeout'
     })
   })
 })

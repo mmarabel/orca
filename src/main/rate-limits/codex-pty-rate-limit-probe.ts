@@ -29,15 +29,27 @@ export type CodexPtyRateLimitCommand = {
   env: NodeJS.ProcessEnv
 }
 
-function describePtyStatusFailure(output: string, fallback: string): string {
+function appendDiagnosticOutput(buffer: string, data: string): string {
+  const next = buffer + data
+  return next.length > MAX_DIAGNOSTIC_OUTPUT_LENGTH
+    ? next.slice(-MAX_DIAGNOSTIC_OUTPUT_LENGTH)
+    : next
+}
+
+function describePtyStatusFailure(
+  output: string,
+  latestStatusOutput: string,
+  fallback: string
+): string {
   const clean = stripCodexPtyControlSequences(output)
   const authError = extractCodexAuthError(clean)
   if (authError) {
     return authError
   }
   // Why: distinguish "CLI never answered" from "CLI answered but limits were
-  // still pending" so the status bar does not blame a false PTY hang.
-  if (STATUS_REFRESH_PENDING_RE.test(clean)) {
+  // still pending" so the status bar does not blame a false PTY hang. Only the
+  // latest /status counts, so a retried attempt's own failure is not masked.
+  if (STATUS_REFRESH_PENDING_RE.test(stripCodexPtyControlSequences(latestStatusOutput))) {
     return STATUS_REFRESH_PENDING_ERROR
   }
   return withMacTailscaleDnsHint(fallback, clean)
@@ -58,6 +70,8 @@ export async function fetchCodexRateLimitsViaPty(
 
   return new Promise<ProviderRateLimits>((resolve) => {
     let output = ''
+    // Output since the most recent /status was sent.
+    let latestStatusOutput = ''
     let resolved = false
     let sentStatus = false
     let statusAttempts = 0
@@ -79,6 +93,7 @@ export async function fetchCodexRateLimitsViaPty(
     function sendStatusCommand(): void {
       sentStatus = true
       statusAttempts += 1
+      latestStatusOutput = ''
       if (statusNudge) {
         clearTimeout(statusNudge)
         statusNudge = null
@@ -181,17 +196,15 @@ export async function fetchCodexRateLimitsViaPty(
           session: null,
           weekly: null,
           updatedAt: Date.now(),
-          error: describePtyStatusFailure(output, 'PTY timeout'),
+          error: describePtyStatusFailure(output, latestStatusOutput, 'PTY timeout'),
           status: 'error'
         })
       }
     }, PTY_TIMEOUT_MS)
 
     const onDataDisposable = term.onData((data) => {
-      output += data
-      if (output.length > MAX_DIAGNOSTIC_OUTPUT_LENGTH) {
-        output = output.slice(-MAX_DIAGNOSTIC_OUTPUT_LENGTH)
-      }
+      output = appendDiagnosticOutput(output, data)
+      latestStatusOutput = appendDiagnosticOutput(latestStatusOutput, data)
 
       const authError = extractCodexAuthError(output)
       if (authError) {
@@ -270,7 +283,11 @@ export async function fetchCodexRateLimitsViaPty(
           error:
             session || weekly
               ? null
-              : describePtyStatusFailure(output, 'CLI exited before status was available'),
+              : describePtyStatusFailure(
+                  output,
+                  latestStatusOutput,
+                  'CLI exited before status was available'
+                ),
           status: session || weekly ? 'ok' : 'error'
         })
       }

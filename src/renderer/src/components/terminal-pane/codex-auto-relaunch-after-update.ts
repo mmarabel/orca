@@ -10,7 +10,8 @@ type CodexAutoRelaunchAfterUpdateOptions = {
   startupCommand: string | null | undefined
   getPtyId: () => string | null
   inspectForegroundProcess: (ptyId: string) => Promise<string | null>
-  sendInput: (data: string) => boolean
+  /** Must stay bound to the PTY current at call time; resolves false when it was not accepted. */
+  sendInput: (data: string) => boolean | Promise<boolean>
   isDisposed: () => boolean
   now?: () => number
 }
@@ -120,7 +121,7 @@ export function createCodexAutoRelaunchAfterUpdate(
     if (!isCodexForegroundProcessName(foregroundProcess)) {
       // Why: Codex exits after self-update instead of execing the new CLI.
       // Repeat only Orca's original Codex startup command once Codex is gone.
-      relaunched = options.sendInput(`${startupCommand}\r`)
+      relaunched = await options.sendInput(`${startupCommand}\r`)
       if (!relaunched) {
         scheduleRetryIfWithinWindow()
       }

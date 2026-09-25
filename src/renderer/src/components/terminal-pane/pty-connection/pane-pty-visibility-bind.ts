@@ -40,7 +40,10 @@ export function installPanePtyVisibilityBind(session: ConnectPanePtySession): vo
       }
       return inspection.foregroundProcess
     },
-    sendInput: (data) => session.transport.sendInput(data),
+    // Why: remote sendInput debounces and resolves the handle at flush, so a rebind could retarget
+    // it; the accepted path pins the handle it was called with. Transports without it bind at call.
+    sendInput: (data) =>
+      session.transport.sendInputAccepted?.(data) ?? session.transport.sendInput(data),
     isDisposed: () => session.disposed
   })
   session.bindActivePanePty = (

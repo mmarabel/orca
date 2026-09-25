@@ -193,6 +193,68 @@ describe('codex auto relaunch after update', () => {
     expect(sendInput).toHaveBeenLastCalledWith('codex\r')
   })
 
+  it('retries when an accepted relaunch send resolves false', async () => {
+    vi.useFakeTimers()
+    let now = 0
+    const sendInput = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    const relaunch = createCodexAutoRelaunchAfterUpdate({
+      startupCommand: 'codex',
+      getPtyId: () => 'pty-1',
+      inspectForegroundProcess: vi.fn().mockResolvedValue('zsh'),
+      sendInput,
+      isDisposed: () => false,
+      now: () => now
+    })
+
+    relaunch.observeOutput('Update ran successfully! Please restart Codex.')
+    now += 250
+    vi.advanceTimersByTime(250)
+    await flushAsyncTicks()
+    now += 250
+    vi.advanceTimersByTime(250)
+    await flushAsyncTicks()
+
+    expect(sendInput).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not retry into a replacement PTY when an in-flight accepted send is rejected', async () => {
+    vi.useFakeTimers()
+    let now = 0
+    let ptyId = 'pty-1'
+    let resolveSend: (accepted: boolean) => void = () => {}
+    const sendInput = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveSend = resolve
+        })
+    )
+    const relaunch = createCodexAutoRelaunchAfterUpdate({
+      startupCommand: 'codex',
+      getPtyId: () => ptyId,
+      inspectForegroundProcess: vi.fn().mockResolvedValue('zsh'),
+      sendInput,
+      isDisposed: () => false,
+      now: () => now
+    })
+
+    relaunch.observeOutput('Update ran successfully! Please restart Codex.')
+    now += 250
+    vi.advanceTimersByTime(250)
+    await flushAsyncTicks()
+    expect(sendInput).toHaveBeenCalledTimes(1)
+
+    // The transport rejects the pinned send because its handle rotated mid-flight.
+    ptyId = 'pty-2'
+    relaunch.cancelPendingRelaunch()
+    resolveSend(false)
+    await flushAsyncTicks()
+    now += 1_000
+    vi.advanceTimersByTime(1_000)
+    await flushAsyncTicks()
+
+    expect(sendInput).toHaveBeenCalledTimes(1)
+  })
+
   it('does not relaunch into a PTY that replaced the one that printed the notice', async () => {
     vi.useFakeTimers()
     let now = 0

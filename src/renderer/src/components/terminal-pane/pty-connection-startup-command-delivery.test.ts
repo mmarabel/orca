@@ -675,6 +675,8 @@ describe('connectPanePty', () => {
       await flushAsyncTicks()
 
       expect(window.api.pty.getForegroundProcess).toHaveBeenCalledWith('pty-local-1')
+      // Why: the accepted path pins the PTY the send was issued for.
+      expect(transport.sendInputAccepted).toHaveBeenCalledWith('codex\r')
       expect(transport.sendInput).toHaveBeenCalledWith('codex\r')
     } finally {
       vi.useRealTimers()

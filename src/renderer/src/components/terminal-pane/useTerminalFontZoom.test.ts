@@ -1,15 +1,15 @@
 // @vitest-environment happy-dom
 import type * as ReactModule from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { TerminalLeafId } from '../../../../shared/stable-pane-id'
+import { mintStablePaneId } from '@/lib/pane-manager/mint-stable-pane-id'
 import { useTerminalFontZoom } from './useTerminalFontZoom'
 import {
   hydrateTerminalFontSizeOverride,
   resetTerminalFontSizeOverridesForTest
 } from './terminal-font-size-overrides'
 
-const TEST_LEAF_ID = '00000000-0000-4000-8000-000000000001' as TerminalLeafId
-const OTHER_TEST_LEAF_ID = '00000000-0000-4000-8000-000000000002' as TerminalLeafId
+const TEST_LEAF_ID = mintStablePaneId()
+const OTHER_TEST_LEAF_ID = mintStablePaneId()
 
 const mocks = vi.hoisted(() => ({
   captureScrollState: vi.fn(() => ({ wasAtBottom: true })),
@@ -68,6 +68,7 @@ describe('useTerminalFontZoom', () => {
     useTerminalFontZoom({
       isActive: true,
       containerRef: { current: container },
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: this fixture supplies the manager members used by font zoom.
       managerRef: {
         current: {
           getActivePane: () => ({ id: 1, leafId: TEST_LEAF_ID, terminal })
@@ -134,6 +135,7 @@ describe('useTerminalFontZoom', () => {
     useTerminalFontZoom({
       isActive: true,
       containerRef: { current: inactiveContainer },
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: this fixture supplies the manager members used by font zoom.
       managerRef: {
         current: {
           getActivePane: () => ({
@@ -149,6 +151,7 @@ describe('useTerminalFontZoom', () => {
     useTerminalFontZoom({
       isActive: true,
       containerRef: { current: activeContainer },
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: this fixture supplies the manager members used by font zoom.
       managerRef: {
         current: {
           getActivePane: () => ({

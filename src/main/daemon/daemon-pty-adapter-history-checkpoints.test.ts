@@ -1,3 +1,4 @@
+import './mock-descendant-sweep'
 /* Periodic/final history checkpointing: scheduling, work caps, cooldown and shutdown writes. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
@@ -12,6 +13,7 @@ import {
   waitFor
 } from './daemon-pty-adapter-test-harness'
 import type * as DaemonHealthModule from './daemon-health'
+import type * as DaemonTccAttributionModule from './daemon-tcc-attribution'
 
 const { getMacDaemonSystemResolverHealthMock, getMacDaemonTccAttributionHealthMock } = vi.hoisted(
   () => ({
@@ -30,7 +32,14 @@ vi.mock('./daemon-health', async (importOriginal) => {
   const actual = await importOriginal<typeof DaemonHealthModule>()
   return {
     ...actual,
-    getMacDaemonSystemResolverHealth: getMacDaemonSystemResolverHealthMock,
+    getMacDaemonSystemResolverHealth: getMacDaemonSystemResolverHealthMock
+  }
+})
+
+vi.mock('./daemon-tcc-attribution', async (importOriginal) => {
+  const actual = await importOriginal<typeof DaemonTccAttributionModule>()
+  return {
+    ...actual,
     getMacDaemonTccAttributionHealth: getMacDaemonTccAttributionHealthMock
   }
 })

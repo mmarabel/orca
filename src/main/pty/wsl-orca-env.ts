@@ -4,7 +4,7 @@ import {
   ORCHESTRATION_COMPATIBILITY_HOST_INCARNATION_ENV,
   ORCHESTRATION_COMPATIBILITY_HOST_KIND_ENV
 } from '../../shared/orchestration-compatibility-evidence'
-import { SETUP_SCRIPT_CARRIER_ENV_NAMES } from '../../shared/setup-agent-sequencing'
+import { SETUP_SCRIPT_CARRIER_ENV_NAMES } from '../../shared/typed-setup-shell-command'
 import { getShellReadyWrapperRoot } from '../providers/local-pty-shell-ready-wrapper-root'
 import { ORCA_IMAGE_PROTOCOL_ENV } from '../../shared/terminal-image-protocol'
 

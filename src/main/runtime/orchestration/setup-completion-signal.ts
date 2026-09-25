@@ -1,4 +1,3 @@
-import { POSIX_SETUP_OBSERVED_SCRIPT_ENV } from '../../../shared/setup-agent-sequencing'
 import {
   resolveSetupRunnerCommand,
   type SetupRunnerCommandPlatform,
@@ -6,6 +5,7 @@ import {
 } from '../../../shared/setup-runner-command'
 import {
   buildTypedSetupScriptCommand,
+  POSIX_SETUP_OBSERVED_SCRIPT_ENV,
   SETUP_SCRIPT_MISSING_STATUS
 } from '../../../shared/typed-setup-shell-command'
 

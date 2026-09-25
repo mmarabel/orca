@@ -1,5 +1,10 @@
 import { encodePowerShellCommand } from './powershell-command-encoding'
-import { buildTypedSetupScriptCommand } from './typed-setup-shell-command'
+import {
+  buildTypedSetupScriptCommand,
+  SETUP_AGENT_SEQUENCE_SETUP_SCRIPT_ENV,
+  SETUP_AGENT_SEQUENCE_STARTUP_COMMAND_ENV,
+  SETUP_AGENT_SEQUENCE_STARTUP_SCRIPT_ENV
+} from './typed-setup-shell-command'
 import {
   nativeWindowsPathToPosixShellPath,
   resolveSetupRunnerCommand,
@@ -11,19 +16,15 @@ import {
 const DEFAULT_WAIT_TIMEOUT_SECONDS = 2 * 60 * 60
 // Exported so the gate and its tests share one definition.
 export const SETUP_COMPLETE_MESSAGE = 'Setup finished; starting agent.'
-export const SETUP_AGENT_SEQUENCE_STARTUP_COMMAND_ENV = 'ORCA_SEQUENCED_STARTUP_COMMAND'
-export const SETUP_AGENT_SEQUENCE_STARTUP_SCRIPT_ENV = 'ORCA_SEQUENCED_STARTUP_SCRIPT'
-export const SETUP_AGENT_SEQUENCE_SETUP_SCRIPT_ENV = 'ORCA_SEQUENCED_SETUP_SCRIPT'
-export const POSIX_SETUP_OBSERVED_SCRIPT_ENV = 'ORCA_SETUP_OBSERVED_SCRIPT'
-/** Why one list: these carry the script a typed setup/startup command evaluates, so every
- *  spawn path that crosses a shell boundary (WSLENV on the daemon and on the relay) must
- *  forward all of them or the typed command evaluates to nothing (#18059). */
-export const SETUP_SCRIPT_CARRIER_ENV_NAMES = [
+// Re-exported: the carrier names live with the typed command that reads them, but this module is
+// where the sequenced setup/startup pair is built, so its callers keep importing them from here.
+export {
+  POSIX_SETUP_OBSERVED_SCRIPT_ENV,
+  SETUP_AGENT_SEQUENCE_SETUP_SCRIPT_ENV,
   SETUP_AGENT_SEQUENCE_STARTUP_COMMAND_ENV,
   SETUP_AGENT_SEQUENCE_STARTUP_SCRIPT_ENV,
-  SETUP_AGENT_SEQUENCE_SETUP_SCRIPT_ENV,
-  POSIX_SETUP_OBSERVED_SCRIPT_ENV
-] as const
+  SETUP_SCRIPT_CARRIER_ENV_NAMES
+} from './typed-setup-shell-command'
 
 export type SequencedSetupAgentCommands = {
   setupCommand: string

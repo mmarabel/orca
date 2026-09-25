@@ -27,10 +27,8 @@ import { SHELL_STARTUP_FEATURE_ENV } from '../main/shell-startup-features'
 import { DEFAULT_SSH_RELAY_GRACE_PERIOD_SECONDS } from '../shared/ssh-types'
 import { shouldUseShellReadyStartupDelivery } from '../shared/codex-startup-delivery'
 import { buildStartupCommandSubmission } from '../shared/startup-command-submission'
-import {
-  resolveSetupAgentSequenceLaunchCommand,
-  SETUP_SCRIPT_CARRIER_ENV_NAMES
-} from '../shared/setup-agent-sequencing'
+import { resolveSetupAgentSequenceLaunchCommand } from '../shared/setup-agent-sequencing'
+import { SETUP_SCRIPT_CARRIER_ENV_NAMES } from '../shared/typed-setup-shell-command'
 import {
   isPathInsideOrEqual,
   normalizeRuntimePathForComparison

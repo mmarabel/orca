@@ -24,9 +24,11 @@ type Handler = (event: unknown, request?: MemorySnapshotRequest) => Promise<unkn
 
 function handler(): Handler {
   handleMock.mockReset()
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the local collector that reads the store is mocked above.
   registerMemoryHandlers({} as Store)
   const entry = handleMock.mock.calls.find((call) => call[0] === 'memory:getSnapshot')
   expect(entry).toBeTruthy()
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: ipcMain.handle's mock records handlers as a loose tuple; this is the signature registered for this channel.
   return entry![1] as Handler
 }
 
@@ -121,6 +123,7 @@ describe('memory:getSnapshot', () => {
       callRuntimeEnvironmentMock.mockImplementation(
         (..._args: unknown[]) =>
           new Promise(() => {
+            // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: argument 7 is callRuntimeEnvironment's options bag, which carries the abort signal.
             signal = (_args[7] as { signal?: AbortSignal } | undefined)?.signal
           })
       )

@@ -36,7 +36,10 @@ function makeMemorySnapshot(overrides: Partial<MemorySnapshot> = {}): MemorySnap
 function makeStore() {
   return create<
     Pick<AppState, 'memorySnapshotByHostId' | 'memorySnapshotErrorByHostId' | 'fetchMemorySnapshot'>
-  >()((...args) => createMemorySlice(...(args as Parameters<typeof createMemorySlice>)))
+  >()(
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the slice creator is declared against the whole AppState; this store holds only the memory slice, which is all the code under test reads.
+    (...args) => createMemorySlice(...(args as Parameters<typeof createMemorySlice>))
+  )
 }
 
 afterEach(() => {

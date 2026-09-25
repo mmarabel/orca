@@ -1,10 +1,12 @@
 import { z } from 'zod'
+import { isAgentSessionSurfaceTabId } from '../agent-session-surface-tab-id'
 import { isAgentSessionId } from '../agent-session-record'
 import { normalizeExecutionHostId } from '../execution-host'
 import {
   AGENT_SESSION_ID_MAX_LENGTH,
   AGENT_SESSION_HISTORY_DIRECTIONS,
-  AGENT_SESSION_HISTORY_MAX_LIMIT
+  AGENT_SESSION_HISTORY_MAX_LIMIT,
+  AGENT_SESSION_THREAD_GOAL_OBJECTIVE_MAX_LENGTH
 } from '../agent-session-wire'
 
 export const MAX_ID_LENGTH = AGENT_SESSION_ID_MAX_LENGTH
@@ -17,6 +19,9 @@ export const MAX_PROMPT_BYTES = 256 * 1024
 export const MAX_BLOCKS = 64
 
 export const MAX_OPTION_LABEL = 512
+
+/** One relaunch cannot offer more chats than a profile plausibly holds. */
+export const MAX_RESTART_RESUME_SESSIONS = 512
 
 export const SessionId = z
   .string()
@@ -110,7 +115,16 @@ export const CreateIntentParams = z
     envelope: MutationEnvelope,
     worktree: Identifier('Invalid worktree selector'),
     agent: z.enum(['claude', 'codex']),
-    resumeFrom: ResumeSource.optional()
+    resumeFrom: ResumeSource.optional(),
+    /**
+     * The tab id the client reserved for this chat, so it can place the tab before the reply. The
+     * host owns the id from here: it is persisted on the session record and is what the host's tab
+     * snapshot will publish, so it must be a host tab id, as `agent.launch` requires of `paneKey`.
+     *
+     * This object is strict, so an older host refuses a payload carrying it. A client sends it
+     * only after `AGENT_SESSION_CREATE_TAB_ID_RUNTIME_CAPABILITY` is advertised.
+     */
+    tabId: z.string().refine(isAgentSessionSurfaceTabId, 'Invalid chat tab ID').optional()
   })
   .strict()
 
@@ -213,10 +227,38 @@ export const HandoffParams = z
 
 export const OptionsParams = z.object({ sessionId: SessionId }).strict()
 
+/** `sessionId` scopes the catalog to that session's pinned account; without a
+ *  session record the host keys it by the account a new launch would pin.
+ *  `worktree` names where a new chat runs, whose own config may replace the default. */
+export const ModelCatalogParams = z.strictObject({
+  agent: z.enum(['claude', 'codex']),
+  sessionId: SessionId.optional(),
+  worktree: Identifier('Invalid worktree selector').optional()
+})
+
 export const ConversationCommandParams = z
   .object({
     envelope: MutationEnvelope,
     command: z.enum(['clear', 'compact'])
+  })
+  .strict()
+
+export const ThreadGoalParams = z
+  .object({
+    envelope: MutationEnvelope,
+    change: z.discriminatedUnion('kind', [
+      z
+        .object({
+          kind: z.literal('set'),
+          objective: z
+            .string()
+            .max(AGENT_SESSION_THREAD_GOAL_OBJECTIVE_MAX_LENGTH)
+            .refine((value) => value.trim().length > 0, 'Objective is empty')
+        })
+        .strict(),
+      z.object({ kind: z.literal('status'), status: z.enum(['active', 'paused']) }).strict(),
+      z.object({ kind: z.literal('clear') }).strict()
+    ])
   })
   .strict()
 
@@ -225,6 +267,20 @@ export const ConversationCommandParams = z
  *  the other's. */
 export const HoldParams = z
   .object({ sessionId: SessionId, holderId: Identifier('Invalid holder id') })
+  .strict()
+
+/** A launch's offer to resume what the last teardown recorded as working; the set is the host's to
+ *  derive, never a client's to assert. Listing takes nothing. Dismissing takes the sessions to
+ *  forget, or nothing to forget them all; a client only ever names sessions the host itself listed,
+ *  so an older host that rejects the key is never asked to. */
+export const RestartResumableParams = z
+  .object({ sessionIds: z.array(SessionId).max(MAX_RESTART_RESUME_SESSIONS).optional() })
+  .strict()
+
+/** Omitting `sessionIds` takes the whole offered set; naming them takes that subset. Either way the
+ *  host re-derives eligibility, so an id a client invents is simply not in the set. */
+export const RestartResumeParams = z
+  .object({ sessionIds: z.array(SessionId).max(MAX_RESTART_RESUME_SESSIONS).optional() })
   .strict()
 
 export const HistoryParams = z

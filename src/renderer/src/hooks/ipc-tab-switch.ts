@@ -60,6 +60,7 @@ function resolveCycleContext(): CycleContext | null {
  * correct tab instance is focused.
  */
 export function activateCyclableTab(store: AppStoreState, next: TypeCyclableTab): void {
+  const worktreeId = store.activeWorktreeId
   if (next.type === 'terminal') {
     store.setActiveTab(next.id)
     // Terminal entities can be open in multiple split groups. setActiveTab uses the legacy
@@ -67,14 +68,13 @@ export function activateCyclableTab(store: AppStoreState, next: TypeCyclableTab)
     if (next.tabId) {
       store.activateTab?.(next.tabId)
     }
-    store.setActiveTabType('terminal')
+    store.setActiveTabType('terminal', worktreeId)
   } else if (next.type === 'browser') {
     store.setActiveBrowserTab(next.id)
     if (next.tabId) {
       store.activateTab?.(next.tabId)
     }
-    store.setActiveTabType('browser')
-    const worktreeId = store.activeWorktreeId
+    store.setActiveTabType('browser', worktreeId)
     if (worktreeId) {
       requestBrowserWorkspaceTabPageFocus(worktreeId, next.id)
     }
@@ -83,12 +83,12 @@ export function activateCyclableTab(store: AppStoreState, next: TypeCyclableTab)
     if (next.tabId) {
       store.activateTab?.(next.tabId)
     }
-    store.setActiveTabType('simulator')
+    store.setActiveTabType('simulator', worktreeId)
   } else if (next.type === 'agent-session') {
     if (next.tabId) {
       store.activateTab?.(next.tabId)
     }
-    store.setActiveTabType('agent-session')
+    store.setActiveTabType('agent-session', worktreeId)
   } else {
     // Why: `setActiveFile` targets the file entity (its implicit activateTab
     // picks the first matching tab in the active group); `activateTab(tabId)`
@@ -97,7 +97,7 @@ export function activateCyclableTab(store: AppStoreState, next: TypeCyclableTab)
     if (next.tabId) {
       store.activateTab?.(next.tabId)
     }
-    store.setActiveTabType('editor')
+    store.setActiveTabType('editor', worktreeId)
   }
 }
 
@@ -379,6 +379,6 @@ export function handleSwitchTerminalTab(direction: number): boolean {
     return false
   }
   store.setActiveTab(next.id)
-  store.setActiveTabType('terminal')
+  store.setActiveTabType('terminal', worktreeId)
   return true
 }

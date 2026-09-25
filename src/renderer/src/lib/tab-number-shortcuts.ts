@@ -76,7 +76,7 @@ export function activateTabNumberShortcut(index: number): boolean {
       })
     }
     store.setActiveTab(target.entityId)
-    store.setActiveTabType('terminal')
+    store.setActiveTabType('terminal', worktreeId)
     focusTerminalTabSurface(target.entityId)
     return true
   }
@@ -90,18 +90,18 @@ export function activateTabNumberShortcut(index: number): boolean {
       })
     }
     store.setActiveBrowserTab(target.entityId)
-    store.setActiveTabType('browser')
+    store.setActiveTabType('browser', worktreeId)
     requestBrowserWorkspaceTabPageFocus(worktreeId, target.entityId)
     return true
   }
 
   if (target.contentType === 'simulator') {
     store.setActiveTab(target.id)
-    store.setActiveTabType('simulator')
+    store.setActiveTabType('simulator', worktreeId)
     return true
   }
 
   store.setActiveFile(target.entityId)
-  store.setActiveTabType('editor')
+  store.setActiveTabType('editor', worktreeId)
   return true
 }

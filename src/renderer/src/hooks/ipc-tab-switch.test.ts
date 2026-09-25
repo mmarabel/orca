@@ -109,7 +109,7 @@ describe('handleSwitchTerminalTab', () => {
 
     expect(handleSwitchTerminalTab(1)).toBe(true)
     expect(store.setActiveTab).toHaveBeenCalledWith('term-3')
-    expect(store.setActiveTabType).toHaveBeenCalledWith('terminal')
+    expect(store.setActiveTabType).toHaveBeenCalledWith('terminal', 'wt-1')
   })
 
   it('wraps from the last terminal to the first terminal', () => {
@@ -126,7 +126,7 @@ describe('handleSwitchTerminalTab', () => {
 
     expect(handleSwitchTerminalTab(1)).toBe(true)
     expect(store.setActiveTab).toHaveBeenCalledWith('term-1')
-    expect(store.setActiveTabType).toHaveBeenCalledWith('terminal')
+    expect(store.setActiveTabType).toHaveBeenCalledWith('terminal', 'wt-1')
   })
 
   it('returns false when no terminal tabs exist', () => {
@@ -166,7 +166,7 @@ describe('handleSwitchTerminalTab', () => {
 
     expect(handleSwitchTerminalTab(1)).toBe(true)
     expect(store.setActiveTab).toHaveBeenCalledWith('term-1')
-    expect(store.setActiveTabType).toHaveBeenCalledWith('terminal')
+    expect(store.setActiveTabType).toHaveBeenCalledWith('terminal', 'wt-1')
   })
 
   it('jumps from an editor to the only terminal when one terminal exists', () => {
@@ -181,7 +181,7 @@ describe('handleSwitchTerminalTab', () => {
 
     expect(handleSwitchTerminalTab(1)).toBe(true)
     expect(store.setActiveTab).toHaveBeenCalledWith('term-1')
-    expect(store.setActiveTabType).toHaveBeenCalledWith('terminal')
+    expect(store.setActiveTabType).toHaveBeenCalledWith('terminal', 'wt-1')
   })
 
   it('returns false when the only terminal is already active', () => {
@@ -210,7 +210,7 @@ describe('handleSwitchTerminalTab', () => {
 
     expect(handleSwitchTerminalTab(1)).toBe(true)
     expect(store.setActiveTab).toHaveBeenCalledWith('term-2')
-    expect(store.setActiveTabType).toHaveBeenCalledWith('terminal')
+    expect(store.setActiveTabType).toHaveBeenCalledWith('terminal', 'wt-1')
   })
 
   it('falls back when one stale group terminal hides the remaining worktree terminal', () => {
@@ -312,7 +312,7 @@ describe('handleSwitchTab', () => {
     expect(store.activateTab).toHaveBeenCalledWith('tab-terminal-2')
     expect(store.setActiveFile).not.toHaveBeenCalled()
     expect(store.setActiveBrowserTab).not.toHaveBeenCalled()
-    expect(store.setActiveTabType).toHaveBeenCalledWith('terminal')
+    expect(store.setActiveTabType).toHaveBeenCalledWith('terminal', 'wt-1')
   })
 
   it('cycles editor tabs using the active group tab id', () => {
@@ -332,7 +332,7 @@ describe('handleSwitchTab', () => {
     expect(handleSwitchTab(1)).toBe(true)
     expect(store.setActiveFile).toHaveBeenCalledWith('file-c')
     expect(store.activateTab).toHaveBeenCalledWith('tab-c')
-    expect(store.setActiveTabType).toHaveBeenCalledWith('editor')
+    expect(store.setActiveTabType).toHaveBeenCalledWith('editor', 'wt-1')
   })
 
   it('cycles browser tabs without jumping to other tab types', () => {
@@ -359,7 +359,7 @@ describe('handleSwitchTab', () => {
     expect(store.setActiveBrowserTab).toHaveBeenCalledWith('browser-2')
     expect(store.setActiveTab).not.toHaveBeenCalled()
     expect(store.setActiveFile).not.toHaveBeenCalled()
-    expect(store.setActiveTabType).toHaveBeenCalledWith('browser')
+    expect(store.setActiveTabType).toHaveBeenCalledWith('browser', 'wt-1')
     // Why: cycling only updated the store before, so the guest never took the keyboard.
     expect(consumeBrowserFocusRequest('page-2')).toBe('webview')
     expect(dispatchEvent).toHaveBeenCalledTimes(1)
@@ -395,7 +395,7 @@ describe('handleSwitchTab', () => {
     expect(() => handleSwitchTab(1)).not.toThrow()
     expect(store.setActiveFile).toHaveBeenCalledWith('file-2')
     expect(store.activateTab).not.toHaveBeenCalled()
-    expect(store.setActiveTabType).toHaveBeenCalledWith('editor')
+    expect(store.setActiveTabType).toHaveBeenCalledWith('editor', 'wt-1')
   })
 })
 
@@ -417,7 +417,7 @@ describe('handleSwitchTabAcrossAllTypes', () => {
     expect(handleSwitchTabAcrossAllTypes(1)).toBe(true)
     expect(store.setActiveFile).toHaveBeenCalledWith('file-1')
     expect(store.activateTab).toHaveBeenCalledWith('tab-file-1')
-    expect(store.setActiveTabType).toHaveBeenCalledWith('editor')
+    expect(store.setActiveTabType).toHaveBeenCalledWith('editor', 'wt-1')
   })
 
   it('wraps around across types', () => {
@@ -434,7 +434,7 @@ describe('handleSwitchTabAcrossAllTypes', () => {
 
     expect(handleSwitchTabAcrossAllTypes(1)).toBe(true)
     expect(store.setActiveTab).toHaveBeenCalledWith('term-1')
-    expect(store.setActiveTabType).toHaveBeenCalledWith('terminal')
+    expect(store.setActiveTabType).toHaveBeenCalledWith('terminal', 'wt-1')
   })
 
   it('returns false when only one tab exists total', () => {
@@ -476,7 +476,7 @@ describe('handleSwitchRecentTab', () => {
     expect(handleSwitchRecentTab()).toBe(true)
     expect(store.setActiveBrowserTab).toHaveBeenCalledWith('browser-b')
     expect(store.activateTab).toHaveBeenCalledWith('tab-b')
-    expect(store.setActiveTabType).toHaveBeenCalledWith('browser')
+    expect(store.setActiveTabType).toHaveBeenCalledWith('browser', 'wt-1')
   })
 
   it('returns false when the MRU stack has no previous visible tab', () => {

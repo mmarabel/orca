@@ -14,7 +14,7 @@ import {
 import { isTerminalTabPresent } from '@/store/slices/terminal-tab-retirement'
 import { e2eConfig } from '@/lib/e2e-config'
 import { useAppStore } from '@/store'
-import { clearTerminalFontSizeOverride } from './terminal-font-size-overrides'
+import { clearRemovedTabFontSizeOverrides } from './terminal-font-size-overrides'
 
 export function cleanupTerminalPaneMount(args: {
   manager: PaneManager
@@ -50,21 +50,14 @@ export function cleanupTerminalPaneMount(args: {
   // global ownership check to let an ID-less deferred split survive a rehome.
   const tabStillExists = isTerminalTabPresent(currentStore, tabId)
   if (!tabStillExists) {
-    for (const pane of manager.getPanes()) {
-      const ptyId = paneTransportsRef.current.get(pane.id)?.getPtyId() ?? null
-      // Why: a mirrored replacement can take ownership during this unmount;
-      // preserve its zoom just as the transport path preserves its PTY.
-      if (
-        !shouldDetachPaneTransportOnUnmount({
-          tabStillExists,
-          tabId,
-          ptyId,
-          worktreeTabs: currentWorktreeTabs
-        })
-      ) {
-        clearTerminalFontSizeOverride(pane.leafId)
-      }
-    }
+    clearRemovedTabFontSizeOverrides(
+      currentStore,
+      { tabId, worktreeId },
+      manager.getPanes().map((pane) => ({
+        leafId: pane.leafId,
+        ptyId: paneTransportsRef.current.get(pane.id)?.getPtyId() ?? null
+      }))
+    )
   }
   unregisterRuntimeTab()
   cancelResize()

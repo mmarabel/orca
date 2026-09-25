@@ -5,6 +5,7 @@ import {
   type AiVaultSession
 } from '../../../../shared/ai-vault-types'
 import {
+  countAiVaultSessions,
   filterAiVaultSessions,
   groupAiVaultSessions,
   type AiVaultSessionFilterState
@@ -22,6 +23,7 @@ export type {
 export {
   AI_VAULT_SESSION_FILTER_QUERY_MAX_BYTES,
   agentLabel,
+  countAiVaultSessions,
   filterAiVaultSessions,
   folderLabel,
   groupAiVaultSessions,
@@ -87,22 +89,22 @@ export function useAiVaultPanelSessions(
     () =>
       searching
         ? sessions.length
-        : filterAiVaultSessions(sessions, {
+        : // Counted, not filtered: order cannot change a count, so this must not
+          // redo a full sort every time the user flips the sort menu.
+          countAiVaultSessions(sessions, {
             query: '',
             agents: AI_VAULT_AGENTS,
             scope,
-            sort,
             activeWorktreePaths,
             activeProjectKey,
             sessionProjectById,
             projectLabelByKey,
             hideEmptySessions: false
-          }).length,
+          }),
     [
       searching,
       sessions,
       scope,
-      sort,
       activeWorktreePaths,
       activeProjectKey,
       sessionProjectById,

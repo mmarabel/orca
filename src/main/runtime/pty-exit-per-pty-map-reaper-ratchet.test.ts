@@ -230,6 +230,7 @@ describe('pane-keyed replacement record retention (leak regression)', () => {
 
   /** The identity-only shape the hook server retains on this retirement path. */
   function retiredRow(): AgentStatusIpcPayload {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: identity-only hook row fixture; the retirement path reads only these fields.
     return {
       paneKey: makePaneKey(TAB_ID, LEAF_ID),
       state: 'idle',
@@ -254,6 +255,7 @@ describe('pane-keyed replacement record retention (leak regression)', () => {
   }
 
   function retirementMaps(runtime: OrcaRuntimeService): RetirementMaps {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: RetirementMaps names protected per-PTY maps the real runtime owns.
     return runtime as unknown as RetirementMaps
   }
 
@@ -300,6 +302,7 @@ describe('pane-keyed replacement record retention (leak regression)', () => {
 
     // Pruning removes the record without the exit callback, so it must run the same release or
     // the evidence map keeps one entry per pane this session ever replaced.
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: protected pruning method on the real runtime, called directly to mirror a disconnect prune.
     const internals = runtime as unknown as {
       dropDisconnectedPtyRecord: (ptyId: string) => void
     }

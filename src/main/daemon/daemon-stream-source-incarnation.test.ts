@@ -29,6 +29,7 @@ function createBatcher(
   vi.useFakeTimers()
   const socket = { destroyed: false, writableLength: 0, write: vi.fn() }
   const batcher = new DaemonStreamDataBatcher(
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the batcher touches only destroyed, writableLength and write, which this stub provides.
     () => ({ streamSocket: socket as unknown as Socket }),
     { maxLineBytes, ...options }
   )
@@ -75,6 +76,7 @@ describe('daemon stream source incarnation', () => {
     socket.write.mockImplementation(() => true)
     batcher.flush('c')
     const received: DaemonEvent[] = []
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: every parsed line was encoded by this batcher from a DaemonEvent.
     const parser = createNdjsonParser((event) => received.push(event as DaemonEvent))
     const decoder = new StringDecoder('utf8')
     for (const [line] of socket.write.mock.calls) {

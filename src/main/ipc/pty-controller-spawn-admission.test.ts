@@ -128,6 +128,7 @@ describe('registerPtyHandlers', () => {
     })
     setLocalPtyProvider(provider as never)
     registerPtyHandlers(mainWindow as never, runtime)
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: protected tracker map on the real runtime; the test reads only key membership.
     const trackers = runtime['ptyTitleTrackersByPtyId'] as Map<string, unknown>
     // Predecessor automatic state: a live title parsed into this PTY id's tracker.
     runtime.onPtyData(

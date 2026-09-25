@@ -64,6 +64,7 @@ export class OrcaRuntimeWithGetUnpersistedTrackedTitleForPty extends OrcaRuntime
       }
     }
     const entry: RuntimePtyTitleTrackerEntry = {
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: placeholder; the tracker needs this entry for its callbacks and is assigned below before the entry is stored or returned.
       tracker: null as unknown as RuntimePtyTitleTrackerEntry['tracker'],
       applyingChunk: false,
       lastMobileTitleGateKey: null,

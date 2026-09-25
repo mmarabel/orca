@@ -36,6 +36,7 @@ describe('DaemonPtyAdapter source incarnation', () => {
     vi.spyOn(adapter['client'], 'request').mockImplementation(async (type, payload) => {
       const reply = await originalRequest(type, payload)
       if (type === 'createOrAttach') {
+        // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: only the createOrAttach reply reaches here, and it always carries the daemon incarnationId.
         source = (reply as { incarnationId: string }).incarnationId
         subprocess._simulateData('\x1b]0;same title\x07')
         await waitFor(() => data.length > 0)

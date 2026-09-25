@@ -52,6 +52,7 @@ function makeSession(): WorkspaceSessionState {
     sortOrder: 0,
     createdAt: 1
   }
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: session fixture holding only the tab, layout and leaf fields the retirement path reads.
   return {
     tabsByWorktree: { [WORKTREE_ID]: [tab] },
     terminalLayoutsByTabId: {
@@ -94,6 +95,7 @@ function makeRuntime(server: AgentHookServer): OrcaRuntimeService {
     },
     getSettings: () => ({})
   }
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: stub store implements the store methods this retirement path calls.
   const runtime = new OrcaRuntimeService(store as never, undefined, {
     getAgentProviderSessionRowsForPane: (paneKey) => server.getStatusSnapshotForPane(paneKey),
     getAgentProviderSessionSnapshot: () => server.getStatusSnapshot(),
@@ -132,6 +134,7 @@ function feedAgentTitle(runtime: OrcaRuntimeService, incarnationId: string): voi
 }
 
 function seedPublishedSurface(runtime: OrcaRuntimeService, title: string, ptyId = PTY_ID): void {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: snapshot fixture holding only the fields the mobile surface projection reads.
   runtime['storeMobileSessionSnapshot'](WORKTREE_ID, {
     worktree: WORKTREE_ID,
     publicationEpoch: 'headless:test',
@@ -172,6 +175,7 @@ async function projectedPane(
   if (!tab) {
     return undefined
   }
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: reads optional projection fields off the published terminal tab.
   const projected = tab as unknown as {
     agentStatus?: Record<string, unknown>
     terminal?: string | null
@@ -185,16 +189,7 @@ async function projectedPane(
 /** The identity `terminal.list`/`terminal.show` publishes for this pane with no other evidence
  *  (no launch record, no readable foreground process, no title): the hook row decides alone. */
 function paneAgentIdentity(runtime: OrcaRuntimeService): string | undefined {
-  return (
-    runtime as unknown as {
-      resolvePaneAgentIdentityField: (
-        launchAgent: null,
-        foregroundAgent: null,
-        title: null,
-        paneKey: string
-      ) => { agentIdentity?: string }
-    }
-  ).resolvePaneAgentIdentityField(null, null, null, PANE_KEY).agentIdentity
+  return runtime['resolvePaneAgentIdentityField'](null, null, null, PANE_KEY).agentIdentity
 }
 
 function paneHookRow(server: AgentHookServer): AgentStatusIpcPayload | undefined {
@@ -224,6 +219,7 @@ afterEach(() => {
 
 describe('retired pane evidence matching', () => {
   const retiredRow = (): AgentStatusIpcPayload =>
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: retired hook row fixture holding only the fields evidence matching reads.
     ({
       paneKey: PANE_KEY,
       state: 'idle',
@@ -262,13 +258,16 @@ describe('retired pane evidence matching', () => {
       observedAt: T0
     }
     const retired = { ...retiredRow(), observation }
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the fixture row plus an observation, the shape the hook server stores.
     const evidence = retiredPaneEvidenceFromRow(retired as AgentStatusIpcPayload)
     expect(evidence).not.toBeNull()
     // The same row instance is still the retired instance...
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the fixture row plus an observation, the shape the hook server stores.
     expect(isRetiredPaneEvidenceRow(retired as AgentStatusIpcPayload, evidence!)).toBe(true)
     // ...while a successor row sharing the millisecond, the session and the agent type is its own
     // later observation and must not be hidden.
     const successor = { ...retired, observation: { ...observation, revision: 42 } }
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the fixture row plus a later observation, the shape the hook server stores.
     expect(isRetiredPaneEvidenceRow(successor as AgentStatusIpcPayload, evidence!)).toBe(false)
   })
 })
@@ -381,12 +380,7 @@ describe('retired predecessor evidence on a replaced pane', () => {
 
     registerIncarnation(runtime, NEW_INCARNATION)
 
-    const evidenceOf = (paneKey: string): unknown =>
-      (
-        runtime as unknown as {
-          getRetiredPaneEvidence: (key: string) => unknown
-        }
-      ).getRetiredPaneEvidence(paneKey)
+    const evidenceOf = (paneKey: string): unknown => runtime['getRetiredPaneEvidence'](paneKey)
     expect(evidenceOf(PANE_KEY)).not.toBeNull()
     // Scoped to the pane that was replaced: another pane's row can never be filtered by it.
     expect(evidenceOf(makePaneKey(TAB_ID, '22222222-2222-4222-8222-222222222222'))).toBeNull()
@@ -452,9 +446,7 @@ describe('retired predecessor evidence across a recoverable SSH relay loss', () 
   }
 
   function retiredEvidenceOf(runtime: OrcaRuntimeService): unknown {
-    return (
-      runtime as unknown as { getRetiredPaneEvidence: (paneKey: string) => unknown }
-    ).getRetiredPaneEvidence(PANE_KEY)
+    return runtime['getRetiredPaneEvidence'](PANE_KEY)
   }
 
   /** The successor SSH PTY owns a pane whose predecessor row is still stored for resume. */

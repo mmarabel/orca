@@ -46,6 +46,7 @@ function bind(
     null,
     { tabId: 'tab-1', leafId, incarnationId },
     undefined,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: admission is an opaque token from beginPtyObservationAdmission or deliberately absent.
     admission as never
   )
 }
@@ -79,8 +80,7 @@ function summaryOf(
 function titleFacts(batches: TerminalSideEffectBatch[]): string[] {
   return batches
     .flatMap((batch) => batch.facts)
-    .filter((fact) => fact.kind === 'title')
-    .map((fact) => (fact as { rawTitle: string }).rawTitle)
+    .flatMap((fact) => (fact.kind === 'title' ? [fact.rawTitle] : []))
 }
 
 /** Accepted binding for PTY with an already-admitted `inc-old` live title. */
@@ -231,6 +231,7 @@ describe('runtime PTY observation admission', () => {
 
     feed(runtime, '\x1b]0;Codex bu', 101, OLD)
     feed(runtime, 'candidate bytes', 102, NEW)
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: protected headless-terminal map on the real runtime; the test reads only key membership.
     const headless = runtime['headlessTerminals'] as Map<string, unknown>
     expect(headless.has(PTY)).toBe(true)
 
@@ -472,6 +473,7 @@ describe('runtime PTY observation admission', () => {
     // The canonical id already has an owner, so the contender's token is dead.
     expect(runtime.transferPtyObservationAdmission(contender, PTY)).toBe(incumbent)
 
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: protected pending-admission map on the real runtime; the test reads only its keys.
     const byToken = runtime['pendingPtyObservationAdmissionsByToken'] as Map<string, unknown>
     expect(byToken.has(contender)).toBe(false)
     expect([...byToken.keys()]).toEqual([incumbent])
@@ -564,6 +566,7 @@ function bindDurableSurface(
     null,
     { tabId: 'host-tab', leafId: HEADLESS_LEAF_ID, incarnationId },
     undefined,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: admission is an opaque token from beginPtyObservationAdmission or deliberately absent.
     admission as never
   )
 }
@@ -611,6 +614,7 @@ describe('runtime PTY observation admission over a retired durable surface', () 
       sessionWithDurablePredecessor(incarnationId)
     )
     const reconcileAgentStatusForEndedProcess = vi.fn()
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: stub store implements the store methods this retirement path calls.
     const runtime = new OrcaRuntimeService(runtimeStore as never, undefined, {
       reconcileAgentStatusForEndedProcess
     })

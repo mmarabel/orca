@@ -34,6 +34,7 @@ function makeTerminalTab(overrides: Partial<TerminalTab> = {}): TerminalTab {
 }
 
 function makeSession(tab: TerminalTab, leafIds: string[]): WorkspaceSessionState {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: session fixture holding only the tab, layout and leaf fields the retirement path reads.
   return {
     tabsByWorktree: { [WORKTREE_ID]: [tab] },
     terminalLayoutsByTabId: {
@@ -56,6 +57,7 @@ function makeSession(tab: TerminalTab, leafIds: string[]): WorkspaceSessionState
 }
 
 function makeHookRow(): AgentStatusIpcPayload {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: hook row fixture holding only the fields the retirement path reads.
   return {
     paneKey: `${TAB_ID}:${LEAF_ID}`,
     state: 'idle',
@@ -82,6 +84,7 @@ function makeRuntime(
     },
     getSettings: () => ({})
   }
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: stub store implements the store methods this retirement path calls.
   const runtime = new OrcaRuntimeService(store as never, undefined, {
     getAgentProviderSessionRowsForPane: () => hookRows,
     reconcileAgentStatusForEndedProcess
@@ -94,6 +97,7 @@ type RetirementRuntime = OrcaRuntimeService & {
 }
 
 function seedPublishedSurface(runtime: OrcaRuntimeService, title: string, leafId = LEAF_ID): void {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: protected snapshot writer on the real runtime, called directly to seed a published surface.
   const internals = runtime as unknown as {
     storeMobileSessionSnapshot: (worktreeId: string, snapshot: unknown) => void
   }
@@ -120,6 +124,7 @@ function seedPublishedSurface(runtime: OrcaRuntimeService, title: string, leafId
 }
 
 function surfaceTitle(runtime: OrcaRuntimeService, leafId = LEAF_ID): string | undefined {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: RetirementRuntime names the protected surface map the real runtime owns.
   return (runtime as RetirementRuntime).mobileSessionTabsByWorktree
     .get(WORKTREE_ID)
     ?.tabs.find(
@@ -304,6 +309,7 @@ describe('replaced PTY identity retirement', () => {
       leafId: LEAF_ID,
       incarnationId: NEW_INCARNATION
     })
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: protected restore-seed map and seeding method on the real runtime.
     const internals = runtime as unknown as {
       retiredRestoreSeedIncarnationByPtyId: Map<string, string>
       applySeededAgentStatus: (ptyId: string, title: string) => void

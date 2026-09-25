@@ -73,6 +73,7 @@ export function createRuntimePtyObservationCapsule(
 ): RuntimePtyObservationCapsule {
   const capsule: RuntimePtyObservationCapsule = {
     source,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: placeholder; the entry callbacks need the capsule, and capsule.entry is assigned below before the capsule is returned.
     entry: null as unknown as RuntimePtyTitleTrackerEntry,
     agentStatusProcessor: createAgentStatusOscProcessor(),
     oscTitleScanTail: '',

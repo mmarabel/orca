@@ -4,6 +4,9 @@ import {
   isQuarterCircleSpinnerOnlyAgentTitle,
   type AgentStatus
 } from '../../shared/agent-detection'
+import { recognizeAgentProcess } from '../../shared/agent-process-recognition'
+import { shareCompatibleTitleIdentityGroup } from '../../shared/agent-title-owner'
+import { resolveExplicitTerminalTitleAgentType } from '../../shared/terminal-title-agent-type'
 import { ptyForegroundIsShell } from './pty-shell-foreground-evidence'
 import type { RuntimeTerminalAgentStatus } from '../../shared/runtime-types'
 import type { RuntimePtyController } from './runtime-pty-controller-contract'
@@ -63,7 +66,7 @@ export class RuntimeTerminalAgentStatusQuery {
     }
   }
 
-  private async readStatus(handle: string): Promise<RuntimeTerminalAgentStatus> {
+  private async readStatus(handle: string, retriesLeft = 1): Promise<RuntimeTerminalAgentStatus> {
     const ptyId = this.getPtyId(handle)
     const terminal = this.getSnapshot(handle, ptyId)
     const explicitStatus = this.deps.getExplicitStatus(handle)
@@ -123,11 +126,20 @@ export class RuntimeTerminalAgentStatusQuery {
         terminal.titleIsRestored
       ) {
         const isRunningAgent = await this.deps.isRunning(handle)
+        // Why: an exited agent's restored title can sit over a different agent that set none.
+        const titleOwnsAgent =
+          isRunningAgent &&
+          (!terminal.titleIsRestored ||
+            (await this.foregroundAgentMatchesTitle(ptyId, terminal.title)))
         this.assertTerminalAgentStatusPtyBinding(handle, ptyId)
+        // Why: a live title can land during the awaits above and supersede the one read here.
+        if (retriesLeft > 0 && titleObservationChanged(terminal, this.getSnapshot(handle, ptyId))) {
+          return this.readStatus(handle, retriesLeft - 1)
+        }
         return {
           handle,
           isRunningAgent,
-          status: isRunningAgent ? terminal.titleStatus : null
+          status: titleOwnsAgent ? terminal.titleStatus : null
         }
       }
       return { handle, isRunningAgent: true, status: terminal.titleStatus }
@@ -229,6 +241,25 @@ export class RuntimeTerminalAgentStatusQuery {
     }
   }
 
+  // Only a recognized foreground agent outside the title's identity group contradicts the title.
+  private async foregroundAgentMatchesTitle(ptyId: string, title: string | null): Promise<boolean> {
+    const titleAgent = title ? resolveExplicitTerminalTitleAgentType(title) : null
+    const controller = this.deps.getController()
+    if (!titleAgent || !controller) {
+      return true
+    }
+    let foreground: string | null
+    try {
+      foreground = await controller.getForegroundProcess(ptyId)
+    } catch {
+      return true
+    }
+    const foregroundAgent = recognizeAgentProcess(foreground)?.agent ?? null
+    return (
+      foregroundAgent === null || shareCompatibleTitleIdentityGroup(titleAgent, foregroundAgent)
+    )
+  }
+
   private async terminalHasShellForegroundProcess(handle: string, ptyId: string): Promise<boolean> {
     const controller = this.deps.getController()
     if (!controller) {
@@ -241,4 +272,15 @@ export class RuntimeTerminalAgentStatusQuery {
       afterRead: () => this.assertTerminalAgentStatusPtyBinding(handle, ptyId)
     })
   }
+}
+
+function titleObservationChanged(
+  before: RuntimeTerminalAgentStatusSnapshot,
+  after: RuntimeTerminalAgentStatusSnapshot
+): boolean {
+  return (
+    before.title !== after.title ||
+    before.titleStatus !== after.titleStatus ||
+    before.titleIsRestored !== after.titleIsRestored
+  )
 }

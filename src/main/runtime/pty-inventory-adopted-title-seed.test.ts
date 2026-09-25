@@ -149,7 +149,9 @@ describe('inventory-adopted daemon session title seed (#22809)', () => {
 
   it('restores the idle status of a Pi title the same way', async () => {
     const { runtime } = createHeadlessRuntime({
-      serializeProviderBuffer: async () => providerSnapshot({ lastTitle: 'π - repo' })
+      serializeProviderBuffer: async () => providerSnapshot({ lastTitle: 'π - repo' }),
+      // OMP paints Pi's title; a shared title identity group still owns it.
+      getForegroundProcess: async () => 'omp'
     })
 
     await runtime.listTerminals()
@@ -360,6 +362,15 @@ describe('inventory-adopted daemon session title seed (#22809)', () => {
     })
     await expect(runtime.getTerminalInteractiveWait(handle)).resolves.toEqual({ source: 'title' })
 
+    // A different agent that set no title of its own took over the foreground.
+    foreground = 'claude'
+    await expect(runtime.getTerminalAgentStatus(handle)).resolves.toEqual({
+      handle,
+      isRunningAgent: true,
+      status: null
+    })
+    await expect(runtime.getTerminalInteractiveWait(handle)).resolves.toBeNull()
+
     // The agent exited to a shell that kept the permission title.
     foreground = 'bash'
     await expect(runtime.getTerminalAgentStatus(handle)).resolves.toEqual({
@@ -368,6 +379,31 @@ describe('inventory-adopted daemon session title seed (#22809)', () => {
       status: null
     })
     await expect(runtime.getTerminalInteractiveWait(handle)).resolves.toBeNull()
+  })
+
+  it('rereads the title when a live one lands while the restored one is verified', async () => {
+    let liveTitleOnRead: string | null = null
+    const { runtime } = createHeadlessRuntime({
+      serializeProviderBuffer: async () => providerSnapshot({ lastTitle: GEMINI_PERMISSION_TITLE }),
+      getForegroundProcess: async () => {
+        if (liveTitleOnRead) {
+          runtime.onPtyData(PTY_ID, `\x1b]0;${liveTitleOnRead}\x07`, 3000)
+          liveTitleOnRead = null
+        }
+        return 'gemini'
+      }
+    })
+    await runtime.listTerminals()
+    await vi.waitFor(() => expect(runtime.record()?.lastOscTitle).toBe(GEMINI_PERMISSION_TITLE))
+    const { handle } = await onlyTerminal(runtime)
+
+    // The agent resumed work while the foreground read verifying the permission title was pending.
+    liveTitleOnRead = '⠋ Gemini CLI'
+    await expect(runtime.getTerminalAgentStatus(handle)).resolves.toEqual({
+      handle,
+      isRunningAgent: true,
+      status: 'working'
+    })
   })
 
   it('probes only records that have seen neither output nor a title', async () => {
@@ -504,6 +540,47 @@ describe('inventory-adopted daemon session title seed (#22809)', () => {
     await flushAsyncWork()
 
     expect(runtime.record()?.lastOscTitle).toBeNull()
+  })
+
+  // The inventory meets a respawn the runtime never saw under the same PTY id.
+  it('restores the successor its own title when the inventory reports a new incarnation', async () => {
+    let rows = [processRow()]
+    const answers: Snapshot[] = [
+      providerSnapshot(),
+      providerSnapshot({ lastTitle: GEMINI_PERMISSION_TITLE })
+    ]
+    const { runtime } = createHeadlessRuntime({
+      serializeProviderBuffer: async () => answers.shift() ?? null,
+      listProcesses: async () => rows
+    })
+    await runtime.listTerminals()
+    await vi.waitFor(() => expect(runtime.record()?.lastOscTitle).toBe(CLAUDE_IDLE_TITLE))
+    // A bound pane copied the predecessor's title, and a tracked pane title blocks the seed too.
+    runtime.syncWindowGraph(1, PANE_GRAPH)
+    expect(runtime.primaryLeaf()?.lastOscTitle).toBe(CLAUDE_IDLE_TITLE)
+
+    rows = [processRow({ incarnationId: REPLACEMENT })]
+    await runtime.listTerminals()
+
+    await vi.waitFor(() => expect(runtime.record()?.lastOscTitle).toBe(GEMINI_PERMISSION_TITLE))
+    expect(runtime.primaryLeaf()?.lastOscTitle).toBe(GEMINI_PERMISSION_TITLE)
+  })
+
+  it('keeps a title observed live when the inventory reports a new incarnation', async () => {
+    let rows = [processRow()]
+    const { runtime, serializeProviderBuffer } = createHeadlessRuntime({
+      serializeProviderBuffer: async () => providerSnapshot({ lastTitle: 'stale snapshot title' }),
+      listProcesses: async () => rows
+    })
+    runtime.onPtyData(PTY_ID, '\x1b]0;✳ live title\x07', 100)
+    await runtime.listTerminals()
+
+    rows = [processRow({ incarnationId: REPLACEMENT })]
+    await runtime.listTerminals()
+    await flushAsyncWork()
+
+    expect(runtime.record()?.lastOscTitle).toBe('✳ live title')
+    expect(serializeProviderBuffer).not.toHaveBeenCalled()
   })
 
   it('never probes SSH relay sessions, whose providers serve no buffer snapshot', async () => {

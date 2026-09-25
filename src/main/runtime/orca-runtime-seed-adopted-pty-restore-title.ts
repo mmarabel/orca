@@ -66,6 +66,40 @@ export class OrcaRuntimeWithSeedAdoptedPtyRestoreTitle extends OrcaRuntimeWithRe
       })
   }
 
+  /**
+   * Drops a restored title when the inventory reports a new incarnation for the same PTY id.
+   *
+   * Why: spawns record their own incarnation, so only a respawn the runtime missed reaches here,
+   * and a title restored for the process it replaced says nothing about its successor.
+   * Why restored only: a title observed live is current evidence, and the successor's own output
+   * can arrive through a viewer's attach before the inventory reports its incarnation.
+   */
+  protected forgetRestoredPtyTitle(pty: RuntimePtyWorktreeRecord): void {
+    const restoredTitle = pty.lastOscTitle
+    if (restoredTitle === null || pty.lastOscTitleEpochMs !== null) {
+      return
+    }
+    this.disposePtyTitleTracker(pty.ptyId)
+    pty.lastOscTitle = null
+    pty.lastOscTitleAt = null
+    pty.managementTitle = null
+    pty.managementTitleAt = null
+    if (!pty.lastAgentStatusObservedLive) {
+      pty.lastAgentStatus = null
+    }
+    // Panes bound since the restore copied its title.
+    for (const leaf of this.leavesByPtyId.get(pty.ptyId) ?? []) {
+      if (leaf.lastOscTitle !== restoredTitle) {
+        continue
+      }
+      leaf.lastOscTitle = null
+      leaf.lastOscTitleAt = null
+      if (!leaf.lastAgentStatusObservedLive) {
+        leaf.lastAgentStatus = null
+      }
+    }
+  }
+
   private adoptedPtyTitleSeedAttempt(pty: RuntimePtyWorktreeRecord): string {
     return `${this.getPtyLifecycleGeneration(pty.ptyId)}:${pty.incarnationId ?? ''}`
   }

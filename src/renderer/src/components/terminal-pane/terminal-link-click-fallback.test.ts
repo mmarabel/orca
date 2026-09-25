@@ -279,7 +279,7 @@ describe('createFilePathLinkProvider range bounds', () => {
     setPlatform('Macintosh')
     const now = vi.spyOn(Date, 'now').mockReturnValue(10_999)
     const pathExistsCache = new Map([
-      ['active\0/tmp/eventually-created.ts', { exists: false, checkedAt: 1_000 }]
+      ['active\0/tmp/eventually-created.ts', { exists: false, checkedAt: 1_000, sequence: 0 }]
     ])
     const openAtCurrentTime = (): boolean =>
       openFilePathLinkAtBufferPosition(

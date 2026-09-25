@@ -8,7 +8,7 @@ export function makeExistsCache(
   entries: Iterable<[string, boolean]> = []
 ): TerminalPathExistsCache {
   return new Map(
-    [...entries].map(([key, exists]) => [key, { exists, checkedAt: Date.now() }])
+    [...entries].map(([key, exists]) => [key, { exists, checkedAt: Date.now(), sequence: 0 }])
   )
 }
 import type {

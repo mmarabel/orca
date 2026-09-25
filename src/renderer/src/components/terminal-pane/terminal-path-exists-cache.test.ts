@@ -3,6 +3,7 @@ import {
   TERMINAL_PATH_EXISTS_CACHE_MAX_ENTRIES,
   getTerminalPathExistsCacheKey,
   readTerminalPathExistsCache,
+  startTerminalPathExistsProbe,
   writeTerminalPathExistsCache,
   type TerminalPathExistsCache
 } from './terminal-path-exists-cache'
@@ -10,20 +11,20 @@ import {
 describe('terminal path-exists cache', () => {
   it('caches a positive result, and positives are not subject to the TTL', () => {
     const cache: TerminalPathExistsCache = new Map()
-    writeTerminalPathExistsCache(cache, 'k', true, 1000)
+    writeTerminalPathExistsCache(cache, 'k', true, startTerminalPathExistsProbe(1000))
     expect(readTerminalPathExistsCache(cache, 'k', 1000)).toBe(true)
     expect(readTerminalPathExistsCache(cache, 'k', 1000 + 60_000)).toBe(true)
   })
 
   it('honors a negative result within the TTL window', () => {
     const cache: TerminalPathExistsCache = new Map()
-    writeTerminalPathExistsCache(cache, 'k', false, 1000)
+    writeTerminalPathExistsCache(cache, 'k', false, startTerminalPathExistsProbe(1000))
     expect(readTerminalPathExistsCache(cache, 'k', 1000 + 5_000)).toBe(false)
   })
 
   it('re-probes (cache miss) once a negative result expires — issue #5024', () => {
     const cache: TerminalPathExistsCache = new Map()
-    writeTerminalPathExistsCache(cache, 'k', false, 1000)
+    writeTerminalPathExistsCache(cache, 'k', false, startTerminalPathExistsProbe(1000))
     // Past the negative TTL: treated as a miss so the caller re-checks the
     // filesystem (the file may have since been created).
     expect(readTerminalPathExistsCache(cache, 'k', 1000 + 10_000)).toBeUndefined()
@@ -32,11 +33,26 @@ describe('terminal path-exists cache', () => {
 
   it('ignores an older probe result that lands after a newer one', () => {
     const cache: TerminalPathExistsCache = new Map()
-    writeTerminalPathExistsCache(cache, 'k', true, 2000)
-    writeTerminalPathExistsCache(cache, 'k', false, 1000)
-    expect(cache.get('k')).toEqual({ exists: true, checkedAt: 2000 })
-    writeTerminalPathExistsCache(cache, 'k', false, 3000)
-    expect(cache.get('k')).toEqual({ exists: false, checkedAt: 3000 })
+    const older = startTerminalPathExistsProbe(1000)
+    const newer = startTerminalPathExistsProbe(2000)
+    writeTerminalPathExistsCache(cache, 'k', true, newer)
+    writeTerminalPathExistsCache(cache, 'k', false, older)
+    expect(cache.get('k')).toEqual({ exists: true, ...newer })
+    const latest = startTerminalPathExistsProbe(3000)
+    writeTerminalPathExistsCache(cache, 'k', false, latest)
+    expect(cache.get('k')).toEqual({ exists: false, ...latest })
+  })
+
+  it('orders overlapping probes that start in the same millisecond', () => {
+    const cache: TerminalPathExistsCache = new Map()
+    const older = startTerminalPathExistsProbe(1000)
+    const newer = startTerminalPathExistsProbe(1000)
+    writeTerminalPathExistsCache(cache, 'newer-first', false, newer)
+    writeTerminalPathExistsCache(cache, 'newer-first', true, older)
+    expect(cache.get('newer-first')).toEqual({ exists: false, ...newer })
+    writeTerminalPathExistsCache(cache, 'older-first', false, older)
+    writeTerminalPathExistsCache(cache, 'older-first', true, newer)
+    expect(cache.get('older-first')).toEqual({ exists: true, ...newer })
   })
 
   it('returns undefined for an unknown key', () => {
@@ -46,10 +62,10 @@ describe('terminal path-exists cache', () => {
   it('bounds the cache to the max entry count, evicting the oldest', () => {
     const cache: TerminalPathExistsCache = new Map()
     for (let i = 0; i < TERMINAL_PATH_EXISTS_CACHE_MAX_ENTRIES; i++) {
-      writeTerminalPathExistsCache(cache, `k-${i}`, true, 1)
+      writeTerminalPathExistsCache(cache, `k-${i}`, true, startTerminalPathExistsProbe(1))
     }
     expect(cache.size).toBe(TERMINAL_PATH_EXISTS_CACHE_MAX_ENTRIES)
-    writeTerminalPathExistsCache(cache, 'k-fresh', true, 2)
+    writeTerminalPathExistsCache(cache, 'k-fresh', true, startTerminalPathExistsProbe(2))
     expect(cache.size).toBe(TERMINAL_PATH_EXISTS_CACHE_MAX_ENTRIES)
     expect(cache.has('k-0')).toBe(false)
     expect(cache.has('k-fresh')).toBe(true)

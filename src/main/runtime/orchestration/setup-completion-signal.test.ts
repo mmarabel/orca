@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { typeThroughZshAutopair } from '../../../shared/__fixtures__/zsh-autopair-keystroke-model'
+import { POSIX_SETUP_OBSERVED_SCRIPT_ENV } from '../../../shared/setup-agent-sequencing'
 import { buildStartupCommandSubmission } from '../../../shared/startup-command-submission'
 import { buildObservedSetupCommand, createSetupCompletionScanner } from './setup-completion-signal'
 
@@ -11,97 +13,20 @@ const POSIX_SHELLS = ['bash', 'zsh'].filter(
 )
 
 function observedScript(observed: { env?: Record<string, string> }): string {
-  return observed.env?.ORCA_SETUP_OBSERVED_SCRIPT ?? ''
+  return observed.env?.[POSIX_SETUP_OBSERVED_SCRIPT_ENV] ?? ''
 }
 
-// Keystroke model of hlissner/zsh-autopair, the line-editor plugin that corrupted #18059: the
-// buffer the user's zle holds once Orca has typed `keystrokes` into it (up to accept-line).
-const AUTOPAIR_PAIRS: Record<string, string> = {
-  '`': '`',
-  "'": "'",
-  '"': '"',
-  '{': '}',
-  '[': ']',
-  '(': ')',
-  ' ': ' '
-}
-const AUTOPAIR_OPENERS: Record<string, string> = { '}': '{', ']': '[', ')': '(' }
-const AUTOPAIR_LEFT_BOUNDS: Record<string, RegExp> = {
-  all: /[.:/\\!]$/,
-  quotes: /[\]})a-zA-Z0-9]$/,
-  spaces: /[^{([]$/,
-  '`': /`$/,
-  '"': /"$/,
-  "'": /'$/
-}
-const AUTOPAIR_RIGHT_BOUNDS: Record<string, RegExp> = {
-  all: /^[[{(<,.:?/%$!a-zA-Z0-9]/,
-  quotes: /^[a-zA-Z0-9]/,
-  spaces: /^[^\]})]/
-}
-
-function typeThroughZshAutopair(keystrokes: string): string {
-  let left = ''
-  let right = ''
-  const count = (text: string, char: string): number => text.split(char).length - 1
-  const balanced = (open: string, close: string): boolean => {
-    const l = left.replaceAll(`\\${open}`, '')
-    const r = right.replaceAll(`\\${close}`, '')
-    const lCount = count(l, open)
-    const rCount = count(r, close)
-    if (lCount === 0 && rCount === 0) {
-      return true
-    }
-    if (open === ' ') {
-      const match = /[^'"]([ \t]+)$/.exec(left)
-      return Boolean(match && right.startsWith(match[1]))
-    }
-    if (open === close) {
-      return lCount === rCount || (lCount + rCount) % 2 === 0
-    }
-    return Math.max(0, lCount - count(l, close)) >= rCount - count(r, open)
+// Why not process.env: the payload is `bash -lc`, so the test would otherwise source the
+// developer's and the CI runner's login profile and assert against whatever it prints.
+function hermeticShellEnv(
+  home: string | undefined,
+  scriptEnv?: Record<string, string>
+): Record<string, string> {
+  return {
+    PATH: process.env.PATH ?? '',
+    HOME: home ?? tmpdir(),
+    ...scriptEnv
   }
-  const nextToBoundary = (key: string): boolean => {
-    const group = `'"\``.includes(key) ? 'quotes' : key === ' ' ? 'spaces' : 'braces'
-    return ['all', group, key].some(
-      (name) =>
-        Boolean(AUTOPAIR_LEFT_BOUNDS[name]?.test(left)) ||
-        Boolean(AUTOPAIR_RIGHT_BOUNDS[name]?.test(right))
-    )
-  }
-  const canPair = (key: string): boolean => {
-    const close = AUTOPAIR_PAIRS[key]
-    if (close !== ' ' ? !balanced(key, close) : /^[ \t]*$/.test(right)) {
-      return false
-    }
-    return !nextToBoundary(key)
-  }
-  const canSkip = (open: string, close: string): boolean => {
-    if (!left || (open === close && (open === ' ' || !balanced(open, close)))) {
-      return false
-    }
-    return right[0] === close && !left.endsWith('\\')
-  }
-  for (const key of keystrokes) {
-    if (key === '\n' || key === '\r') {
-      break
-    }
-    const close = AUTOPAIR_PAIRS[key]
-    const opener = AUTOPAIR_OPENERS[key]
-    if (close && `'"\` `.includes(key) && canSkip(key, close)) {
-      left += right[0]
-      right = right.slice(1)
-    } else if (close && canPair(key)) {
-      left += key
-      right = close + right
-    } else if (opener && canSkip(opener, key)) {
-      left += right[0]
-      right = right.slice(1)
-    } else {
-      left += key
-    }
-  }
-  return left + right
 }
 
 describe('orchestration setup completion signal', () => {
@@ -122,7 +47,11 @@ describe('orchestration setup completion signal', () => {
     )
     const script = observedScript(observed)
 
-    expect(observed.command).toBe(`bash -lc 'eval "$ORCA_SETUP_OBSERVED_SCRIPT"'`)
+    expect(observed.command).toBe(
+      `bash -lc 'if test -z "$ORCA_SETUP_OBSERVED_SCRIPT"; ` +
+        `then printf "\\n__ORCA_SETUP_COMPLETE__:token-posix:127\\n"; exit 127; fi; ` +
+        `eval "$ORCA_SETUP_OBSERVED_SCRIPT"'`
+    )
     expect(script).toContain('bash /repo/.git/orca/setup-runner.sh')
     expect(script).toContain('__ORCA_SETUP_COMPLETE__:token-posix:%s\\n')
     expect(script).toContain('"$status"')
@@ -131,6 +60,8 @@ describe('orchestration setup completion signal', () => {
 
   it('types a POSIX command that a pair-inserting line editor leaves intact', () => {
     // Regression (#18059): zsh-autopair turned `( ` into `(  )`, handing bash `...; exit "$status" )`.
+    // Every other generated typed command is held to the same rule in
+    // typed-setup-command-line-editor-safety.test.ts.
     const { command } = buildObservedSetupCommand(
       '/repo/.git/orca/setup-runner.sh',
       'posix',
@@ -138,10 +69,6 @@ describe('orchestration setup completion signal', () => {
     )
 
     expect(typeThroughZshAutopair(command)).toBe(command)
-    // Anchors the model to the reported corruption of the old inline-subshell form.
-    expect(typeThroughZshAutopair(`bash -lc '( bash r ); exit "$status"'`)).toBe(
-      `bash -lc '( bash r ); exit "$status"'' )'`
-    )
   })
 
   describe.each(POSIX_SHELLS)('delivered to %s through a pair-inserting line editor', (shell) => {
@@ -156,7 +83,7 @@ describe('orchestration setup completion signal', () => {
       })
 
       const result = spawnSync(shell, ['-c', typeThroughZshAutopair(submitted)], {
-        env: { ...process.env, ...observed.env },
+        env: hermeticShellEnv(scratchDir, observed.env),
         encoding: 'utf8'
       })
 
@@ -164,6 +91,28 @@ describe('orchestration setup completion signal', () => {
       expect(result.stdout.match(/SETUP_OK/g)).toHaveLength(1)
       expect(result.stdout).toContain(`\n__ORCA_SETUP_COMPLETE__:token-exec:${exitCode}\n`)
       expect(result.status).toBe(exitCode)
+    })
+
+    // Why: `eval "$UNSET"` is a silent no-op (exit 0, no output), which the observer cannot tell
+    // from a setup still running. A carrier that drops the variable has to settle as failed.
+    it('reports a missing script instead of exiting silently', () => {
+      scratchDir = mkdtempSync(join(tmpdir(), 'orca-observed-setup-'))
+      const runnerPath = join(scratchDir, 'setup-runner.sh')
+      writeFileSync(runnerPath, `printf 'SETUP_OK\\n'\n`)
+      const observed = buildObservedSetupCommand(runnerPath, 'posix', 'token-missing')
+      const submitted = buildStartupCommandSubmission(observed.command, {
+        submit: '\n',
+        bracketedPasteSafe: true
+      })
+
+      const result = spawnSync(shell, ['-c', typeThroughZshAutopair(submitted)], {
+        env: hermeticShellEnv(scratchDir),
+        encoding: 'utf8'
+      })
+
+      expect(result.stdout).not.toContain('SETUP_OK')
+      expect(result.stdout).toContain(`\n__ORCA_SETUP_COMPLETE__:token-missing:127\n`)
+      expect(result.status).toBe(127)
     })
   })
 

@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { isAbsolute } from 'node:path'
 import { getShellReadyWrapperRoot } from '../providers/local-pty-shell-ready-wrapper-root'
 import {
+  POSIX_SETUP_OBSERVED_SCRIPT_ENV,
+  SETUP_AGENT_SEQUENCE_SETUP_SCRIPT_ENV,
   SETUP_AGENT_SEQUENCE_STARTUP_COMMAND_ENV,
   SETUP_AGENT_SEQUENCE_STARTUP_SCRIPT_ENV
 } from '../../shared/setup-agent-sequencing'
-import { POSIX_SETUP_OBSERVED_SCRIPT_ENV } from '../runtime/orchestration/setup-completion-signal'
 import { addOrcaWslInteropEnv, stampWslOrchestrationCompatibilityHost } from './wsl-orca-env'
 
 describe('addOrcaWslInteropEnv', () => {
@@ -37,6 +38,8 @@ describe('addOrcaWslInteropEnv', () => {
     const env: Record<string, string> = {
       [SETUP_AGENT_SEQUENCE_STARTUP_COMMAND_ENV]: 'codex',
       [SETUP_AGENT_SEQUENCE_STARTUP_SCRIPT_ENV]: 'while :; do sleep 1; done',
+      [SETUP_AGENT_SEQUENCE_SETUP_SCRIPT_ENV]:
+        '( bash /repo/.git/orca/setup-runner.sh ); status=$?',
       [POSIX_SETUP_OBSERVED_SCRIPT_ENV]: '( bash /repo/.git/orca/setup-runner.sh )'
     }
 
@@ -46,6 +49,7 @@ describe('addOrcaWslInteropEnv', () => {
       'ORCA_SHELL_READY_ROOT/p',
       `${SETUP_AGENT_SEQUENCE_STARTUP_COMMAND_ENV}/u`,
       `${SETUP_AGENT_SEQUENCE_STARTUP_SCRIPT_ENV}/u`,
+      `${SETUP_AGENT_SEQUENCE_SETUP_SCRIPT_ENV}/u`,
       `${POSIX_SETUP_OBSERVED_SCRIPT_ENV}/u`
     ])
   })

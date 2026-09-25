@@ -112,6 +112,7 @@ import {
 import { advertisedUrlWatcher } from '../../ports/advertised-url-watcher'
 import { makePaneKey } from '../../../shared/stable-pane-id'
 import {
+  SETUP_AGENT_SEQUENCE_SETUP_SCRIPT_ENV,
   SETUP_AGENT_SEQUENCE_STARTUP_COMMAND_ENV,
   SETUP_AGENT_SEQUENCE_STARTUP_SCRIPT_ENV
 } from '../../../shared/setup-agent-sequencing'
@@ -152,6 +153,7 @@ export const exportedRUNTIME_GRAPH_RELOAD_TIMEOUT_MS = RUNTIME_GRAPH_RELOAD_TIME
 export const exportedRecentPtyOutputBuffer = RecentPtyOutputBuffer
 export const exportedRpcDispatcher = RpcDispatcher
 export const exportedRuntimeBrowserCommands = RuntimeBrowserCommands
+export const exportedSETUP_AGENT_SEQUENCE_SETUP_SCRIPT_ENV = SETUP_AGENT_SEQUENCE_SETUP_SCRIPT_ENV
 export const exportedSETUP_AGENT_SEQUENCE_STARTUP_COMMAND_ENV =
   SETUP_AGENT_SEQUENCE_STARTUP_COMMAND_ENV
 export const exportedSETUP_AGENT_SEQUENCE_STARTUP_SCRIPT_ENV =

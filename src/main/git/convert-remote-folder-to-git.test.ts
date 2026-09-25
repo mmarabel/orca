@@ -22,6 +22,7 @@ function makeFilesystem(
   existingPaths: Set<string>,
   overrides: FilesystemOverrides = {}
 ): IFilesystemProvider {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: conversion only calls the stubbed lstat/stat/writeFile/renameNoClobber/deletePath members.
   return {
     lstat: vi.fn(async (path: string) => {
       if (!existingPaths.has(path)) {

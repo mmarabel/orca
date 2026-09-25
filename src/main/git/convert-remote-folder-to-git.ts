@@ -21,10 +21,7 @@ async function remotePathExists(fsProvider: IFilesystemProvider, path: string): 
     await (fsProvider.lstat?.(path) ?? fsProvider.stat(path))
     return true
   } catch (error) {
-    const code =
-      error && typeof error === 'object' && 'code' in error
-        ? (error as NodeJS.ErrnoException).code
-        : undefined
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
     if (code === 'ENOENT') {
       return false
     }
@@ -45,10 +42,7 @@ export async function writeGitignoreExclusiveRemote(
     await fsProvider.renameNoClobber(tmpPath, gitignorePath)
   } catch (error) {
     await fsProvider.deletePath(tmpPath, false).catch(() => undefined)
-    const code =
-      error && typeof error === 'object' && 'code' in error
-        ? (error as NodeJS.ErrnoException).code
-        : undefined
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
     if (code !== 'EEXIST') {
       throw error
     }

@@ -20,11 +20,7 @@ async function localPathExists(path: string): Promise<boolean> {
     await lstat(path)
     return true
   } catch (error) {
-    if (
-      error instanceof Error &&
-      'code' in error &&
-      (error as NodeJS.ErrnoException).code === 'ENOENT'
-    ) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
       return false
     }
     throw error
@@ -35,10 +31,7 @@ async function writeGitignoreExclusive(path: string, content: string): Promise<v
   try {
     await writeFile(path, content, { encoding: 'utf8', flag: 'wx' })
   } catch (error) {
-    const code =
-      error && typeof error === 'object' && 'code' in error
-        ? (error as NodeJS.ErrnoException).code
-        : undefined
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
     if (code !== 'EEXIST') {
       throw error
     }

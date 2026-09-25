@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { getDefaultSettings } from '../../../../shared/constants'
 import type { Repo } from '../../../../shared/repo-types'
 import {
   createCompatibleRuntimeStatusResponseIfNeeded,
@@ -58,7 +59,7 @@ describe('non-Git folder conversion routing', () => {
     )
     const store = createTestStore()
     store.setState({
-      settings: { activeRuntimeEnvironmentId: 'env-2' } as never
+      settings: { ...getDefaultSettings('/test'), activeRuntimeEnvironmentId: 'env-2' }
     })
 
     await expect(
@@ -105,7 +106,7 @@ describe('non-Git folder conversion routing', () => {
     convertRemoteToGit.mockResolvedValue({ repo: convertedSsh })
     const store = createTestStore()
     store.setState({
-      settings: { activeRuntimeEnvironmentId: 'env-2' } as never,
+      settings: { ...getDefaultSettings('/test'), activeRuntimeEnvironmentId: 'env-2' },
       repos: [localRepo, sshFolder]
     })
 

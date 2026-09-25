@@ -127,9 +127,12 @@ describe('host-store list mutations', () => {
   })
 
   it('resolves an existing host by pinned key with one durable read', async () => {
+    // The address goes into the pairing journal, which is how a later replay tells the address
+    // this pairing renegotiated from one the user edited after capture.
     await expect(resolvePairingHostIdentity(HOST_TWO.publicKeyB64, 'host-new')).resolves.toEqual({
       id: HOST_TWO.id,
-      name: HOST_TWO.name
+      name: HOST_TWO.name,
+      storedEndpoint: HOST_TWO.endpoint
     })
     expect(asyncStorageMock.getItem).toHaveBeenCalledOnce()
   })

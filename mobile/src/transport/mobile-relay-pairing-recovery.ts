@@ -265,10 +265,12 @@ async function publishCommitted(
   await dependencies.writeCredentialBundle(
     promotePairingJournalCredential({ journal: reconciledJournal, installed })
   )
-  // Why: the replayed journal carries a pairing-time host snapshot, so a name or address the
-  // user edited between capture and replay must survive; only the credential and relay routing
-  // are news for a row that already exists.
-  await dependencies.saveRecoveredPairingHost(relayHost(reconciledJournal, endpoints.relay))
+  // Why: the replayed journal carries a pairing-time host snapshot, so a name the user edited
+  // between capture and replay must survive. The address this pairing established is applied
+  // only while the row still holds the value the journal recorded for it at capture.
+  await dependencies.saveRecoveredPairingHost(relayHost(reconciledJournal, endpoints.relay), {
+    capturedStoredEndpoint: reconciledJournal.metadata.storedEndpointAtCapture
+  })
   await dependencies.clearJournal(journal.metadata.journalId)
 }
 

@@ -139,10 +139,11 @@ async function runPairing(
   const now = dependencies.now()
   // Why: every pairing artifact must share the preserved host id so re-pairing
   // updates one card instead of publishing a second identity (STA-1840).
-  const { id: hostId, name: hostName } = await dependencies.resolveHostIdentity(
-    offer.publicKeyB64,
-    `host-${now}`
-  )
+  const {
+    id: hostId,
+    name: hostName,
+    storedEndpoint
+  } = await dependencies.resolveHostIdentity(offer.publicKeyB64, `host-${now}`)
   assertActive(isDisposed)
   let journal: MobileRelayPairingJournal | null = null
   if (offer.relay && dependencies.platform !== 'web') {
@@ -150,6 +151,7 @@ async function runPairing(
       offer: { ...offer, relay: offer.relay },
       hostId,
       hostName,
+      storedEndpointAtCapture: storedEndpoint,
       now
     })
     await dependencies.saveJournal(journal)

@@ -3,6 +3,7 @@
 // this host up paints "Host not found" over the host the shell just opened it for. What crosses
 // instead is `init.host`: the profile the screens read, without the credential the bridge carries.
 import { readPageHostProfile } from '../mobile-web-shell/bridge/page-host-profile'
+import type { RecoveredPairingHostOptions } from './host-persist-policy'
 import type { HostCatalogEntry, HostProfile } from './types'
 
 /**
@@ -30,7 +31,10 @@ export class MobileRelayUpgradeHostRemovedError extends Error {}
 /** Pairing happened natively before this document existed, and the page never re-does it. */
 export const saveHost = (_host: HostProfile): Promise<void> => Promise.resolve()
 export const saveExistingHostRelayUpgrade = (_host: HostProfile): Promise<void> => Promise.resolve()
-export const saveRecoveredPairingHost = (_host: HostProfile): Promise<void> => Promise.resolve()
+export const saveRecoveredPairingHost = (
+  _host: HostProfile,
+  _options?: RecoveredPairingHostOptions
+): Promise<void> => Promise.resolve()
 export const removeHost = (_hostId: string): Promise<void> => Promise.resolve()
 
 /** A native write the page drops: recency orders the app's host list, which the page does not show. */

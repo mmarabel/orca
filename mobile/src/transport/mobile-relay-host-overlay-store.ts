@@ -100,6 +100,7 @@ export async function saveMobileRelayHostRouting(
   hostId: string,
   relay: MobileRelayEndpoint
 ): Promise<void> {
+  let wrote = false
   await mutateOverlays((overlays) => {
     const current = overlays.find((overlay) => overlay.hostId === hostId)
     if (!current) {
@@ -109,9 +110,17 @@ export async function saveMobileRelayHostRouting(
       ...current,
       ...withRelayRouting(relay)
     })
+    // Why: a failing relay loop re-resolves to the same cell on every retry. Both sides are
+    // outputs of this schema, so their key order matches and a serialized compare is exact.
+    if (JSON.stringify(updated) === JSON.stringify(current)) {
+      return overlays
+    }
+    wrote = true
     return overlays.map((overlay) => (overlay === current ? updated : overlay))
   })
-  dropSharedHostListLoad()
+  if (wrote) {
+    dropSharedHostListLoad()
+  }
 }
 
 export function removeMobileRelayHostOverlay(hostId: string): Promise<void> {

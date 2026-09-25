@@ -36,7 +36,14 @@ export const MobileRelayPairingJournalMetadataSchema = z
     resumeConfirmReqId: z.string().min(1).max(128),
     pendingResumeTokenHash: Base64Url32ByteSchema,
     winner: z.enum(['direct', 'relay']).optional(),
-    authorizationMode: z.enum(['authenticated-direct', 'relay-basis']).optional()
+    authorizationMode: z.enum(['authenticated-direct', 'relay-basis']).optional(),
+    /**
+     * The stored row's address when this journal was written, when a row for this host already
+     * existed. A replay compares it against the row to tell "the user re-paired at a new address"
+     * from "the user edited the address after capture". Absent on a first pairing, and on a
+     * journal written before this was recorded — both of which keep the stored address.
+     */
+    storedEndpointAtCapture: z.string().min(1).optional()
   })
   .strict()
 
@@ -65,6 +72,7 @@ export function createMobileRelayPairingJournal(args: {
   offer: PairingOffer & { relay: PairingRelay }
   hostId: string
   hostName: string
+  storedEndpointAtCapture?: string
   now?: number
   randomBytes?: (length: number) => Uint8Array
 }): MobileRelayPairingJournal {
@@ -89,7 +97,10 @@ export function createMobileRelayPairingJournal(args: {
       relay: relayMetadata,
       installReqId,
       resumeConfirmReqId,
-      pendingResumeTokenHash: hashMobileRelayCredential(pendingResumeToken)
+      pendingResumeTokenHash: hashMobileRelayCredential(pendingResumeToken),
+      ...(args.storedEndpointAtCapture === undefined
+        ? {}
+        : { storedEndpointAtCapture: args.storedEndpointAtCapture })
     }),
     secrets: {
       v: 1,

@@ -259,6 +259,47 @@ describe('pre-profile pairing coordinator', () => {
     expect(deps.saveHost).toHaveBeenCalledOnce()
   })
 
+  it('records the row address in the journal so a replay can date its pairing', async () => {
+    const events: string[] = []
+    let journal: MobileRelayPairingJournal | null = null
+    const deps = dependencies(fakeClient([success({ version: '1.0.0' })]), events)
+    deps.resolveHostIdentity = vi.fn(async () => ({
+      id: 'host-existing',
+      name: 'Studio Mac',
+      storedEndpoint: 'ws://192.168.1.10:6768'
+    }))
+    deps.saveJournal.mockImplementation(async (value) => {
+      journal = value
+    })
+
+    const attempt = startPreProfilePairing({
+      offer: relayOffer,
+      timeoutMs: 5_000,
+      dependencies: deps
+    })
+    await attempt.result.catch(() => {})
+
+    expect(journal?.metadata.storedEndpointAtCapture).toBe('ws://192.168.1.10:6768')
+  })
+
+  it('journals no row address when this desktop has never been paired', async () => {
+    const events: string[] = []
+    let journal: MobileRelayPairingJournal | null = null
+    const deps = dependencies(fakeClient([success({ version: '1.0.0' })]), events)
+    deps.saveJournal.mockImplementation(async (value) => {
+      journal = value
+    })
+
+    const attempt = startPreProfilePairing({
+      offer: relayOffer,
+      timeoutMs: 5_000,
+      dependencies: deps
+    })
+    await attempt.result.catch(() => {})
+
+    expect(journal?.metadata).not.toHaveProperty('storedEndpointAtCapture')
+  })
+
   it('journals before connecting and publishes only after authoritative direct install', async () => {
     const events: string[] = []
     let journal: MobileRelayPairingJournal | null = null

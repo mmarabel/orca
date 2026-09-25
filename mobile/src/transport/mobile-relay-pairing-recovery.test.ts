@@ -66,11 +66,15 @@ function endpoints(
   }
 }
 
-function journal(mode: 'authenticated-direct' | 'relay-basis' = 'authenticated-direct') {
+function journal(
+  mode: 'authenticated-direct' | 'relay-basis' = 'authenticated-direct',
+  storedEndpointAtCapture?: string
+) {
   const value = createMobileRelayPairingJournal({
     offer: offer as PairingOffer & { relay: NonNullable<PairingOffer['relay']> },
     hostId: 'host-1',
     hostName: 'Blue Whale',
+    storedEndpointAtCapture,
     now,
     randomBytes: (length) => new Uint8Array(length).fill(length)
   })
@@ -141,6 +145,35 @@ describe('mobile relay pairing recovery', () => {
     expect(deps.writeCredentialBundle).toHaveBeenCalledOnce()
     expect(deps.saveRecoveredPairingHost).toHaveBeenCalledOnce()
     expect(deps.clearJournal).toHaveBeenCalledOnce()
+  })
+
+  it('replays the address the row held at capture so the store can date the pairing', async () => {
+    const saved = journal('authenticated-direct', 'ws://192.168.1.10:6768')
+    const committed = installed(saved, 'authenticated-direct')
+    const connectRelay = vi.fn(() =>
+      client(async () => response(endpoints(saved, { state: 'committed', result: committed })))
+    )
+    const deps = dependencies({ journal: saved, connectRelay })
+
+    await expect(recoverMobileRelayPairing(deps)).resolves.toBe('recovered')
+    expect(deps.saveRecoveredPairingHost).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'host-1' }),
+      { capturedStoredEndpoint: 'ws://192.168.1.10:6768' }
+    )
+  })
+
+  it('replays a journal with no captured address as an unknown one', async () => {
+    const saved = journal()
+    const committed = installed(saved, 'authenticated-direct')
+    const connectRelay = vi.fn(() =>
+      client(async () => response(endpoints(saved, { state: 'committed', result: committed })))
+    )
+    const deps = dependencies({ journal: saved, connectRelay })
+
+    await expect(recoverMobileRelayPairing(deps)).resolves.toBe('recovered')
+    expect(deps.saveRecoveredPairingHost).toHaveBeenCalledWith(expect.objectContaining({}), {
+      capturedStoredEndpoint: undefined
+    })
   })
 
   it('tries pending then current before an unexpired invite and transitions after not-found', async () => {

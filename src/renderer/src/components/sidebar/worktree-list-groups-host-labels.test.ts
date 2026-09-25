@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildRows, getGroupKeyForWorktree } from './worktree-list-groups'
+import { buildRows } from './worktree-list/grouping/build-rows'
+import { getGroupKeyForWorktree } from './worktree-list/grouping/worktree-group-keys'
 import {
   LOCAL_HOST_LABEL,
   repo,
@@ -151,6 +152,53 @@ describe('buildRows with pinned worktrees', () => {
       { type: 'header', key: 'project:github:stablyai/orca', label: 'Orca', count: 2 },
       { type: 'item', worktree: { id: worktree.id }, hostContextLabel: LOCAL_HOST_LABEL },
       { type: 'item', worktree: { id: runtimeWorktree.id }, hostContextLabel: 'dev box' }
+    ])
+  })
+
+  it('uses the registered SSH target label for openclaw rows', () => {
+    const sshRepo: Repo = {
+      ...remoteRepo,
+      id: 'repo-openclaw',
+      connectionId: 'openclaw',
+      executionHostId: 'ssh:openclaw'
+    }
+    const sshWorktree: Worktree = {
+      ...remoteWorktree,
+      id: 'wt-openclaw',
+      repoId: sshRepo.id
+    }
+    const rows = buildRows(
+      'workspace-status',
+      [worktree, sshWorktree],
+      new Map([
+        [repo.id, repo],
+        [sshRepo.id, sshRepo]
+      ]),
+      null,
+      new Set(),
+      undefined,
+      undefined,
+      undefined,
+      {},
+      new Map([
+        [worktree.id, worktree],
+        [sshWorktree.id, sshWorktree]
+      ]),
+      false,
+      undefined,
+      [],
+      new Set(),
+      new Map(),
+      new Map(),
+      [],
+      undefined,
+      [],
+      new Map([['ssh:openclaw', 'openclaw']])
+    )
+
+    expect(rows.filter((row) => row.type === 'item')).toMatchObject([
+      { worktree: { id: worktree.id }, hostContextLabel: LOCAL_HOST_LABEL },
+      { worktree: { id: sshWorktree.id }, hostContextLabel: 'openclaw' }
     ])
   })
 

@@ -56,18 +56,32 @@ export function SessionReadNoticeIndicator({
   return (
     <>
       <span className="shrink-0 text-muted-foreground/55">·</span>
+      {/*
+        role + tabIndex rather than a Button: the marker reports state and has no
+        action, and the whole row is already one click target — a nested button
+        would swallow the click that expands it. Focusable so the tooltip is
+        reachable without a pointer, which is what STYLEGUIDE's trigger rule is for.
+      */}
       <Tooltip>
         <TooltipTrigger asChild>
           <span
             data-testid="ai-vault-session-read-notice-indicator"
-            className="flex shrink-0 items-center gap-1"
+            role="img"
+            tabIndex={0}
+            className="flex shrink-0 items-center gap-1 rounded-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
             aria-label={partiallyReadLabel()}
           >
             <FileWarning className="size-3 text-muted-foreground" />
           </span>
         </TooltipTrigger>
-        {/* Scanner-authored (sizes, byte offsets), so it renders raw. */}
-        <TooltipContent className="max-w-64">{messages.join(' ')}</TooltipContent>
+        {/* Scanner-authored (sizes, byte offsets), so each sentence renders raw and whole. */}
+        <TooltipContent className="max-w-64">
+          <div className="flex flex-col gap-1">
+            {messages.map((message) => (
+              <p key={message}>{message}</p>
+            ))}
+          </div>
+        </TooltipContent>
       </Tooltip>
     </>
   )

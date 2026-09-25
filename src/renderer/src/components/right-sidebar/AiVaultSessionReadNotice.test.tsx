@@ -72,6 +72,16 @@ it('marks a partly read transcript on the collapsed row and spells it out expand
   ).toBeTruthy()
 })
 
+// Why: the marker is the only thing naming the session, so a keyboard user has
+// to be able to reach the tooltip that explains it.
+it('exposes the collapsed marker to assistive tech and to the keyboard', () => {
+  renderWithNotices(scan(['Skipped 1 oversized transcript record over the 10.0 MiB limit.']))
+
+  const marker = screen.getByLabelText('Partially read')
+  expect(marker.getAttribute('role')).toBe('img')
+  expect(marker.getAttribute('tabindex')).toBe('0')
+})
+
 it('keeps two notices about one file as two sentences, not one run-on', () => {
   renderWithNotices(scan(['Skipped 1 oversized record.', 'Skipped 2 unreadable records.']))
 

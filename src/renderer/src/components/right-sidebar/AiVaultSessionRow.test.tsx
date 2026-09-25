@@ -220,6 +220,25 @@ describe('VaultSessionRow agent metadata line', () => {
     expect(within(metadata).getByLabelText('Partially read')).toBeTruthy()
   })
 
+  // Why: the collapsed marker is only a pointer; the sentence the scanner wrote
+  // has to be waiting where following it lands, which is the expanded row.
+  it('spells the scanner note out once the row is expanded', () => {
+    const readNotices = new Map([
+      [
+        aiVaultSessionFileKey(session),
+        ['Skipped 1 oversized transcript record over the 10.0 MiB limit.']
+      ]
+    ])
+    const sentence = 'Skipped 1 oversized transcript record over the 10.0 MiB limit.'
+
+    renderRow({ readNotices })
+    expect(screen.queryByText(sentence)).toBeNull()
+
+    cleanup()
+    renderRow({ detailsExpanded: true, readNotices })
+    expect(screen.getByText(sentence)).toBeTruthy()
+  })
+
   it('leaves the metadata line alone for a session the scan read in full', () => {
     renderRow()
 

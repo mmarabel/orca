@@ -339,7 +339,7 @@ export function AgentSessionContinuationDialog({
               </SelectContent>
             </Select>
             {target.fullTranscriptBlockedReason && hasFullContext ? (
-              <p className="text-[11px] leading-4 text-amber-500">
+              <p className="text-[11px] leading-4 text-status-warning">
                 {target.fullTranscriptBlockedReason === 'too-large'
                   ? translate(
                       'components.agentSessionContinuation.transcriptTooLarge',

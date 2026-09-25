@@ -15,21 +15,39 @@ const HOST_NAMES = {
   sshTargetLabels: new Map([['hetzner', 'Hetzner VPS']])
 }
 
-const LOCAL_WORKTREE = {
+function makeWorktree(fields: Pick<Worktree, 'id' | 'hostId' | 'displayName' | 'path'>): Worktree {
+  return {
+    repoId: 'repo-1',
+    head: '',
+    branch: 'main',
+    isBare: false,
+    isMainWorktree: false,
+    comment: '',
+    linkedIssue: null,
+    linkedPR: null,
+    linkedLinearIssue: null,
+    isArchived: false,
+    isUnread: false,
+    isPinned: false,
+    sortOrder: 0,
+    lastActivityAt: 0,
+    ...fields
+  }
+}
+
+const LOCAL_WORKTREE = makeWorktree({
   id: 'repo-1::/repo/local',
-  repoId: 'repo-1',
   hostId: 'local',
   displayName: 'local-work',
   path: '/repo/local'
-} as unknown as Worktree
+})
 
-const SSH_WORKTREE = {
+const SSH_WORKTREE = makeWorktree({
   id: 'repo-1::/srv/remote',
-  repoId: 'repo-1',
   hostId: 'ssh:hetzner',
   displayName: 'remote-work',
   path: '/srv/remote'
-} as unknown as Worktree
+})
 
 const SESSION_TRANSCRIPT = '/home/marabel/.claude/projects/orca/session.jsonl'
 
@@ -39,7 +57,7 @@ function makeState(worktrees: Worktree[]): AiVaultSessionResumeTargetState {
     projectGroups: [],
     repos: [],
     worktreesByRepo: { 'repo-1': worktrees }
-  } as unknown as AiVaultSessionResumeTargetState
+  }
 }
 
 describe('buildContinuationTargetGroups', () => {
@@ -98,13 +116,12 @@ describe('buildContinuationTargetGroups', () => {
 })
 
 describe('host group labels', () => {
-  const runtimeWorktree = {
+  const runtimeWorktree = makeWorktree({
     id: 'repo-1::/srv/demo',
-    repoId: 'repo-1',
     hostId: 'runtime:ed283559-cd56',
     displayName: 'main',
     path: '/srv/demo'
-  } as unknown as Worktree
+  })
 
   it('names a paired server instead of showing its raw environment id', () => {
     const worktrees = [runtimeWorktree]

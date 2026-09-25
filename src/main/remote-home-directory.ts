@@ -1,4 +1,4 @@
-import { getActiveMultiplexer } from './ipc/ssh'
+import { getActiveMultiplexer } from './ssh/ssh-target-registry'
 import {
   isWindowsAbsolutePathLike,
   normalizeRuntimePathSeparators

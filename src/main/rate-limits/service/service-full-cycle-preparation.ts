@@ -3,8 +3,9 @@ import { fetchCodexRateLimits } from '../codex-fetcher'
 import { fetchGeminiRateLimits } from '../gemini-usage-fetcher'
 import { fetchGrokRateLimits } from '../grok-fetcher'
 import { readGrokAuthSession } from '../grok-auth'
-import { fetchMiniMaxRateLimits } from '../minimax-fetcher'
-import { fetchOpenCodeGoRateLimits } from '../opencode-go-usage-fetcher'
+import { fetchMiniMaxRateLimits } from '../minimax/minimax-fetcher'
+import { createHash } from 'node:crypto'
+import { fetchOpenCodeGoUsage } from '../opencode-go-usage-source-selection'
 import { RateLimitServiceFetchPolicy } from './service-fetch-policy'
 import type {
   ClaudeRuntimeAuthPreparation,
@@ -76,17 +77,24 @@ export abstract class RateLimitServiceFullCyclePreparation extends RateLimitServ
     const openCodeGoConfig = this.openCodeGoConfigResolver?.()
     const cookie = openCodeGoConfig?.sessionCookie ?? ''
     const workspaceIdOverride = openCodeGoConfig?.workspaceIdOverride ?? ''
+    const openCodeGoApiKey = openCodeGoConfig?.apiKey ?? ''
     const miniMaxConfigResult = this.resolveMiniMaxConfig()
     const miniMaxCookie = miniMaxConfigResult.config.sessionCookie
     const miniMaxGroupId = miniMaxConfigResult.config.groupId
     const miniMaxModels = miniMaxConfigResult.config.models
+    const miniMaxEndpoint = miniMaxConfigResult.config.endpoint
+    const miniMaxApiKey = miniMaxConfigResult.config.apiKey
     const geminiCliOAuthEnabled = this.geminiCliOAuthEnabledResolver?.() ?? false
     // Why: getState() is hot (renderer pushes + mobile snapshots); keep Grok's sync auth-file probe on fetch cycles instead.
     const grokAuthReadResult = readGrokAuthSession()
     this.grokAuthConfigured = grokAuthReadResult.status === 'ok'
 
     // Discard stale data on config change — it belongs to a different session/workspace.
-    const currentConfigHash = `${cookie}|${workspaceIdOverride}`
+    // Digest, not the key: this string only has to change when the account does.
+    const apiKeyFingerprint = openCodeGoApiKey
+      ? createHash('sha256').update(openCodeGoApiKey).digest('hex')
+      : ''
+    const currentConfigHash = `${cookie}|${workspaceIdOverride}|${apiKeyFingerprint}`
     const opencodeConfigChanged = currentConfigHash !== this.lastOpencodeConfigHash
     if (opencodeConfigChanged) {
       this.lastOpencodeConfigHash = currentConfigHash
@@ -94,7 +102,7 @@ export abstract class RateLimitServiceFullCyclePreparation extends RateLimitServ
     }
     const opencodeGeneration = this.opencodeFetchGeneration
 
-    const currentMiniMaxConfigHash = `${miniMaxCookie}|${miniMaxGroupId}|${miniMaxModels}|${miniMaxConfigResult.error ?? ''}`
+    const currentMiniMaxConfigHash = `${miniMaxCookie}|${miniMaxGroupId}|${miniMaxModels}|${miniMaxEndpoint}|${miniMaxApiKey}|${miniMaxConfigResult.error ?? ''}`
     const miniMaxConfigChanged = currentMiniMaxConfigHash !== this.lastMiniMaxConfigHash
     if (miniMaxConfigChanged) {
       this.lastMiniMaxConfigHash = currentMiniMaxConfigHash
@@ -156,18 +164,27 @@ export abstract class RateLimitServiceFullCyclePreparation extends RateLimitServ
               signal
             })),
         fetchGeminiRateLimits(geminiCliOAuthEnabled),
-        fetchOpenCodeGoRateLimits(
+        fetchOpenCodeGoUsage({
+          settingsApiKey: openCodeGoApiKey,
+          // Why here: the key can also come from the environment or OpenCode's
+          // own store, so presence is only known once the fetch resolves it.
+          onApiKeyResolved: (resolution) => {
+            this.openCodeGoApiKeyConfigured = resolution.status === 'found'
+          },
           cookie,
-          workspaceIdOverride || undefined,
-          this.networkProxySettingsResolver?.()
-        ),
+          workspaceIdOverride: workspaceIdOverride || undefined,
+          networkProxySettings: this.networkProxySettingsResolver?.(),
+          signal
+        }),
         this.fetchKimiWithResolvedHome(),
         miniMaxConfigResult.error
           ? Promise.resolve(this.getMiniMaxCredentialError(miniMaxConfigResult.error))
           : fetchMiniMaxRateLimits({
               cookie: miniMaxCookie,
               groupId: miniMaxGroupId,
-              models: miniMaxModels
+              models: miniMaxModels,
+              endpointMode: miniMaxEndpoint,
+              apiKey: miniMaxApiKey
             })
       ])
 

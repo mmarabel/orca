@@ -6,6 +6,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as RelayInstallMarkerModule from './ssh-relay-install-marker'
 
+vi.mock('./ssh-relay-ripgrep-install', () => ({
+  remoteRipgrepLayout: vi.fn().mockReturnValue(null),
+  recordRemoteRipgrepReference: vi.fn().mockResolvedValue(false),
+  ensureRemoteBundledRipgrep: vi.fn().mockResolvedValue(undefined)
+}))
+
 vi.mock('electron', () => ({
   app: { getAppPath: () => '/mock/app' }
 }))
@@ -121,7 +127,6 @@ function repairSucceedsResponses(): ExecResponse[] {
     '', // rm -f probe stderr
     NPTY_CLOEXEC_PATCHED,
     'DEAD',
-    '', // publish the per-launch credential
     'READY'
   ]
 }
@@ -132,7 +137,6 @@ function lockUnavailableResponses(): ExecResponse[] {
     '/home/u',
     NODE_PTY_BROKEN, // health probe before the lock
     'DEAD',
-    '', // publish the per-launch credential
     'READY'
   ]
 }

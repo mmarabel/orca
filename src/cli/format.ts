@@ -2,7 +2,7 @@ import type { CliStatusResult } from '../shared/runtime-types'
 import { prepareComputerCliJsonResult } from './computer-format'
 import type { RuntimeRpcSuccess } from './runtime-client'
 
-export { formatCliError, reportCliError } from './cli-error'
+export { formatCliError, reportCliError, type CliErrorContext } from './cli-error'
 
 export {
   formatBrowserProfileList,
@@ -40,7 +40,8 @@ export {
   formatTerminalSend,
   formatTerminalShow,
   formatTerminalSplit,
-  formatTerminalWait
+  formatTerminalWait,
+  terminalSendWarnings
 } from './terminal-format'
 export {
   formatAutomationList,
@@ -80,6 +81,7 @@ export type HostListEntry = {
   id: string
   selector: string
   platform?: string
+  machineName?: string
   connected?: boolean
   connectionStatus?: string
 }
@@ -95,9 +97,19 @@ export function formatHostList(result: { hosts: HostListEntry[] }): string {
   return result.hosts
     .map(
       (host) =>
-        `${kindLabel[host.kind].padEnd(11)} ${host.name}  ${host.platform ?? 'platform unknown'}  ${formatHostConnection(host)}  ->  ${host.selector}`
+        `${kindLabel[host.kind].padEnd(11)} ${host.name}${host.machineName ? ` (${host.machineName})` : ''}  ${host.platform ?? 'platform unknown'}  ${formatHostConnection(host)}  ->  ${host.selector}`
     )
     .join('\n')
+}
+
+/** What one runtime calls itself; `machineName` is absent when the runtime predates the field. */
+export type HostNameResult = {
+  machineName?: string
+  platform?: string
+}
+
+export function formatHostName(result: HostNameResult): string {
+  return `${result.machineName ?? 'unknown'}${result.platform ? ` (${result.platform})` : ''}`
 }
 
 function formatHostConnection(host: HostListEntry): string {

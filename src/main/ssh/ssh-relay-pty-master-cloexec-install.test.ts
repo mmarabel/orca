@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as RelayInstallMarkerModule from './ssh-relay-install-marker'
 
+vi.mock('./ssh-relay-ripgrep-install', () => ({
+  remoteRipgrepLayout: vi.fn().mockReturnValue(null),
+  recordRemoteRipgrepReference: vi.fn().mockResolvedValue(false),
+  ensureRemoteBundledRipgrep: vi.fn().mockResolvedValue(undefined)
+}))
+
 vi.mock('electron', () => ({
   app: { getAppPath: () => '/mock/app' }
 }))
@@ -155,7 +161,6 @@ describe('relay pty fd-leak patch on the install path', () => {
       '', // promote into the shared native-deps cache, if this deploy still gets that far
       '', // clean stage root
       'DEAD',
-      '', // publish the per-launch credential
       'READY'
     ]
   }
@@ -255,7 +260,6 @@ describe('relay pty fd-leak patch on the install path', () => {
         '', // rm probe stderr
         '', // clean stage root
         'DEAD',
-        '', // publish the per-launch credential
         'READY'
       ])
     )

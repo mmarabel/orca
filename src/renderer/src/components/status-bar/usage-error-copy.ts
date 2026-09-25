@@ -105,6 +105,7 @@ export function getProviderUsageStatusLabel(p: ProviderRateLimits): string {
         return translate('auto.components.status.bar.tooltip.f8b8dbed85', 'Usage unavailable')
       case 'missing-credentials':
       case 'missing-scope':
+      case 'no-subscription':
       case 'parse':
       case 'rate-limited':
       case 'server':
@@ -112,6 +113,19 @@ export function getProviderUsageStatusLabel(p: ProviderRateLimits): string {
       case undefined:
         break
     }
+  }
+  // Why: MiniMax reports credential expiry through the payload, not an HTTP status,
+  // so it needs its own copy rather than the generic refresh-failure label.
+  if (p.provider === 'minimax' && p.usageMetadata?.failureKind === 'stale-token') {
+    return translate('auto.components.status.bar.tooltip.minimax.expired.label', 'Sign-in expired')
+  }
+  // Why: an unsubscribed account is a settled answer about the account, not a
+  // failed refresh; "Refresh failed" sends the user hunting a bug that is not there.
+  if (p.usageMetadata?.failureKind === 'no-subscription') {
+    return translate(
+      'auto.components.status.bar.tooltip.usage.noSubscription.label',
+      'No subscription'
+    )
   }
   if (isUsageRateLimitError(p.error)) {
     return translate('auto.components.status.bar.tooltip.7ad719c4bf', 'Limited')
@@ -179,6 +193,7 @@ export function getProviderUsageErrorMessage(p: ProviderRateLimits): string {
       case 'signed-out':
         return p.error ?? fallback
       case 'missing-credentials':
+      case 'no-subscription':
       case 'rate-limited':
       case 'unknown':
       case undefined:
@@ -186,6 +201,21 @@ export function getProviderUsageErrorMessage(p: ProviderRateLimits): string {
     }
   }
   if (isUsageRateLimitError(p.error)) {
+    return p.error
+  }
+  if (p.provider === 'minimax' && p.usageMetadata?.failureKind === 'stale-token') {
+    return p.usageMetadata.credentialSource === 'api-key'
+      ? translate(
+          'auto.components.status.bar.tooltip.minimax.expired.apiKey',
+          'MiniMax API key expired. Replace it in Settings.'
+        )
+      : translate(
+          'auto.components.status.bar.tooltip.minimax.expired.cookie',
+          'MiniMax session cookie expired. Replace it in Settings.'
+        )
+  }
+  // The entitlement verdict names the account state; generic auth copy would bury it.
+  if (p.usageMetadata?.failureKind === 'no-subscription') {
     return p.error
   }
   if (isUsageAuthError(p.error)) {

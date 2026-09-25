@@ -135,13 +135,14 @@ export function unbindOtherRunsForPane(
       this.db
         .prepare(
           `UPDATE runs
-           SET coordinator_handle = NULL, coordinator_pane_key = NULL,
+           SET coordinator_handle = NULL, coordinator_pane_key = NULL, coordinator_orca_session_id = NULL,
+               coordinator_orca_session_id_generation = NULL,
                consumer_generation = consumer_generation + 1,
                updated_at = datetime('now')
            WHERE id = ?`
         )
         .run(run.id)
-      this.fenceOutstandingDelivery(run.id)
+      this.fenceUnacknowledgedMailboxDeliveries(`run:${run.id}`)
     }
   }
 }
@@ -150,12 +151,6 @@ export function requireRun(this: OrchestrationDb, runId: string): void {
   if (!this.getRunRaw(runId)) {
     throw new Error(`Run not found: ${runId}`)
   }
-}
-
-export function fenceOutstandingDelivery(this: OrchestrationDb, runId: string): void {
-  this.db
-    .prepare("UPDATE deliveries SET status = 'fenced' WHERE run_id = ? AND status = 'outstanding'")
-    .run(runId)
 }
 
 export type RunLookupMethods = {
@@ -168,7 +163,6 @@ export type RunLookupMethods = {
   getRunRaw: typeof getRunRaw
   unbindOtherRunsForPane: typeof unbindOtherRunsForPane
   requireRun: typeof requireRun
-  fenceOutstandingDelivery: typeof fenceOutstandingDelivery
 }
 
 export function attachRunLookup(ctor: { prototype: object }): void {
@@ -181,7 +175,6 @@ export function attachRunLookup(ctor: { prototype: object }): void {
     runsBoundToPane,
     getRunRaw,
     unbindOtherRunsForPane,
-    requireRun,
-    fenceOutstandingDelivery
+    requireRun
   })
 }

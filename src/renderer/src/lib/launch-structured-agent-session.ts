@@ -1,13 +1,15 @@
 import type { AgentSessionHandleProvider } from '../../../shared/agent-session-provider-handle'
 import type {
   AgentSessionAttachResult,
-  AgentSessionMutationEnvelope,
   AgentSessionMutationResult
 } from '../../../shared/agent-session-wire'
 import {
-  createStructuredAgentSessionOperationId,
-  structuredAgentSessionPayloadFingerprint
-} from '../../../shared/structured-agent-session-mutation'
+  createStructuredAgentSessionId,
+  structuredAgentSessionCreateParams,
+  type StructuredAgentSessionCreateParams,
+  type StructuredAgentSessionResumeSource
+} from '../../../shared/structured-agent-session-create'
+import { resolveStructuredLaunchSeedOptions } from '../../../shared/native-chat-session-option-defaults'
 import { hasRuntimeRpcErrorCode } from '../../../shared/runtime-rpc-error-code'
 import { isDefinitiveAgentSessionCreateRefusal } from '../../../shared/agent-session-definitive-refusal'
 import { callStructuredAgentSession } from '@/runtime/structured-agent-session-client'
@@ -18,19 +20,26 @@ import {
   recordWebSessionFocusIntent,
   resolveWebSessionVisibleTabId
 } from '@/runtime/web-session-focus-intent'
-import { LOCAL_STRUCTURED_SESSION_OWNER } from '@/runtime/local-structured-session-tabs-sync'
-
-type StructuredAgentSessionCreateParams = {
-  envelope: AgentSessionMutationEnvelope
-  worktree: string
-  agent: AgentSessionHandleProvider
-}
+import { LOCAL_STRUCTURED_SESSION_OWNER } from '@/runtime/local-structured-session-owner'
 
 export type StructuredAgentSessionLaunchIntent = {
   sessionId: string
   worktreeId: string
   agent: AgentSessionHandleProvider
   params: StructuredAgentSessionCreateParams
+  /** The saved selection create seeds, read when the intent is built. */
+  seedOptions?: Readonly<Record<string, string>>
+}
+
+function launchSeedOptions(
+  state: ReturnType<typeof useAppStore.getState>,
+  agent: AgentSessionHandleProvider
+): { seedOptions?: Readonly<Record<string, string>> } {
+  const seedOptions = resolveStructuredLaunchSeedOptions(
+    state.settings?.nativeChatSessionOptions,
+    agent
+  )
+  return seedOptions ? { seedOptions } : {}
 }
 
 class StructuredAgentSessionCreateError extends Error {
@@ -44,9 +53,8 @@ class StructuredAgentSessionCreateError extends Error {
 }
 
 /**
- * The host proved it created nothing, so a caller may open a legacy terminal instead. The class
- * itself is the verdict: `launchStructuredAgentSession` is the only place that decides it, against
- * the shared allowlist, so no consumer has to remember to re-check a code.
+ * The host proved it created nothing. The class itself is the verdict:
+ * `launchStructuredAgentSession` is the only place that decides it against the shared allowlist.
  */
 export class StructuredAgentSessionCreateRefusalError extends StructuredAgentSessionCreateError {
   constructor(message: string, code: string = 'structured_agent_session_unsupported') {
@@ -94,10 +102,19 @@ export function isDefinitiveStructuredAgentSessionCreateError(error: unknown): b
 
 export function createStructuredAgentSessionLaunchIntent(
   worktreeId: string,
-  agent: AgentSessionHandleProvider
+  agent: AgentSessionHandleProvider,
+  resumeFrom?: StructuredAgentSessionResumeSource
 ): StructuredAgentSessionLaunchIntent {
-  const sessionId = `${agent}_${crypto.randomUUID().replaceAll('-', '_')}`
-  const fields = { worktree: toRuntimeWorktreeSelector(worktreeId), agent }
+  const sessionId = createStructuredAgentSessionId(agent, () => crypto.randomUUID())
+  return buildStructuredAgentSessionLaunchIntent(worktreeId, agent, sessionId, resumeFrom)
+}
+
+function buildStructuredAgentSessionLaunchIntent(
+  worktreeId: string,
+  agent: AgentSessionHandleProvider,
+  sessionId: string,
+  resumeFrom?: StructuredAgentSessionResumeSource
+): StructuredAgentSessionLaunchIntent {
   const state = useAppStore.getState()
   recordWebSessionFocusIntent(
     { environmentId: LOCAL_STRUCTURED_SESSION_OWNER },
@@ -110,19 +127,63 @@ export function createStructuredAgentSessionLaunchIntent(
     sessionId,
     worktreeId,
     agent,
+    params: structuredAgentSessionCreateParams({
+      sessionId,
+      worktree: toRuntimeWorktreeSelector(worktreeId),
+      agent,
+      ...(resumeFrom ? { resumeFrom } : {}),
+      randomUuid: () => crypto.randomUUID()
+    }),
+    ...launchSeedOptions(state, agent)
+  }
+}
+
+/** A definitive refusal consumed its operation id, but the provisional tab still owns its session. */
+export function retryStructuredAgentSessionLaunchIntent(
+  intent: StructuredAgentSessionLaunchIntent
+): StructuredAgentSessionLaunchIntent {
+  return buildStructuredAgentSessionLaunchIntent(
+    intent.worktreeId,
+    intent.agent,
+    intent.sessionId,
+    intent.params.resumeFrom
+  )
+}
+
+/** Rebuild a reload-surviving intent with the caller's current worktree selector. */
+export function restoreStructuredAgentSessionLaunchIntent(args: {
+  worktreeId: string
+  sessionId: string
+  agent: AgentSessionHandleProvider
+  clientOperationId: string
+  payloadFingerprint: string
+  expectedRuntimeFence: number | null
+  resumeFrom?: StructuredAgentSessionResumeSource
+}): StructuredAgentSessionLaunchIntent {
+  const state = useAppStore.getState()
+  recordWebSessionFocusIntent(
+    { environmentId: LOCAL_STRUCTURED_SESSION_OWNER },
+    args.worktreeId,
+    `agent-session:${args.sessionId}`,
+    undefined,
+    resolveWebSessionVisibleTabId(state, args.worktreeId)
+  )
+  return {
+    sessionId: args.sessionId,
+    worktreeId: args.worktreeId,
+    agent: args.agent,
     params: {
       envelope: {
-        sessionId,
-        clientOperationId: createStructuredAgentSessionOperationId(() => crypto.randomUUID()),
-        expectedRuntimeFence: null,
-        payloadFingerprint: structuredAgentSessionPayloadFingerprint({
-          method: 'agentSession.create',
-          sessionId,
-          fields
-        })
+        sessionId: args.sessionId,
+        clientOperationId: args.clientOperationId,
+        expectedRuntimeFence: args.expectedRuntimeFence,
+        payloadFingerprint: args.payloadFingerprint
       },
-      ...fields
-    }
+      worktree: toRuntimeWorktreeSelector(args.worktreeId),
+      agent: args.agent,
+      ...(args.resumeFrom ? { resumeFrom: args.resumeFrom } : {})
+    },
+    ...launchSeedOptions(state, args.agent)
   }
 }
 
@@ -150,14 +211,20 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function runtimeErrorCode(error: unknown): string {
+  if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string') {
+    return error.code
+  }
+  return 'runtime_unavailable'
+}
+
 /**
  * Whether the executing host supports creating this session — retrying only while the host cannot
  * yet resolve the worktree.
  *
  * "Could not answer" and "answered no" are different states and only the second is a verdict.
- * Collapsing them sends a launch to the terminal because a selector was a beat late, which is
- * indistinguishable to the user from the gate refusing them. The retry is narrowed to that one
- * transient code so every other failure still refuses on the first ask.
+ * The unknown branch remains on the chat surface for reconciliation instead of becoming a
+ * terminal fallback.
  */
 async function hostSupportsCreate(intent: StructuredAgentSessionLaunchIntent): Promise<boolean> {
   for (let attempt = 0; ; attempt += 1) {
@@ -170,14 +237,22 @@ async function hostSupportsCreate(intent: StructuredAgentSessionLaunchIntent): P
       return support.supported === true
     } catch (error) {
       const retryDelayMs = CREATE_SUPPORT_RETRY_DELAYS_MS[attempt]
-      if (
-        retryDelayMs === undefined ||
-        !hasRuntimeRpcErrorCode(error, SELECTOR_NOT_RESOLVABLE_CODE)
-      ) {
-        // An unanswered probe is still not a yes.
+      if (retryDelayMs === undefined) {
+        // A selector that never appears is a definitive local refusal.
         return false
       }
-      await delay(retryDelayMs)
+      if (hasRuntimeRpcErrorCode(error, SELECTOR_NOT_RESOLVABLE_CODE)) {
+        await delay(retryDelayMs)
+        continue
+      }
+      const code = runtimeErrorCode(error)
+      if (isDefinitiveAgentSessionCreateRefusal(code)) {
+        return false
+      }
+      throw new StructuredAgentSessionCreateUnknownOutcomeError(
+        error instanceof Error ? error.message : String(error),
+        code
+      )
     }
   }
 }
@@ -185,17 +260,10 @@ async function hostSupportsCreate(intent: StructuredAgentSessionLaunchIntent): P
 /**
  * Only the host that will execute the session can answer whether it supports creating one there —
  * on Windows that means reading the provider child's process start time, which a client cannot
- * observe.
- *
- * Codex is absent on purpose: its answer is settled by the launch route and owned elsewhere, so
- * probing here would change Codex's wire traffic. Note that this early return is also why the
- * unresolvable-selector race above has never been able to refuse a Codex launch — the race is
- * identical for Codex, nothing asks. Whoever gives Codex a probe inherits it.
+ * observe. Both providers ask: the host classifies per agent, and Codex inherits the
+ * unresolvable-selector retry above along with the probe.
  */
 async function requireHostCreateSupport(intent: StructuredAgentSessionLaunchIntent): Promise<void> {
-  if (intent.agent !== 'claude') {
-    return
-  }
   if (!(await hostSupportsCreate(intent))) {
     abandonStructuredAgentSessionLaunchIntent(intent)
     throw new StructuredAgentSessionCreateRefusalError(
@@ -228,8 +296,9 @@ export async function launchStructuredAgentSession(
     throw error
   }
   if (!result.ok) {
-    const { code, message } = result.refusal
-    if (!isDefinitiveAgentSessionCreateRefusal(code)) {
+    const { code, message, ownerVerdict } = result.refusal
+    // A failed operation whose provider is proven gone is a failure a new operation may retry.
+    if (!isDefinitiveAgentSessionCreateRefusal(code) && ownerVerdict !== 'exited') {
       // Keep the focus intent: the session may exist, and recovery still has to adopt it.
       throw new StructuredAgentSessionCreateUnknownOutcomeError(message, code)
     }

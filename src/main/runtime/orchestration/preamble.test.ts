@@ -52,7 +52,7 @@ describe('buildDispatchPreamble', () => {
     expect(result).not.toContain('{{')
   })
 
-  it('includes worker_done command with --body 3-sentence summary prompt and reportPath', () => {
+  it('includes the mandatory worker_done command without fake optional metadata', () => {
     const result = buildDispatchPreamble(baseParams())
 
     expect(result).toContain('worker_done')
@@ -60,13 +60,14 @@ describe('buildDispatchPreamble', () => {
     expect(result).toContain('orchestration check')
     expect(result).toContain('--body')
     expect(result).toMatch(/3-sentence summary/)
-    expect(result).toContain('reportPath')
+    expect(result).toContain('Append --files-modified only when files changed')
+    expect(result).toContain('Always pass real values')
     expect(result).toContain('--task-id task_abc123')
     expect(result).toContain('--dispatch-id ctx_def456')
     expect(result).toContain('--outcome succeeded')
     expect(result).toContain('replace it with --outcome failed')
-    expect(result).toContain('--files-modified "path/a,path/b"')
-    expect(result).toContain('--report-path "<optional: path to the full artifact>"')
+    expect(result).not.toContain('--files-modified "path/a,path/b"')
+    expect(result).not.toContain('--report-path "<optional: path to the full artifact>"')
     expect(result).toMatch(/orchestration send --from term_worker/)
     expect(result).not.toContain('orchestration send --to term_coord')
   })
@@ -80,6 +81,20 @@ describe('buildDispatchPreamble', () => {
       expect(check.status).toBe(0)
     }
   )
+
+  it('renders every injected lifecycle command on one cross-shell-safe line', () => {
+    const result = buildDispatchPreamble(baseParams({ dispatchCapability: 'dcap_secret' }))
+    const commandLines = result
+      .split('\n')
+      .filter((line) => line.trimStart().startsWith('orca orchestration'))
+
+    expect(commandLines).toHaveLength(5)
+    expect(result).not.toContain('\\\n')
+    expect(commandLines.filter((line) => line.includes('--type worker_done'))).toHaveLength(1)
+    expect(commandLines.filter((line) => line.includes('--type heartbeat'))).toHaveLength(1)
+    expect(commandLines.filter((line) => line.includes('orchestration ask'))).toHaveLength(1)
+    expect(commandLines.filter((line) => line.includes('--type escalation'))).toHaveLength(1)
+  })
 
   it('fences shell comments so Markdown does not promote them to headings', () => {
     const result = buildDispatchPreamble(baseParams())
@@ -127,30 +142,44 @@ describe('buildDispatchPreamble', () => {
     expect(result).toMatch(/orchestration send --from term_worker/)
   })
 
-  it('includes ask block with BEHAVIOR RULE #1 forbidding AskUserQuestion', () => {
+  it('includes ask block that steers questions away from AskUserQuestion', () => {
     const result = buildDispatchPreamble(baseParams())
     expect(result).toMatch(/orchestration ask --from term_worker/)
     expect(result).toContain('--question')
     expect(result).toContain('--timeout-ms 600000')
     expect(result).not.toContain('--type decision_gate')
     // Why: the exact phrase is asserted so the rule can't be trimmed away by
-    // accident. BEHAVIOR RULE #1 is the only place AskUserQuestion appears.
-    expect(result).toContain('BEHAVIOR RULE #1')
-    expect(result).toContain('NEVER use AskUserQuestion')
-    // AskUserQuestion must appear ONLY inside the rule text, not anywhere
-    // else (e.g., not in an example payload or header). Count occurrences
-    // of the exact token as a sanity check.
-    const occurrences = (result.match(/AskUserQuestion/g) ?? []).length
-    expect(occurrences).toBe(2)
+    // accident. The ask block is the only place AskUserQuestion appears.
+    expect(result).toContain('Use this instead of AskUserQuestion')
+    expect(result).toContain('Send every question through `ask`')
+    expect((result.match(/AskUserQuestion/g) ?? []).length).toBe(1)
+  })
+
+  it('avoids shouted rules', () => {
+    // Why: Claude workers cited shouted rules when refusing briefs as prompt injection (STA-8200).
+    expect(buildDispatchPreamble(baseParams())).not.toMatch(
+      /MUST NOT VIOLATE|BEHAVIOR RULE|NEVER use/
+    )
   })
 
   it('binds every injected worker command to the dispatched terminal', () => {
     const result = buildDispatchPreamble(baseParams())
 
     expect(result).toMatch(/orchestration ask --from term_worker/)
-    expect(result).toMatch(/orchestration send --from term_worker \\\n    --type escalation/)
+    expect(result).toMatch(/orchestration send --from term_worker --type escalation/)
     expect(result).toContain('--task-id task_abc123 --dispatch-id ctx_def456')
-    expect(result).toContain('orchestration check --terminal term_worker')
+    expect(result).toContain('orchestration check --terminal term_worker --json')
+  })
+
+  it('gives the worker a concrete cadence for reading coordinator follow-ups', () => {
+    const result = buildDispatchPreamble(baseParams())
+    const checkLine = result.indexOf('orchestration check --terminal term_worker --json')
+    const cadence = result.slice(0, checkLine)
+
+    // Why: the transport is durable but never interrupts, so "you may check" produced
+    // workers that never read a single follow-up.
+    expect(cadence).toContain('before you\n  # start a new file and after a test run')
+    expect(cadence).toContain('immediately before\n  # you send worker_done')
   })
 
   it('carries the minted Dispatch capability on lifecycle and question commands', () => {
@@ -161,6 +190,20 @@ describe('buildDispatchPreamble', () => {
 
     expect(result.match(/--dispatch-capability dcap_test_secret/g)).toHaveLength(4)
     expect(result).not.toContain('"dispatchCapability"')
+  })
+
+  it('renders capability-bound worker_done and heartbeat recipes', () => {
+    const result = buildDispatchPreamble({
+      ...baseParams(),
+      dispatchCapability: 'dcap_test_secret'
+    })
+
+    expect(result).toMatch(
+      /orchestration send --from term_worker --dispatch-capability dcap_test_secret --type worker_done .*?--task-id task_abc123 --dispatch-id ctx_def456/u
+    )
+    expect(result).toMatch(
+      /orchestration send --from term_worker --dispatch-capability dcap_test_secret --type heartbeat .*?--task-id task_abc123 --dispatch-id ctx_def456/u
+    )
   })
 
   it('idles prompt-returning workers while preserving direct user authority', () => {

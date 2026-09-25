@@ -30,11 +30,10 @@ import {
   getCrashBreadcrumbSnapshot
 } from './crash-reporting/crash-breadcrumb-store'
 import { _resetTracerForTests, setActiveSink } from './observability/tracer'
-import { terminateNotebookProcessTree } from './ipc/notebook'
 import { killLocalPrecheckProcessTree } from './automations/precheck-runner'
 import { killRecipeProcess } from '../shared/ephemeral-vm-recipe-process'
 import { killSpawnedCommandTree } from './git/command-runner/spawned-command-tree-kill'
-import { killCodexAppServerProcessTree } from './codex/codex-app-server-session'
+import { killCodexAppServerProcessTree } from './codex/codex-app-server-process-tree-kill'
 import { signalProcessTree } from '../shared/child-process/process-tree-termination'
 import { killSourceControlAgentProcess } from './text-generation/source-control-local-process'
 import { terminateCodexTurnProcesses } from './codex/codex-structured-turn-processes'
@@ -100,16 +99,6 @@ describe('a refused tree-kill still terminates the root it owns', () => {
     const child = { pid: RENDERER_PID, kill: vi.fn() }
 
     await killSpawnedCommandTree(child as never)
-
-    expect(spawnMock).not.toHaveBeenCalled()
-    expect(child.kill).toHaveBeenCalledTimes(1)
-  })
-
-  it('kills the notebook cell root when the tree walk is refused', () => {
-    setPlatform('win32')
-    const child = { pid: RENDERER_PID, kill: vi.fn() }
-
-    expect(terminateNotebookProcessTree(child as never)).toBeNull()
 
     expect(spawnMock).not.toHaveBeenCalled()
     expect(child.kill).toHaveBeenCalledTimes(1)

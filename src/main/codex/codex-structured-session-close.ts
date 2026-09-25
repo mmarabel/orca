@@ -4,9 +4,10 @@ import {
   cancelCodexAcquisitionAttempt,
   type CodexAcquisitionRegistry,
   type CodexSession,
+  type CodexStructuredSessionAdapterDeps,
   type CodexStructuredSessionEvent
 } from './codex-structured-session-state'
-import type { StructuredAgentSessionLifecycleEvent } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
+import type { StructuredAgentSessionEndedEvent } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 
 export function handleCodexSessionExit(input: {
   sessions: Map<string, CodexSession>
@@ -16,19 +17,22 @@ export function handleCodexSessionExit(input: {
   prompts?: CodexSession['prompts']
   allowFailedSettlement?: boolean
   onEvent?: (event: CodexStructuredSessionEvent) => void
+  onBackgroundTasksChanged?: CodexStructuredSessionAdapterDeps['onBackgroundTasksChanged']
 }): boolean {
   const session = input.sessions.get(input.sessionId)
   if (!session || session.connection !== input.connection || session.ended) {
     input.prompts?.clear()
     return false
   }
-  const event: StructuredAgentSessionLifecycleEvent = {
+  session.exitObservedAt ??= Date.now()
+  const event: StructuredAgentSessionEndedEvent = {
     type: 'ended',
     sessionId: input.sessionId,
     reason: input.error.message,
     cause: session.requestedClose ? 'requested-close' : 'unexpected-exit',
     fence: session.fence,
-    acquisitionGeneration: session.acquisitionGeneration
+    acquisitionGeneration: session.acquisitionGeneration,
+    observedAt: session.exitObservedAt
   } as const
   // A synchronous sink rejection (usually backpressure) is handed to host
   // recovery, which appends the bounded fallback before reacquisition.
@@ -43,6 +47,11 @@ export function handleCodexSessionExit(input: {
     event.settlementRetryRequired = true
   }
   session.ended = true
+  // Nothing can echo for this child any more; the journal's pending-submission
+  // recovery is what settles the sends these were armed for.
+  session.dispatchEchoes.clear()
+  session.backgroundTasks.clear()
+  input.onBackgroundTasksChanged?.(input.sessionId, null)
   session.unbindReadingControl?.()
   input.onEvent?.(event)
   session.prompts.clear()

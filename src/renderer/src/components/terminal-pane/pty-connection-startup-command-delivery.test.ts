@@ -216,7 +216,9 @@ describe('connectPanePty', () => {
       {
         state: 'working',
         prompt: 'Fix the status',
-        agentType: 'command-code'
+        agentType: 'command-code',
+        // Why: Orca launched this agent, so the seed predates any provider signal (STA-4293).
+        observation: expect.objectContaining({ origin: 'launch', kind: 'transition' })
       },
       undefined,
       undefined,
@@ -258,7 +260,9 @@ describe('connectPanePty', () => {
       {
         state: 'working',
         prompt: 'Fix the spinner',
-        agentType: 'command-code'
+        agentType: 'command-code',
+        // Why: read off the pane's own output, not a provider hook (STA-4293).
+        observation: expect.objectContaining({ origin: 'process', kind: 'transition' })
       },
       undefined,
       undefined,
@@ -465,7 +469,8 @@ describe('connectPanePty', () => {
       {
         state: 'working',
         prompt: 'Fix the green done state',
-        agentType: 'command-code'
+        agentType: 'command-code',
+        observation: expect.objectContaining({ origin: 'process', kind: 'transition' })
       },
       undefined,
       undefined,
@@ -655,11 +660,12 @@ describe('connectPanePty', () => {
     }
     vi.mocked(window.api.pty.getForegroundProcess).mockResolvedValue('zsh')
 
-    connectPanePty(
-      createPane(1) as never,
-      createManager(1) as never,
-      createDeps({ startup: { command: 'codex' } }) as never
-    )
+    const deps = createDeps({ startup: { command: 'codex' } })
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the fixtures implement the pane, manager and deps members connectPanePty reads.
+    const args = [createPane(1), createManager(1), deps] as unknown as Parameters<
+      typeof connectPanePty
+    >
+    connectPanePty(...args)
     expect(capturedDataCallback.current).not.toBeNull()
 
     vi.useFakeTimers()

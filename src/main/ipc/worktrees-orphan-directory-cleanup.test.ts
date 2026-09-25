@@ -49,7 +49,30 @@ vi.mock('./worktree-symlinks', async () =>
   (await import('./worktrees-test-module-mocks')).worktreeSymlinksModuleMock()
 )
 vi.mock('./ssh', async () => (await import('./worktrees-test-module-mocks')).sshModuleMock())
+vi.mock('../ssh/ssh-target-registry', async () =>
+  (await import('./worktrees-test-module-mocks')).sshTargetRegistryModuleMock()
+)
 vi.mock('../hooks', async () => (await import('./worktrees-test-module-mocks')).hooksModuleMock())
+vi.mock('../setup-runner-script-text', async (importOriginal) =>
+  (await import('./worktrees-test-module-mocks')).setupRunnerScriptTextModuleMock(
+    (await importOriginal()) as Record<string, unknown>
+  )
+)
+vi.mock('../worktree-runner-script', async (importOriginal) =>
+  (await import('./worktrees-test-module-mocks')).worktreeRunnerScriptModuleMock(
+    (await importOriginal()) as Record<string, unknown>
+  )
+)
+vi.mock('../effective-hook-config', async (importOriginal) =>
+  (await import('./worktrees-test-module-mocks')).effectiveHookConfigModuleMock(
+    (await importOriginal()) as Record<string, unknown>
+  )
+)
+vi.mock('../setup-hook-env-vars', async (importOriginal) =>
+  (await import('./worktrees-test-module-mocks')).setupHookEnvVarsModuleMock(
+    (await importOriginal()) as Record<string, unknown>
+  )
+)
 vi.mock('./worktree-logic', async (importOriginal) =>
   (await import('./worktrees-test-module-mocks')).worktreeLogicModuleMock(
     (await importOriginal()) as Record<string, unknown>
@@ -74,6 +97,9 @@ vi.mock('../runtime/worktree-teardown', async () =>
   (await import('./worktrees-test-module-mocks')).worktreeTeardownModuleMock()
 )
 vi.mock('./pty', async () => (await import('./worktrees-test-module-mocks')).ptyModuleMock())
+
+// Why: every removal and listing reply now names the catalog it produced or scanned.
+const anyCatalogVersion = { epoch: expect.any(String), sequence: expect.any(Number) }
 
 describe('registerWorktreeHandlers', () => {
   let runtimeStub: WorktreeRuntimeStub
@@ -299,7 +325,7 @@ describe('registerWorktreeHandlers', () => {
 
       await expect(
         handlers['worktrees:remove'](null, { worktreeId, force: true })
-      ).resolves.toEqual({})
+      ).resolves.toEqual({ catalogVersion: anyCatalogVersion })
 
       await expect(lstat(leftoverPath)).rejects.toMatchObject({ code: 'ENOENT' })
       expect(killAllProcessesForWorktreeMock).toHaveBeenCalledWith(

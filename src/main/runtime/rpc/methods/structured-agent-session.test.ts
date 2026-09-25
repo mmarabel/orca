@@ -4,9 +4,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setStructuredAgentSessionHost } from '../../../native-chat/agent-session-wire/structured-agent-session-registry'
 import {
+  AGENT_SESSION_PENDING_SEND_RESULT_RUNTIME_CAPABILITY,
   RUNTIME_CAPABILITIES,
   RUNTIME_PROTOCOL_VERSION,
   STRUCTURED_AGENT_SESSION_HOLD_RUNTIME_CAPABILITY,
+  AGENT_SESSION_TURN_COMPLETION_RUNTIME_CAPABILITY,
   STRUCTURED_AGENT_SESSION_REVEAL_RUNTIME_CAPABILITY,
   STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY
 } from '../../../../shared/protocol-version'
@@ -146,8 +148,13 @@ describe('capability gating', () => {
 
   it('advertises the capability without bumping the protocol version', () => {
     expect(RUNTIME_CAPABILITIES).toContain(STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY)
+    expect(RUNTIME_CAPABILITIES).toContain(AGENT_SESSION_PENDING_SEND_RESULT_RUNTIME_CAPABILITY)
     expect(RUNTIME_CAPABILITIES).toContain(STRUCTURED_AGENT_SESSION_HOLD_RUNTIME_CAPABILITY)
     expect(RUNTIME_CAPABILITIES).toContain(STRUCTURED_AGENT_SESSION_REVEAL_RUNTIME_CAPABILITY)
+    // Separate from the structured capability on purpose: a host can serve the rest of the
+    // surface and not this stream, and a decoder drops an unknown stream opcode in silence — a
+    // client that subscribed without probing would wait forever and report nothing wrong.
+    expect(RUNTIME_CAPABILITIES).toContain(AGENT_SESSION_TURN_COMPLETION_RUNTIME_CAPABILITY)
     // Additive methods do not break an old client; bumping would strand every
     // paired device that has not updated.
     expect(RUNTIME_PROTOCOL_VERSION).toBe(3)
@@ -160,7 +167,7 @@ describe('capability gating', () => {
     }
     // Bump deliberately: the whole agentSession.* surface is behind the structured capability,
     // so an additive method is invisible to old clients and needs no protocol bump.
-    expect(STRUCTURED_AGENT_SESSION_METHODS).toHaveLength(22)
+    expect(STRUCTURED_AGENT_SESSION_METHODS).toHaveLength(30)
   })
 
   it('hides the surface from a declared client that did not advertise it', async () => {
@@ -205,6 +212,124 @@ describe('capability gating', () => {
     const response = await call('agentSession.send', sendParams(), STRUCTURED_CLIENT)
     expect(response).toMatchObject({ ok: true })
     expect(hostCalls.send).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns a settlement to older structured clients when observed within the window', async () => {
+    const pendingSubmission = {
+      clientMessageId: 'client-1',
+      fence: 1,
+      payloadFingerprint: 'fingerprint',
+      dispatchState: 'pending' as const,
+      providerItemId: null,
+      reason: null,
+      submittedAt: 1,
+      resolvedAt: null
+    }
+    hostCalls.send.mockResolvedValueOnce({
+      ok: true,
+      replayed: true,
+      fence: 7,
+      cursor: { epoch: 'epoch-a', sequence: 1 },
+      value: { clientMessageId: 'client-1', submission: pendingSubmission }
+    })
+    hostCalls.waitForSendSettlement.mockResolvedValueOnce({
+      cursor: { epoch: 'epoch-a', sequence: 2 },
+      value: {
+        clientMessageId: 'client-1',
+        submission: {
+          ...pendingSubmission,
+          dispatchState: 'accepted',
+          providerItemId: 'provider-1',
+          resolvedAt: 2
+        }
+      }
+    })
+    const controller = new AbortController()
+
+    const response = await call('agentSession.send', sendParams(), {
+      clientKind: 'runtime',
+      clientCapabilities: [STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY],
+      signal: controller.signal
+    })
+
+    expect(hostCalls.waitForSendSettlement).toHaveBeenCalledWith(
+      SESSION,
+      'client-1',
+      controller.signal
+    )
+    expect(response).toMatchObject({
+      ok: true,
+      result: {
+        ok: true,
+        replayed: true,
+        fence: 7,
+        cursor: { sequence: 2 },
+        value: { submission: { dispatchState: 'accepted' } }
+      }
+    })
+  })
+
+  it('returns durable pending when an older-client settlement observer cannot be retained', async () => {
+    hostCalls.send.mockResolvedValueOnce({
+      ok: true,
+      replayed: false,
+      fence: 1,
+      cursor: { epoch: 'epoch-a', sequence: 1 },
+      value: {
+        clientMessageId: 'client-1',
+        submission: {
+          clientMessageId: 'client-1',
+          fence: 1,
+          payloadFingerprint: 'fingerprint',
+          dispatchState: 'pending',
+          providerItemId: null,
+          reason: null,
+          submittedAt: 1,
+          resolvedAt: null
+        }
+      }
+    })
+    hostCalls.waitForSendSettlement.mockResolvedValueOnce(undefined)
+
+    const response = await call('agentSession.send', sendParams(), {
+      clientKind: 'runtime',
+      clientCapabilities: [STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY]
+    })
+
+    expect(response).toMatchObject({
+      ok: true,
+      result: { value: { submission: { dispatchState: 'pending' } } }
+    })
+  })
+
+  it('returns durable pending immediately to clients that understand admission', async () => {
+    hostCalls.send.mockResolvedValueOnce({
+      ok: true,
+      replayed: false,
+      fence: 1,
+      cursor: { epoch: 'epoch-a', sequence: 1 },
+      value: {
+        clientMessageId: 'client-1',
+        submission: {
+          clientMessageId: 'client-1',
+          fence: 1,
+          payloadFingerprint: 'fingerprint',
+          dispatchState: 'pending',
+          providerItemId: null,
+          reason: null,
+          submittedAt: 1,
+          resolvedAt: null
+        }
+      }
+    })
+
+    const response = await call('agentSession.send', sendParams(), STRUCTURED_CLIENT)
+
+    expect(hostCalls.waitForSendSettlement).not.toHaveBeenCalled()
+    expect(response).toMatchObject({
+      ok: true,
+      result: { value: { submission: { dispatchState: 'pending' } } }
+    })
   })
 
   it('requires the host structured-chat setting for mobile clients', async () => {
@@ -306,6 +431,79 @@ describe('method routing', () => {
       expect.objectContaining({ sessionId: SESSION, activate: true })
     )
   })
+
+  it('records the tab id a client reserved for its chat', async () => {
+    const worktree = 'id:workspace-1'
+    const fields = { worktree, agent: 'codex', tabId: 'chat-tab-1' }
+    const params = {
+      envelope: envelope({
+        expectedRuntimeFence: null,
+        payloadFingerprint: computeAgentSessionPayloadFingerprint({
+          method: 'agentSession.create',
+          sessionId: SESSION,
+          fields
+        })
+      }),
+      ...fields
+    }
+    expect(await call('agentSession.create', params, STRUCTURED_CLIENT)).toMatchObject({
+      ok: true,
+      result: { ok: true }
+    })
+    // Beside `options`, after the attach fingerprint: which tab shows the chat is not which
+    // conversation this attaches to.
+    expect(hostCalls.attach).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ surfaceTabId: 'chat-tab-1' })
+    )
+  })
+
+  it('refuses a create whose declared fingerprint omits the tab it reserved', async () => {
+    // The tab id is part of the intent fingerprint, so a payload whose declared digest omits it
+    // is refused rather than admitted as the blank create it looks like.
+    const worktree = 'id:workspace-1'
+    const params = {
+      envelope: envelope({
+        expectedRuntimeFence: null,
+        payloadFingerprint: computeAgentSessionPayloadFingerprint({
+          method: 'agentSession.create',
+          sessionId: SESSION,
+          fields: { worktree, agent: 'codex' }
+        })
+      }),
+      worktree,
+      agent: 'codex',
+      tabId: 'chat-tab-1'
+    }
+    expect(await call('agentSession.create', params, STRUCTURED_CLIENT)).toMatchObject({
+      ok: true,
+      result: { ok: false, refusal: { code: 'agent_session_operation_conflict' } }
+    })
+    expect(hostCalls.attach).not.toHaveBeenCalled()
+  })
+
+  it.each(['agent-session:with-colon', 'web-terminal-local-surface'])(
+    'refuses a reserved tab id that is not a host tab id: %s',
+    async (tabId) => {
+      const worktree = 'id:workspace-1'
+      const response = await call(
+        'agentSession.create',
+        {
+          // A well-formed digest, so only the tab id can be what the schema refuses.
+          envelope: envelope({ expectedRuntimeFence: null, payloadFingerprint: '0'.repeat(64) }),
+          worktree,
+          agent: 'codex',
+          tabId
+        },
+        STRUCTURED_CLIENT
+      )
+      expect(response).toMatchObject({
+        ok: false,
+        error: { code: 'invalid_argument', message: expect.stringContaining('Invalid chat tab ID') }
+      })
+      expect(hostCalls.attach).not.toHaveBeenCalled()
+    }
+  )
 
   it.each(['claude', 'codex'])(
     'forwards a %s history resume through create preparation',
@@ -486,6 +684,19 @@ describe('method routing', () => {
     expect(hostCalls.cancel).toHaveBeenCalledWith(expect.anything(), params)
   })
 
+  it('routes strict prompt identity through cancellation', async () => {
+    const params = {
+      envelope: envelope(),
+      turnId: 'turn-1',
+      prompt: { itemId: 'prompt-1', expectedRevision: 2 }
+    }
+
+    const response = await call('agentSession.cancel', params, STRUCTURED_CLIENT)
+
+    expect(response).toMatchObject({ ok: true })
+    expect(hostCalls.cancel).toHaveBeenCalledWith(expect.anything(), params)
+  })
+
   it('routes the structured handoff mutation through the host', async () => {
     const response = await call('agentSession.requestHandoff', {
       envelope: envelope(),
@@ -527,6 +738,17 @@ describe('parameter validation', () => {
       envelope: envelope(),
       turnId: 'turn-1',
       taskId: 'task-2'
+    })
+    await rejects('agentSession.cancel', {
+      envelope: envelope(),
+      turnId: 'background-tasks',
+      scope: 'background-tasks',
+      prompt: { itemId: 'prompt-1', expectedRevision: 1 }
+    })
+    await rejects('agentSession.cancel', {
+      envelope: envelope(),
+      turnId: 'turn-1',
+      prompt: { itemId: 'prompt-1', expectedRevision: 0 }
     })
     expect(hostCalls.cancel).not.toHaveBeenCalled()
   })

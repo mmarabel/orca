@@ -5,16 +5,17 @@
 // not exist rather than receiving the journal or mutation surface. Session-tab
 // inventory may expose only a metadata placeholder for an incapable mobile client.
 
-import {
-  agentSessionFingerprintConflict,
-  computeAgentSessionPayloadFingerprint
-} from '../../../../shared/agent-session-mutation-envelope'
+import { agentSessionFingerprintConflict } from '../../../../shared/agent-session-mutation-envelope'
 import type { z } from 'zod'
 import {
   projectBackgroundTaskEvent,
   projectBackgroundTaskHistory
 } from './structured-agent-session-background-task-capability'
-import { defineMethod, defineStreamingMethod, type RpcAnyMethod, type RpcContext } from '../core'
+import {
+  projectTurnItemEvent,
+  projectTurnItemHistory
+} from './structured-agent-session-turn-item-capability'
+import { defineMethod, defineStreamingMethod, type RpcContext } from '../core'
 import {
   ensureStructuredHostInstalled as ensureHostInstalled,
   requireStructuredCapability,
@@ -26,10 +27,12 @@ import {
 import type { AgentSessionAttachParams } from '../../../native-chat/agent-session-wire/structured-agent-session-attach'
 import {
   commitStructuredAgentSessionCreate,
-  prepareStructuredAgentSessionCreateForWorktree
+  prepareStructuredAgentSessionCreateForWorktree,
+  structuredAgentSessionCreateIntentFingerprint
 } from './structured-agent-session-create'
 import { STRUCTURED_AGENT_SESSION_HOLD_METHODS } from './structured-agent-session-hold'
 import { STRUCTURED_AGENT_SESSION_REVEAL_METHODS } from './structured-agent-session-reveal'
+import { STRUCTURED_AGENT_SESSION_RESTART_RESUME_METHODS } from './structured-agent-session-restart-resume'
 import { resolveUncommittedStructuredCreate } from './structured-agent-session-precommit-refusal'
 import {
   bindStructuredAgentSessionStream,
@@ -39,6 +42,10 @@ import {
   structuredAgentSessionSubscriptionBase as subscriptionBaseFor,
   structuredAgentSessionSubscriptionId as subscriptionIdFor
 } from './structured-agent-session-subscription-id'
+import { STRUCTURED_AGENT_SESSION_TURN_COMPLETION_METHODS } from './structured-agent-session-turn-completion-stream'
+import { STRUCTURED_AGENT_SESSION_THREAD_GOAL_METHODS } from './structured-agent-session-thread-goal'
+import { STRUCTURED_AGENT_SESSION_CONVERSATION_OUTLINE_METHODS } from './structured-agent-session-conversation-outline'
+import { STRUCTURED_AGENT_SESSION_OPTIONS_READ_METHODS } from './structured-agent-session-options-read'
 import {
   AttachParams,
   CancelParams,
@@ -56,6 +63,7 @@ import {
   SubscribeParams,
   UnsubscribeParams
 } from './structured-agent-session-schemas'
+import { sendStructuredAgentSessionForClient } from './structured-agent-session-send-compatibility'
 
 /**
  * The attach-shaped entries take the location from the client instead of resolving it from a
@@ -86,7 +94,7 @@ async function attachClientSuppliedLocation(
   return host.attach(callerFor(ctx), attachParams)
 }
 
-export const STRUCTURED_AGENT_SESSION_METHODS: RpcAnyMethod[] = [
+export const STRUCTURED_AGENT_SESSION_METHODS = [
   defineMethod({
     name: 'agentSession.rewind',
     params: RewindParams,
@@ -139,19 +147,10 @@ export const STRUCTURED_AGENT_SESSION_METHODS: RpcAnyMethod[] = [
       // a client can tell "nothing was created" from "the outcome is unknown".
       const prepared = await resolveUncommittedStructuredCreate(async () => {
         if ('worktree' in params) {
-          const intentFingerprint = computeAgentSessionPayloadFingerprint({
-            method: 'agentSession.create',
-            sessionId: params.envelope.sessionId,
-            // `resumeFrom` is part of the intent, not a detail of it: without it here, a retry of
-            // "adopt this conversation" would replay as, or conflict with, a blank create. The
-            // canonicalizer drops `undefined`, so plain creates keep the digest they always had.
-            fields: {
-              worktree: params.worktree,
-              agent: params.agent,
-              resumeFrom: params.resumeFrom
-            }
-          })
-          const conflict = agentSessionFingerprintConflict(params.envelope, intentFingerprint)
+          const conflict = agentSessionFingerprintConflict(
+            params.envelope,
+            structuredAgentSessionCreateIntentFingerprint(params)
+          )
           if (conflict) {
             return { refusal: conflict }
           }
@@ -165,7 +164,8 @@ export const STRUCTURED_AGENT_SESSION_METHODS: RpcAnyMethod[] = [
             worktree: params.worktree,
             agent: params.agent as 'claude' | 'codex',
             caller: callerFor(ctx),
-            ...(params.resumeFrom ? { resumeFrom: params.resumeFrom } : {})
+            ...(params.resumeFrom ? { resumeFrom: params.resumeFrom } : {}),
+            ...(params.tabId ? { tabId: params.tabId } : {})
           })
         }
         const { host, attachParams } = await resolveClientSuppliedAttach(params, ctx)
@@ -190,7 +190,7 @@ export const STRUCTURED_AGENT_SESSION_METHODS: RpcAnyMethod[] = [
   defineMethod({
     name: 'agentSession.send',
     params: SendParams,
-    handler: async (params, ctx) => requireHost(ctx).send(callerFor(ctx), params)
+    handler: sendStructuredAgentSessionForClient
   }),
   defineMethod({
     // Stopping a turn, so it stays available after admission is revoked: see the gate's rule.
@@ -243,11 +243,6 @@ export const STRUCTURED_AGENT_SESSION_METHODS: RpcAnyMethod[] = [
     handler: async (params, ctx) => requireHost(ctx).handoffStatus(params.sessionId)
   }),
   defineMethod({
-    name: 'agentSession.options',
-    params: OptionsParams,
-    handler: async (params, ctx) => requireHost(ctx).readOptions(params.sessionId)
-  }),
-  defineMethod({
     name: 'agentSession.commands',
     params: OptionsParams,
     handler: async (params, ctx) => requireHost(ctx).readCommands(params.sessionId)
@@ -256,7 +251,10 @@ export const STRUCTURED_AGENT_SESSION_METHODS: RpcAnyMethod[] = [
     name: 'agentSession.history',
     params: HistoryParams,
     handler: async (params, ctx) =>
-      projectBackgroundTaskHistory(requireHost(ctx).history(params), ctx)
+      projectTurnItemHistory(
+        projectBackgroundTaskHistory(requireHost(ctx).history(params), ctx),
+        ctx
+      )
   }),
   defineStreamingMethod({
     name: 'agentSession.subscribe',
@@ -283,7 +281,7 @@ export const STRUCTURED_AGENT_SESSION_METHODS: RpcAnyMethod[] = [
       dispose = host.subscribe({
         id: subscriptionId,
         sessionId: params.sessionId,
-        emit: (event) => emit(projectBackgroundTaskEvent(event, ctx)),
+        emit: (event) => emit(projectTurnItemEvent(projectBackgroundTaskEvent(event, ctx), ctx)),
         ...(params.cursor ? { cursor: params.cursor } : {})
       })
       if (stream.isClosed()) {
@@ -318,5 +316,10 @@ export const STRUCTURED_AGENT_SESSION_METHODS: RpcAnyMethod[] = [
   }),
   ...STRUCTURED_AGENT_SESSION_HOLD_METHODS,
   ...STRUCTURED_AGENT_SESSION_REVEAL_METHODS,
-  ...STRUCTURED_AGENT_SESSION_STATUS_METHODS
+  ...STRUCTURED_AGENT_SESSION_RESTART_RESUME_METHODS,
+  ...STRUCTURED_AGENT_SESSION_STATUS_METHODS,
+  ...STRUCTURED_AGENT_SESSION_TURN_COMPLETION_METHODS,
+  ...STRUCTURED_AGENT_SESSION_THREAD_GOAL_METHODS,
+  ...STRUCTURED_AGENT_SESSION_CONVERSATION_OUTLINE_METHODS,
+  ...STRUCTURED_AGENT_SESSION_OPTIONS_READ_METHODS
 ]

@@ -45,6 +45,7 @@ function fixture(maxMetadataBytes?: number) {
     {
       sink,
       maxMetadataBytes,
+      linkageFor: () => ({}),
       schedule: (run) => {
         scheduled.add(run)
         return () => {
@@ -113,9 +114,11 @@ describe('persistent command retention', () => {
           sessionId: 'session',
           threadId: `thread-${thread}`,
           turnId: 'turn',
+          turnLifecycle: null,
           sink,
           streams: items.streams,
-          activeItems: items.activeItems
+          activeItems: items.activeItems,
+          linkageFor: () => ({})
         })
       ).toEqual({ accepted: true })
     }
@@ -207,9 +210,11 @@ describe('persistent command retention', () => {
         sessionId: 'session',
         threadId: 'root',
         turnId: 'turn',
+        turnLifecycle: null,
         sink,
         streams: items.streams,
-        activeItems: items.activeItems
+        activeItems: items.activeItems,
+        linkageFor: () => ({})
       })
     ).toEqual({ accepted: true })
     expect(items.activeItems.size).toBe(1)

@@ -24,6 +24,7 @@ import type {
   AgentSessionOwnerRuntimeKind,
   AgentSessionRecord
 } from '../../../shared/agent-session-record'
+import { structuredAgentSessionTabId } from '../../../shared/structured-agent-session-projection'
 import {
   AGENT_SESSION_WIRE_REFUSAL_CODES,
   type AgentSessionMutationEnvelope,
@@ -39,6 +40,8 @@ import { agentSessionProviderHandleChainHead } from '../../../shared/agent-sessi
 import { agentSessionJournalCloseRetries } from '../agent-session-journal/journal-close-retry'
 import { journalDirectoryFor } from '../agent-session-journal/journal-paths'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
+import { reconcileJournalSubmissionsAgainstHistory } from '../agent-session-journal/journal-restart-reconciliation'
+import type { ProviderHistoryWindow } from '../agent-session-journal/journal-submission-reconciler'
 import {
   openAgentSessionJournalWithRecovery,
   type AgentSessionJournalRecovery
@@ -61,6 +64,9 @@ export type AgentSessionAttachParams = {
   runtimeKind: AgentSessionOwnerRuntimeKind
   /** Host-resolved defaults for a create-by-intent; remote attach schemas do not accept them. */
   options?: Readonly<Record<string, string>>
+  /** The tab id a create reserves for this chat; absent records the id clients derive. Never on
+   *  the attach fingerprint: which tab shows the chat is not which conversation it attaches to. */
+  surfaceTabId?: string
   launchArgs?: string[]
   /** Omitted only for create-by-intent; the adapter proves the durable handle. */
   providerHandle?: Exclude<AgentSessionProviderHandle, { kind: 'opaque' }>
@@ -161,20 +167,32 @@ export function journalIdentityFor(
 export type AttachedJournal = {
   journal: AgentSessionJournal
   recovery: AgentSessionJournalRecovery | null
-  /** Submissions the crash boundary settled as `unknown` on this open. */
+  /** Submissions still `unknown` after this open: the crash boundary settled
+   *  them there and provider history could not decide them either. */
   unconfirmedClientMessageIds: string[]
 }
 
 /**
  * Open the session's journal, recovering it when the stored one is unusable,
- * and settle every submission left in flight by a previous process. Orca never
- * re-sends those; they surface as delivery unconfirmed.
+ * settle every submission left in flight by a previous process, then let
+ * provider history decide the ones it can prove.
+ *
+ * Why the reconciliation belongs HERE and nowhere else: this runs after the
+ * record store handed this host the lease and before `onAttached` starts a
+ * provider child, so nothing can be appending to the provider's history while it
+ * is read, and the window stays valid until the resume consumes it. Every other
+ * settlement site — a proven child exit, a handoff suspend — runs while the host
+ * may still start another child, and a read there could be overtaken before it
+ * is acted on. Orca still never re-sends: this decides state only.
  */
 export async function attachJournal(input: {
   record: AgentSessionRecord
   params: AgentSessionAttachParams
   journalRoot: string
   adapter: StructuredAgentSessionAdapter
+  /** Provider history sampled before a new child is acquired. `null` means the
+   *  adapter had no usable history; omit to read lazily for direct callers. */
+  providerHistoryWindow?: ProviderHistoryWindow | null
 }): Promise<AttachedJournal> {
   const identity = journalIdentityFor(input.record, input.params)
   const fence = input.record.lease.runtimeFence
@@ -193,9 +211,20 @@ export async function attachJournal(input: {
   try {
     // That await is a WRITE. A failure in it leaves the journal with no caller
     // holding a reference to close it.
+    const unconfirmed = await opened.journal.markPendingSubmissionsUnknown(fence)
+    const settled = await reconcileAgainstProviderHistory({
+      adapter: input.adapter,
+      identity,
+      journal: opened.journal,
+      fence,
+      accountHome: input.record.accountHome,
+      ...(Object.hasOwn(input, 'providerHistoryWindow')
+        ? { history: input.providerHistoryWindow }
+        : {})
+    })
     return {
       ...opened,
-      unconfirmedClientMessageIds: await opened.journal.markPendingSubmissionsUnknown(fence)
+      unconfirmedClientMessageIds: unconfirmed.filter((id) => !settled.includes(id))
     }
   } catch (error) {
     // A rejected close leaves the handle open, so the journal is retained for a
@@ -203,6 +232,42 @@ export async function attachJournal(input: {
     await agentSessionJournalCloseRetries.closeOrRetain(opened.journal)
     throw error
   }
+}
+
+/** Reading provider history is best effort: a provider that reports none, or a
+ *  read that fails, leaves every submission exactly as the crash boundary wrote
+ *  it. The journal writes the outcome implies are NOT caught here — a failed
+ *  write must reach the caller that retains the journal handle. */
+async function reconcileAgainstProviderHistory(input: {
+  adapter: StructuredAgentSessionAdapter
+  identity: AgentSessionJournalIdentity
+  journal: AgentSessionJournal
+  fence: number
+  accountHome: AgentSessionAccountHome
+  history?: ProviderHistoryWindow | null
+}): Promise<string[]> {
+  let history = input.history
+  if (history === undefined) {
+    if (!input.adapter.providerHistoryWindow) {
+      return []
+    }
+    try {
+      history = await input.adapter.providerHistoryWindow({
+        identity: input.identity,
+        accountHome: input.accountHome
+      })
+    } catch {
+      return []
+    }
+  }
+  if (!history) {
+    return []
+  }
+  return reconcileJournalSubmissionsAgainstHistory({
+    journal: input.journal,
+    fence: input.fence,
+    history
+  })
 }
 
 /**
@@ -252,6 +317,11 @@ export function reserveRequestFor(input: {
     provider: params.provider,
     accountHome: params.accountHome,
     ...(params.options ? { options: params.options } : {}),
+    // Create path only: an existing record keeps its own. Unreserved, it is the id every client
+    // still derives, so nothing keyed by it moves until those readers copy the recorded one.
+    ...(params.envelope.expectedRuntimeFence === null
+      ? { surfaceTabId: params.surfaceTabId ?? structuredAgentSessionTabId(input.sessionId) }
+      : {}),
     ...(authority.launchArgs ? { launchArgs: authority.launchArgs } : {}),
     ...(authority.launchEnv ? { launchEnv: authority.launchEnv } : {}),
     runtimeKind: params.runtimeKind,

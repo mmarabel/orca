@@ -398,6 +398,39 @@ describe('useHostClient', () => {
     }
   })
 
+  it('rebuilds a Relay-active client when a host address edit bypasses preservation', async () => {
+    const relayClient = makeFakeClient('connected', 'relay')
+    const replacement = makeFakeClient('connecting', 'tailscale')
+    connectMock.mockReturnValueOnce(relayClient).mockReturnValueOnce(replacement)
+    loadHostsMock.mockResolvedValue([HOST])
+
+    let forceReconnect: ReturnType<typeof useForceReconnect> = null
+    let renderer: ReactTestRenderer | null = null
+    function Probe(): null {
+      forceReconnect = useForceReconnect()
+      useHostClient(HOST.id)
+      return null
+    }
+
+    try {
+      await act(async () => {
+        renderer = create(createElement(RpcClientProvider, null, createElement(Probe)))
+        await Promise.resolve()
+      })
+
+      await act(async () => {
+        await forceReconnect?.(HOST.id, { bypassRelayPreservation: true })
+      })
+
+      // The live Relay session is bound to the pre-edit address, so it must come down.
+      expect(relayClient.closeMock).toHaveBeenCalled()
+      expect(relayClient.notifyForeground).not.toHaveBeenCalled()
+      expect(connectMock).toHaveBeenCalledTimes(2)
+    } finally {
+      act(() => renderer?.unmount())
+    }
+  })
+
   it('rebuilds a pairing-rejected Relay client so re-pairing credentials are re-read', async () => {
     const rejectedRelayClient = makeFakeClient('disconnected', 'relay')
     const replacement = makeFakeClient('connecting', 'tailscale')

@@ -136,8 +136,10 @@ export default function EditHostScreen() {
     if (nextEndpoint !== undefined) {
       // Why: reconnect is a follow-on side effect of a save that already
       // committed — its failure or a hang must not be reported as a save
-      // failure or block navigating back.
-      void forceReconnectHost?.(host.id).catch(() => {})
+      // failure or block navigating back. The address changed, so the live
+      // client must be rebuilt even on Relay, which is otherwise preserved:
+      // that session is bound to the endpoint the user just replaced.
+      void forceReconnectHost?.(host.id, { bypassRelayPreservation: true }).catch(() => {})
     }
   }
 

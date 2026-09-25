@@ -4,8 +4,19 @@ import type { RelayHostReachability } from './relay-host-reachability'
 import type { MobileConnectionPath } from './stable-logical-rpc-client'
 import type { ConnectionState, HostProfile } from './types'
 
+export type ForceReconnectOptions = {
+  /**
+   * Rebuild the client even while a Relay session is active. Set only when the saved host
+   * address changed: the live session is dialling the pre-edit endpoint, so preserving it
+   * strands the host until the app restarts.
+   */
+  bypassRelayPreservation?: boolean
+}
+
 /** Re-dials one host. `null` where this document cannot dial: the page's shell owns the connection. */
-export type ForceReconnect = ((hostId: string) => Promise<void>) | null
+export type ForceReconnect =
+  | ((hostId: string, options?: ForceReconnectOptions) => Promise<void>)
+  | null
 
 export type RpcClientContextValue = {
   acquire: (

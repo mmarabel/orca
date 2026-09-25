@@ -32,7 +32,7 @@ import {
   type CloseEntryOptions
 } from './host-client-context-state'
 import type { ConnectionState, HostProfile } from './types'
-import type { RpcClientContextValue } from './rpc-client-context-contract'
+import type { ForceReconnectOptions, RpcClientContextValue } from './rpc-client-context-contract'
 
 export {
   useDisconnectHostClient,
@@ -245,10 +245,13 @@ export function RpcClientProvider({ children }: { children: ReactNode }) {
   )
 
   const forceReconnect = useCallback(
-    async (hostId: string) => {
+    async (hostId: string, options?: ForceReconnectOptions) => {
       const entry = storeRef.current.get(hostId)
       const logical = entry?.client as Partial<StableLogicalRpcClient> | undefined
-      if (entry && shouldPreserveActiveRelay(entry, logical)) {
+      // Why: getActivePath() latches on the first adopted session and is never cleared, so a host
+      // whose relay is merely retrying still reads 'relay'. Preserving it after an address edit
+      // would keep dialling the pre-edit endpoint until the app restarts.
+      if (entry && !options?.bypassRelayPreservation && shouldPreserveActiveRelay(entry, logical)) {
         // Keep a Relay-active host on its existing recovery state; rebuilding the
         // facade starts the unreachable direct endpoint before Relay can race it.
         entry.client.notifyForeground('app-resume')

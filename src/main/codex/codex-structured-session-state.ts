@@ -14,7 +14,7 @@ import type { AgentSessionBackgroundTaskState } from '../../shared/agent-session
 import type { CodexBackgroundTaskTracker } from './codex-background-task-tracker'
 import type { CodexJournalTranslator } from './codex-structured-journal-translation'
 import type { CodexTurnProcessSnapshot } from './codex-structured-turn-processes'
-import type { StructuredAgentSessionLifecycleEvent } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
+import type { StructuredAgentSessionEndedEvent } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import type { CodexStructuredPermissionPolicy } from './codex-structured-permission-policy'
 
 export type CodexStructuredLaunch = {
@@ -24,6 +24,9 @@ export type CodexStructuredLaunch = {
   codexHome: string | null
   resumeThreadId: string | null
   resumePath?: string | null
+  /** The resumed thread is this session's own creation: when Codex answers that it holds no
+   *  rollout for it, start a new thread in its place. Never set for a thread a resume proved. */
+  supersedeIfUnsaved?: boolean
   permissionPolicy?: CodexStructuredPermissionPolicy
   env?: Record<string, string>
 }
@@ -51,7 +54,7 @@ export type CodexStructuredSessionEvent =
       codexItemId: string
       promptKey: string
     }
-  | StructuredAgentSessionLifecycleEvent
+  | StructuredAgentSessionEndedEvent
   /** Translator-only compatibility for callers that do not participate in host recovery. */
   | { type: 'ended'; sessionId: string; reason: string; observedAt?: number }
 

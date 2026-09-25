@@ -2,6 +2,7 @@ import { replayIntoTerminal, replayIntoTerminalAsync } from '../replay-guard'
 import { terminalOutputPrefersRenderRefresh } from '@/lib/pane-manager/terminal-complex-script'
 import {
   buildPostReplayLiveAgentReattachReset,
+  POST_REPLAY_DEAD_TUI_RESET,
   POST_REPLAY_MODE_RESET,
   POST_REPLAY_REATTACH_RESET,
   POST_REPLAY_REATTACH_RESET_KEEP_MOUSE
@@ -89,9 +90,7 @@ export function bindFreshSpawnFollowReset(session: ConnectPanePtySession): void 
     const scanData = session.foregroundRefreshRiskScanTail
       ? `${session.foregroundRefreshRiskScanTail}${data}`
       : data
-    const prefersRefresh =
-      (scanData.includes('\x1b[') || session.containsNonAsciiOutput(scanData)) &&
-      terminalOutputPrefersRenderRefresh(scanData)
+    const prefersRefresh = terminalOutputPrefersRenderRefresh(scanData)
     session.foregroundRefreshRiskScanTail = trailingIncompleteCsiSequence(scanData)
     return prefersRefresh
   }
@@ -133,7 +132,8 @@ export function bindFreshSpawnFollowReset(session: ConnectPanePtySession): void 
   session.reattachReplayResetSequence = (
     payload: string,
     ownerProcessEnded = false,
-    isAlternateScreen?: boolean
+    isAlternateScreen?: boolean,
+    terminalOwner?: 'shell'
   ): string => {
     // Why a cold restore overrides the agent signal: liveness is read from the
     // pane's status and title, both of which are persisted, so after a cold
@@ -142,6 +142,11 @@ export function bindFreshSpawnFollowReset(session: ConnectPanePtySession): void 
     // which then prints the reports as junk at the prompt (#12101).
     if (ownerProcessEnded) {
       return POST_REPLAY_MODE_RESET
+    }
+    if (terminalOwner === 'shell') {
+      return (isAlternateScreen ?? session.kittyKeyboardModes.isAlternateScreen)
+        ? POST_REPLAY_DEAD_TUI_RESET
+        : POST_REPLAY_REATTACH_RESET
     }
     if (session.shouldPreserveAgentReattachModes()) {
       return buildPostReplayLiveAgentReattachReset(payload)

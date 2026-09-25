@@ -12,6 +12,7 @@ import { isWebTerminalSurfaceTabId } from '@/runtime/web-terminal-surface-id'
 import type { DirectSshPaneRetryAttempt } from '@/store/slices/direct-ssh-terminal-recovery'
 import { directSshAuthoritiesEqual } from '@/store/slices/direct-ssh-terminal-authority-ledger'
 
+import { settleTerminalPaneRecovery } from '../terminal-pane-recovery'
 import type { ConnectPanePtySession } from './connect-pane-pty-session'
 
 export function installAgentIdleWorkingHandlers(session: ConnectPanePtySession): void {
@@ -151,9 +152,25 @@ export function installAgentIdleWorkingHandlers(session: ConnectPanePtySession):
           : undefined
     return attempt
   })()
-  session.pendingSpawnKey = session.directSshRetryAttempt
-    ? JSON.stringify([session.cacheKey, session.directSshRetryAttempt.attemptId])
-    : session.cacheKey
+  // Only the PENDING retry marks a mount that a reconnect created. directSshRetryAttempt also
+  // accepts the live binding, which is written at the same tab generation once the reconnect
+  // succeeds and then outlives it — so it stays truthy for every later remount of that generation,
+  // not just this one.
+  session.followsDirectSshReconnect = (() => {
+    const pending = session.state.directSshPaneRetryByTabId?.[session.deps.tabId]
+    return (
+      pending?.authority.targetId === session.connectionId &&
+      pending.tabGeneration === (session.tab?.generation ?? 0)
+    )
+  })()
+  // Generation is part of ownership: a recovery remount must not join a spawn
+  // started by the pane instance it replaced, while StrictMode remounts keep
+  // the same generation and may still share their in-flight spawn.
+  session.pendingSpawnKey = JSON.stringify([
+    session.cacheKey,
+    session.tabGeneration,
+    session.directSshRetryAttempt?.attemptId ?? null
+  ])
   session.capturedDirectSshRetryPtyAccepted = false
   session.directSshPaneRetrySettlementCancelled = false
   session.directSshPaneRetrySettlementTimers = new Set<ReturnType<typeof setTimeout>>()
@@ -219,11 +236,16 @@ export function installAgentIdleWorkingHandlers(session: ConnectPanePtySession):
     }
     return canAdopt
   }
-  session.settleDirectSshPaneRetryAttempt = (
+  // One settle for this pane's attach attempt, reporting to both ledgers that
+  // track it: the direct-SSH pane retry (when a lease owns this attempt) and
+  // the tab's recovery ledger. Keeping them on one call is what stops a second
+  // settle path drifting out of step with the first.
+  session.settlePaneAttachAttempt = (
     attempt: DirectSshRetryLease | undefined,
-    status: 'failed' | 'timed-out'
+    status: 'success' | 'failed' | 'timed-out'
   ): void => {
-    if (!attempt) {
+    settleTerminalPaneRecovery(session.deps.tabId, session.terminalRecoveryGeneration, status)
+    if (!attempt || status === 'success') {
       return
     }
     useAppStore.getState().settleDirectSshPaneRetry?.({

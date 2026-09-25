@@ -9,7 +9,7 @@ type MaterialFileIconManifest = {
   defaultIcon: string
 }
 
-const materialFileIconManifest = manifest as MaterialFileIconManifest
+const materialFileIconManifest: MaterialFileIconManifest = manifest
 
 /** Resolve from the renderer base so both the dev server and packaged app find checked-in assets. */
 function resolveMaterialFileIconAssetUrl(

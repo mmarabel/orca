@@ -1,3 +1,4 @@
+import { createElement } from 'react'
 import type React from 'react'
 import { DEFAULT_FILE_ICON_THEME } from '../../../../shared/file-icon-theme'
 import { useAppStore } from '@/store'
@@ -22,8 +23,10 @@ export function ThemedFileIcon({
 }: ThemedFileIconProps): React.JSX.Element {
   const fileIconTheme =
     useAppStore((state) => state.settings?.fileIconTheme) ?? DEFAULT_FILE_ICON_THEME
-  const ClassicIcon = getFileTypeIcon(filePath)
-  const classicIcon = <ClassicIcon className={classicClassName ?? className} style={classicStyle} />
+  const classicIcon = createElement(getFileTypeIcon(filePath), {
+    className: classicClassName ?? className,
+    style: classicStyle
+  })
 
   if (fileIconTheme !== 'material') {
     return classicIcon

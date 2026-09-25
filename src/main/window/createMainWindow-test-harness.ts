@@ -12,6 +12,10 @@ export const browserWindowMock: Mock<
 > = vi.fn()
 export const openExternalMock: MainWindowSpy = vi.fn()
 export const attachGuestPoliciesMock: MainWindowSpy = vi.fn()
+export const attachRouteGuestMock: MainWindowSpy = vi.fn(() => false)
+export const retireRouteRendererMock: MainWindowSpy = vi.fn()
+export const attachClientPageRendererMock: MainWindowSpy = vi.fn()
+export const retireClientPageRendererMock: MainWindowSpy = vi.fn()
 export const buildFromTemplateMock: Mock<(...args: unknown[]) => { popup: MainWindowSpy }> = vi.fn(
   () => ({ popup: menuPopupMock })
 )
@@ -24,6 +28,7 @@ export const notificationMock: Mock<(...args: unknown[]) => { show: MainWindowSp
 export const getFocusedWebContentsMock: MainWindowSpy = vi.fn(() => null)
 export const powerMonitorOnMock: MainWindowSpy = vi.fn()
 export const powerMonitorRemoveListenerMock: MainWindowSpy = vi.fn()
+export const routePartitionAllowedMock: Mock<(partition: string) => boolean> = vi.fn(() => false)
 export const isMock = { dev: false }
 export const macosTahoeMock = { value: false }
 
@@ -117,12 +122,19 @@ export function resetMainWindowMocks(): void {
   getFocusedWebContentsMock.mockReset()
   getFocusedWebContentsMock.mockReturnValue(null)
   attachGuestPoliciesMock.mockReset()
+  attachRouteGuestMock.mockReset()
+  attachRouteGuestMock.mockReturnValue(false)
+  retireRouteRendererMock.mockReset()
+  attachClientPageRendererMock.mockReset()
+  retireClientPageRendererMock.mockReset()
   buildFromTemplateMock.mockClear()
   menuPopupMock.mockClear()
   notificationMock.mockClear()
   notificationShowMock.mockClear()
   powerMonitorOnMock.mockReset()
   powerMonitorRemoveListenerMock.mockReset()
+  routePartitionAllowedMock.mockReset()
+  routePartitionAllowedMock.mockReturnValue(false)
   isMock.dev = false
   macosTahoeMock.value = false
   ipcMainMock.on.mockReset()

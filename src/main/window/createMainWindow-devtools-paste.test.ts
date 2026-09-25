@@ -58,8 +58,8 @@ function mountMainWindow() {
     setWindowButtonPosition: vi.fn(),
     maximize: vi.fn(),
     show: vi.fn(),
-    loadFile: vi.fn(),
-    loadURL: vi.fn()
+    loadFile: vi.fn(() => Promise.resolve()),
+    loadURL: vi.fn(() => Promise.resolve())
   }
   browserWindowMock.mockImplementation(function () {
     return browserWindowInstance
@@ -87,7 +87,7 @@ describe('createMainWindow macOS Cmd+V ownership', () => {
     getFocusedWebContentsMock.mockReturnValue(webContents)
 
     const preventDefault = vi.fn()
-    windowHandlers['before-input-event']({ preventDefault } as never, CMD_V as never)
+    windowHandlers['before-input-event']({ preventDefault }, CMD_V)
 
     expect(preventDefault).toHaveBeenCalledOnce()
     expect(webContents.send).toHaveBeenCalledWith('ui:appMenuPaste')
@@ -98,7 +98,7 @@ describe('createMainWindow macOS Cmd+V ownership', () => {
     getFocusedWebContentsMock.mockReturnValue({ paste: vi.fn() })
 
     const preventDefault = vi.fn()
-    windowHandlers['before-input-event']({ preventDefault } as never, CMD_V as never)
+    windowHandlers['before-input-event']({ preventDefault }, CMD_V)
 
     expect(preventDefault).not.toHaveBeenCalled()
     expect(webContents.send).not.toHaveBeenCalledWith('ui:appMenuPaste')

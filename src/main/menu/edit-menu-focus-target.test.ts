@@ -11,7 +11,8 @@ vi.mock('electron', () => ({
 import { resolveEditMenuTarget } from './edit-menu-focus-target'
 
 describe('resolveEditMenuTarget', () => {
-  const hostContents = {} as Electron.WebContents
+  const hostContents = {}
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: resolveEditMenuTarget reads only webContents, which this fake defines.
   const focusedWindow = { webContents: hostContents } as Electron.BrowserWindow
 
   beforeEach(() => {
@@ -19,7 +20,7 @@ describe('resolveEditMenuTarget', () => {
   })
 
   it('returns the inner contents when DevTools or a guest view holds focus', () => {
-    const devToolsContents = {} as Electron.WebContents
+    const devToolsContents = {}
     getFocusedWebContentsMock.mockReturnValue(devToolsContents)
 
     expect(resolveEditMenuTarget(focusedWindow)).toBe(devToolsContents)

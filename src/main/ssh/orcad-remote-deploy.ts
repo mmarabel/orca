@@ -14,6 +14,7 @@
  */
 import type { SshConnection } from './ssh-connection'
 import { execCommand } from './ssh-relay-deploy-helpers'
+import { shellEscape } from './ssh-connection-utils'
 import { ORCAD_INSTALL_MODEL } from './remote-install-model'
 import { acquireInstallLock } from './ssh-relay-install-lock'
 import { uploadRelayDirectory, writeRelayFile } from './ssh-relay-install-transfers'
@@ -32,10 +33,7 @@ import {
   type OrcadActivationRecord,
   type OrcadStateSnapshot
 } from './orcad-activation-record'
-import {
-  orcadActivationPath,
-  readOrcadActivationRecord
-} from './orcad-activation-record-store'
+import { orcadActivationPath, readOrcadActivationRecord } from './orcad-activation-record-store'
 import { evaluateOrcadActivation, type OrcadActivationVerdict } from './orcad-activation-gate'
 import { planOrcadUpdate, type OrcadTerminalCensus } from './orcad-update-plan'
 import {
@@ -111,9 +109,11 @@ async function installOrcadBundle(
   fullVersion: string,
   remoteDir: string
 ): Promise<void> {
-  if (await isRemoteInstallComplete(options.conn, ORCAD_INSTALL_MODEL, remoteDir, options.host, {
-    signal: options.signal
-  })) {
+  if (
+    await isRemoteInstallComplete(options.conn, ORCAD_INSTALL_MODEL, remoteDir, options.host, {
+      signal: options.signal
+    })
+  ) {
     return
   }
   await acquireInstallLock(options.conn, remoteDir, options.host, { signal: options.signal })
@@ -129,6 +129,12 @@ async function installOrcadBundle(
     await uploadRelayDirectory(options.conn, options.localOrcadDir, remoteDir, options.host, {
       signal: options.signal
     })
+    const { host } = options
+    if (host.os !== 'win32') {
+      // SFTP creates uploaded files with 0644 even when the source binary is executable.
+      const binaryPath = joinRemotePath(host, remoteDir, 'ripgrep', host.relayPlatform, 'rg')
+      await exec(options, `chmod 755 ${shellEscape(binaryPath)}`)
+    }
     await writeRelayFile(
       options.conn,
       options.host,
@@ -151,7 +157,12 @@ async function captureSnapshot(
   takenAt: Date
 ): Promise<OrcadStateSnapshot | null> {
   const dirName = orcadSnapshotDirName(fullVersion, takenAt.getTime())
-  const snapshotDir = joinRemotePath(options.host, baseDir(options), ORCAD_STATE_SNAPSHOT_DIR, dirName)
+  const snapshotDir = joinRemotePath(
+    options.host,
+    baseDir(options),
+    ORCAD_STATE_SNAPSHOT_DIR,
+    dirName
+  )
   const capture = parseOrcadSnapshotCapture(
     await exec(
       options,
@@ -287,9 +298,12 @@ export async function deployOrcad(options: OrcadDeployOptions): Promise<OrcadDep
       record.active
     )
     const stopped = parseOrcadStopOutcome(
-      await exec(options, stopOrcadCommand(options.host, outgoingDir, {
-        waitSeconds: STOP_WAIT_SECONDS
-      }))
+      await exec(
+        options,
+        stopOrcadCommand(options.host, outgoingDir, {
+          waitSeconds: STOP_WAIT_SECONDS
+        })
+      )
     )
     if (!orcadStopFreedTheHost(stopped)) {
       return {

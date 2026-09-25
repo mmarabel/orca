@@ -31,6 +31,7 @@ export function useWorktreeActivityStatus(worktreeId: string): WorktreeStatus {
     hasLiveDone,
     hasRetainedDone,
     agentStatusPaneIdsByTabId,
+    stalePaneIdsByTabId,
     hooksUnverifiable
   } = useAppStore(
     // Why: one pass — the observability check consumes the same summary, and
@@ -55,6 +56,7 @@ export function useWorktreeActivityStatus(worktreeId: string): WorktreeStatus {
         ptyIdsByTabId: ptyIdsForWorktree,
         runtimePaneTitlesByTabId: runtimePaneTitlesForWorktree,
         agentStatusPaneIdsByTabId,
+        stalePaneIdsByTabId,
         terminalLayoutRootsByTabId,
         hasPermission,
         hasLiveWorking,
@@ -70,6 +72,7 @@ export function useWorktreeActivityStatus(worktreeId: string): WorktreeStatus {
       ptyIdsForWorktree,
       runtimePaneTitlesForWorktree,
       agentStatusPaneIdsByTabId,
+      stalePaneIdsByTabId,
       terminalLayoutRootsByTabId,
       hasPermission,
       hasLiveWorking,

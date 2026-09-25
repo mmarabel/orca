@@ -1,7 +1,7 @@
 /** Picking worker terminals, sending a task's dispatch preamble, and warning about hung dispatches. */
 import type { OrchestrationDb } from './db'
 import type { TaskRow } from './types'
-import { buildDispatchPreamble } from './preamble'
+import { buildDispatchPreamble, dispatchPreambleSendOptions } from './preamble'
 import type { CoordinatorRuntime, WorktreeDrift } from './coordinator-runtime-contract'
 import {
   DISPATCH_STALE_THRESHOLD,
@@ -132,11 +132,15 @@ export async function dispatchTaskToWorker(params: {
   let gateContext = ''
   if (gates.length > 0) {
     const latest = gates.at(-1)!
-    gateContext = `\n\n--- DECISION GATE RESOLVED ---\nQuestion: ${latest.question}\nResolution: ${latest.resolution}\n---\n`
+    gateContext = `\n\n--- DECISION GATE RESOLVED ---\nQuestion: ${latest.question}\nResolution: ${latest.resolution}\n\n---\n`
   }
 
   try {
-    await runtime.sendTerminalAgentPrompt(targetHandle, preamble + gateContext)
+    await runtime.sendTerminalAgentPrompt(
+      targetHandle,
+      preamble + gateContext,
+      dispatchPreambleSendOptions(dispatch.id)
+    )
   } catch (err) {
     // Why (#16095): Enter is written before submission is verified, so a stall is only ever an
     // unobserved turn start — never proof the preamble is missing. Failing here would reset the

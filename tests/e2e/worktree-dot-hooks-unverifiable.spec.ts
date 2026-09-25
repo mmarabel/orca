@@ -17,7 +17,7 @@ type DotProbe = {
   emeraldDots: number
 }
 
-const UNVERIFIABLE_TITLE = 'Status unavailable — agent hooks are missing or unreadable'
+const UNVERIFIABLE_LABEL = 'Status unavailable — agent hooks are missing or unreadable'
 
 async function seedLiveClaudePane(
   page: Parameters<typeof waitForActiveWorktree>[0],
@@ -96,14 +96,17 @@ async function setClaudeHookState(
 }
 
 async function readDots(page: Parameters<typeof waitForActiveWorktree>[0]): Promise<DotProbe> {
-  return page.evaluate((title: string) => {
+  return page.evaluate((label: string) => {
     const sidebar = document.body
     return {
-      unverifiableDots: sidebar.querySelectorAll(`span[title="${title}"]`).length,
+      // The dot's label lives in a hover tooltip, so read the card's sr-only copy.
+      unverifiableDots: [...sidebar.querySelectorAll('.sr-only')].filter((node) =>
+        node.textContent?.includes(label)
+      ).length,
       dashedRings: sidebar.querySelectorAll('.lucide-circle-dashed').length,
       emeraldDots: sidebar.querySelectorAll('.bg-emerald-500').length
     }
-  }, UNVERIFIABLE_TITLE)
+  }, UNVERIFIABLE_LABEL)
 }
 
 test('surfaces an unverifiable dot when the managed Claude hooks are gone', async ({

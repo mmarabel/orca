@@ -36,19 +36,6 @@ export type HooksApi = {
 }
 
 export type AgentHooksApi = {
-  /** Every managed target in one read — the per-agent channels cannot answer a worktree dot. */
+  /** Every managed target in one read, so a worktree dot can tell missing hooks from idle. */
   installStatuses: () => Promise<AgentHookInstallStatus[]>
-  claudeStatus: () => Promise<AgentHookInstallStatus>
-  openClaudeStatus: () => Promise<AgentHookInstallStatus>
-  codexStatus: () => Promise<AgentHookInstallStatus>
-  geminiStatus: () => Promise<AgentHookInstallStatus>
-  antigravityStatus: () => Promise<AgentHookInstallStatus>
-  ampStatus: () => Promise<AgentHookInstallStatus>
-  cursorStatus: () => Promise<AgentHookInstallStatus>
-  droidStatus: () => Promise<AgentHookInstallStatus>
-  commandCodeStatus: () => Promise<AgentHookInstallStatus>
-  grokStatus: () => Promise<AgentHookInstallStatus>
-  copilotStatus: () => Promise<AgentHookInstallStatus>
-  hermesStatus: () => Promise<AgentHookInstallStatus>
-  devinStatus: () => Promise<AgentHookInstallStatus>
 }

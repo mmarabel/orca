@@ -1,6 +1,23 @@
+import type { ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import StatusIndicator from './StatusIndicator'
+
+vi.mock('@/components/StateIndicatorTooltip', async () => {
+  const { createElement } = await import('react')
+  return {
+    StateIndicatorTooltip: ({
+      label,
+      children
+    }: {
+      label: string | null
+      children: ReactElement
+    }) =>
+      label === null
+        ? children
+        : createElement('span', { 'data-state-indicator-tooltip': label }, children)
+  }
+})
 
 function render(status: Parameters<typeof StatusIndicator>[0]['status']): string {
   return renderToStaticMarkup(<StatusIndicator status={status} />)
@@ -26,9 +43,12 @@ describe('StatusIndicator unverifiable', () => {
   })
 
   it('explains itself on hover so the state is self-describing', () => {
-    expect(render('unverifiable')).toContain(
-      'title="Status unavailable — agent hooks are missing or unreadable"'
+    const markup = render('unverifiable')
+
+    expect(markup).toContain(
+      'data-state-indicator-tooltip="Status unavailable — agent hooks are missing or unreadable"'
     )
+    expect(markup).not.toContain(' title=')
   })
 
   it('stays visually distinct from every other status', () => {

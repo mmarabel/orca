@@ -46,6 +46,8 @@ type EventContext = KeyboardHandlersDeps & {
 
 export function createTerminalKeyboardEventHandlers(context: EventContext) {
   const {
+    tabId,
+    worktreeId,
     isMac,
     isWindows,
     shortcutPlatform,
@@ -61,6 +63,7 @@ export function createTerminalKeyboardEventHandlers(context: EventContext) {
     persistLayoutSnapshot,
     toggleExpandPane,
     setSearchOpen,
+    focusSearchInput,
     onSearchSelectedText,
     onRequestClosePane,
     onClearPaneScrollback,
@@ -176,6 +179,18 @@ export function createTerminalKeyboardEventHandlers(context: EventContext) {
     }
 
     if (isEditableTarget(e.target)) {
+      if (
+        searchOpenRef.current &&
+        e.target instanceof HTMLElement &&
+        e.target.closest('[data-terminal-search-root]') &&
+        resolveShortcutEvent(e)?.type === 'toggleSearch'
+      ) {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        if (!e.repeat) {
+          focusSearchInput()
+        }
+      }
       return
     }
 
@@ -263,6 +278,8 @@ export function createTerminalKeyboardEventHandlers(context: EventContext) {
     }
 
     dispatchTerminalShortcutAction(action, e, manager, {
+      tabId,
+      worktreeId,
       fallbackCwd,
       expandedPaneIdRef,
       setExpandedPane,
@@ -271,6 +288,8 @@ export function createTerminalKeyboardEventHandlers(context: EventContext) {
       persistLayoutSnapshot,
       toggleExpandPane,
       setSearchOpen,
+      focusSearchInput,
+      searchOpenRef,
       onRequestClosePane,
       onClearPaneScrollback,
       onSetTitle,

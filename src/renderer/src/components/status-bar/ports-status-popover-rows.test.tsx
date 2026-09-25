@@ -14,8 +14,11 @@ const {
   storeState,
   writeClipboardTextMock
 } = vi.hoisted(() => {
+  const settings: { openLinksInApp: boolean; openLinksInAppModifierInverts?: boolean } = {
+    openLinksInApp: true
+  }
   const state = {
-    settings: { openLinksInApp: true },
+    settings,
     activeWorktreeId: null,
     createBrowserTab: vi.fn(),
     setRemoteBrowserPageHandle: vi.fn(),
@@ -96,6 +99,8 @@ vi.mock('sonner', () => ({
 }))
 
 import { PortRow } from './ports-status-popover-rows'
+
+const STOCK_SETTINGS = storeState.settings
 
 const externalPort: WorkspacePort = {
   id: '127.0.0.1:63468:1234',
@@ -228,17 +233,25 @@ describe('status bar port row address attribution', () => {
   }
 
   beforeEach(() => {
+    Object.defineProperty(window.navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (X11; Linux x86_64)',
+      configurable: true
+    })
     ;(window as unknown as { api: unknown }).api = {
       shell: { openUrl: openUrlMock },
       ui: { writeClipboardText: writeClipboardTextMock }
     }
     writeClipboardTextMock.mockClear()
+    openUrlMock.mockClear()
+    openUrlMock.mockResolvedValue(undefined)
+    createBrowserTabMock.mockReset()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
   })
 
   afterEach(() => {
+    storeState.settings = STOCK_SETTINGS
     act(() => {
       root.unmount()
     })
@@ -259,6 +272,16 @@ describe('status bar port row address attribution', () => {
     return button
   }
 
+  function openButton(): HTMLButtonElement {
+    const button = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open in Browser"]'
+    )
+    if (!button) {
+      throw new Error('expected Open in Browser button')
+    }
+    return button
+  }
+
   it('shows and copies the reachable address for a remote wildcard-bound port', () => {
     renderRow(remoteWildcardPort)
     expect(container.textContent).toContain('100.64.1.20:5173')
@@ -275,6 +298,39 @@ describe('status bar port row address attribution', () => {
     // No address reaches a loopback listener from another machine, so the tooltip must
     // not advertise a modifier that would silently fall through to the in-app browser.
     expect(container.textContent).not.toContain('for system browser')
+  })
+
+  it('still reaches the system browser on a remote port when the modifier is inverted', async () => {
+    // Regression: "invert the modifier" means "the other destination", and on a remote
+    // port the other destination is never Orca — a plain click already lands there. The
+    // earlier build sent the modifier to Orca anyway, so this cohort could never reach
+    // the system browser while the tooltip advertised a gesture that did nothing.
+    storeState.settings = { openLinksInApp: false, openLinksInAppModifierInverts: true }
+    renderRow(remoteWildcardPort)
+    expect(container.textContent).toContain('Shift+Ctrl+click for system browser')
+
+    await act(async () => {
+      openButton().dispatchEvent(
+        new window.MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+          ctrlKey: true,
+          detail: 1,
+          shiftKey: true
+        })
+      )
+      await Promise.resolve()
+    })
+
+    expect(openUrlMock).toHaveBeenCalledWith('http://100.64.1.20:5173')
+    expect(createBrowserTabMock).not.toHaveBeenCalled()
+  })
+
+  it('drops the hint on an unreachable remote port even for an inverting user', () => {
+    storeState.settings = { openLinksInApp: false, openLinksInAppModifierInverts: true }
+    renderRow({ ...remoteWildcardPort, bindHost: '127.0.0.1', connectHost: '127.0.0.1' })
+    expect(container.textContent).not.toContain('for system browser')
+    expect(container.textContent).not.toContain('to open in Orca')
   })
 
   it('does not stamp a local row in the merged view with the remote host', () => {

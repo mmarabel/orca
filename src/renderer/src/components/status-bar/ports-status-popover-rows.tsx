@@ -84,9 +84,13 @@ export function PortRow({
   // necessarily the active workspace's. The hook resolves the owning host from the scan
   // key stamped at merge time and derives the address, the reachable URL and the stop /
   // open target from that one answer.
-  const { address, reachableUrl, runtimeTarget, systemBrowserAvailable } =
+  const { address, reachableUrl, remoteHost, runtimeTarget, systemBrowserAvailable } =
     usePortClientReachability(port)
-  const modifierDestination = resolvePortOpenModifierDestination(settings, systemBrowserAvailable)
+  const modifierDestination = resolvePortOpenModifierDestination({
+    settings,
+    remoteHost,
+    systemBrowserAvailable
+  })
   const createBrowserTab = useAppStore((s) => s.createBrowserTab)
   const setRemoteBrowserPageHandle = useAppStore((s) => s.setRemoteBrowserPageHandle)
   const replaceWorkspacePortScans = useAppStore((s) => s.replaceWorkspacePortScans)
@@ -105,6 +109,8 @@ export function PortRow({
       recordFeatureInteraction('ports')
       const routing = resolvePortOpenRouting({
         settings,
+        remoteHost,
+        systemBrowserAvailable,
         // Why: keyboard activations have detail=0; only pointer clicks carry
         // the modifier intent for the system-browser escape hatch.
         event: event.detail > 0 ? event : null,
@@ -139,9 +145,11 @@ export function PortRow({
       localhostLabelRoute,
       port,
       recordFeatureInteraction,
+      remoteHost,
       runtimeTarget,
       settings,
-      setRemoteBrowserPageHandle
+      setRemoteBrowserPageHandle,
+      systemBrowserAvailable
     ]
   )
 

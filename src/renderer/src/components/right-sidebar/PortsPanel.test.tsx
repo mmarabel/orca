@@ -31,9 +31,9 @@ import {
 } from '@/lib/workspace-port-actions'
 import {
   getPortOpenBrowserTooltipLabel,
-  getPortSystemBrowserHint,
   resolvePortOpenInOrcaBrowser
 } from '@/lib/workspace-port-open-routing'
+import { getTerminalUrlSystemBrowserHint } from '@/components/terminal-pane/terminal-link-open-hints'
 
 const workspacePort: WorkspacePort = {
   id: '127.0.0.1:63468:1234',
@@ -114,8 +114,8 @@ beforeEach(() => {
 
 describe('PortsPanel runtime routing', () => {
   it('formats platform-specific system-browser hints for port open tooltips', () => {
-    expect(getPortSystemBrowserHint(true)).toBe('⇧⌘+click for system browser')
-    expect(getPortSystemBrowserHint(false)).toBe('Shift+Ctrl+click for system browser')
+    expect(getTerminalUrlSystemBrowserHint(true)).toBe('⇧⌘+click for system browser')
+    expect(getTerminalUrlSystemBrowserHint(false)).toBe('Shift+Ctrl+click for system browser')
     expect(getPortOpenBrowserTooltipLabel('Open in Browser', { isMac: false })).toBe(
       'Open in Browser. Shift+Ctrl+click for system browser'
     )

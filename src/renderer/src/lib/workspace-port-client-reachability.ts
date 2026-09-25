@@ -53,12 +53,17 @@ export function resolveClientReachableUrlForPort(
   )
 }
 
-function reachableAddress(reachableUrl: string | null): string | null {
+// Why not URL.host: it omits a default port, so a listener on :80 or :443 would render as
+// a bare hostname while every other row renders `host:port`. The listener's own port is
+// the honest one to show — the reachable URL is built from it, and an advertised origin
+// only reaches this branch when its port already matches the listener.
+function reachableAddress(reachableUrl: string | null, port: WorkspacePort): string | null {
   if (!reachableUrl) {
     return null
   }
   try {
-    return new URL(reachableUrl).host || null
+    const hostname = new URL(reachableUrl).hostname
+    return hostname ? `${hostname}:${port.port}` : null
   } catch {
     return null
   }
@@ -67,6 +72,9 @@ function reachableAddress(reachableUrl: string | null): string | null {
 export type PortClientReachability = {
   /** Host that actually reported this listener — not necessarily the active workspace's. */
   runtimeTarget: RuntimeClientTarget | null
+  /** True when that host is a paired remote one, so a plain click has no direct URL and
+   *  always lands in Orca's embedded browser. Drives the modifier's meaning. */
+  remoteHost: boolean
   /** The `host:port` to display and copy, already falling back to the OS-derived one. */
   address: string
   /** URL this machine can open directly, or null when none can be named. */
@@ -102,11 +110,13 @@ function portClientReachability(
   state: ClientReachableUrlLookupState
 ): PortClientReachability {
   const reachableUrl = port ? resolveClientReachableUrlForPort(state, port, runtimeTarget) : null
+  const remoteHost = runtimeTarget?.kind === 'environment'
   return {
     runtimeTarget,
+    remoteHost,
     reachableUrl,
-    address: reachableAddress(reachableUrl) ?? (port ? addressForPort(port) : ''),
-    systemBrowserAvailable: runtimeTarget?.kind !== 'environment' || reachableUrl !== null
+    address: (port && reachableAddress(reachableUrl, port)) || (port ? addressForPort(port) : ''),
+    systemBrowserAvailable: !remoteHost || reachableUrl !== null
   }
 }
 

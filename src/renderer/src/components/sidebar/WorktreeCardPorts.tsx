@@ -112,9 +112,13 @@ function WorktreePortRow({ port }: { port: WorkspacePort }): React.JSX.Element {
   // Why: on a remote workspace the OS-derived address names *this* machine, where
   // nothing is listening. One hook resolves the owning host, the address to show and
   // copy, and whether the system browser has anywhere to go, so the three cannot drift.
-  const { address, reachableUrl, runtimeTarget, systemBrowserAvailable } =
+  const { address, reachableUrl, remoteHost, runtimeTarget, systemBrowserAvailable } =
     usePortClientReachability(port)
-  const modifierDestination = resolvePortOpenModifierDestination(settings, systemBrowserAvailable)
+  const modifierDestination = resolvePortOpenModifierDestination({
+    settings,
+    remoteHost,
+    systemBrowserAvailable
+  })
   const canStop = canStopWorkspacePort(port)
   const openBrowserLabel = translate(
     'auto.components.sidebar.WorktreeCardPorts.33bc7d7495',
@@ -127,6 +131,8 @@ function WorktreePortRow({ port }: { port: WorkspacePort }): React.JSX.Element {
       recordFeatureInteraction('ports')
       const routing = resolvePortOpenRouting({
         settings,
+        remoteHost,
+        systemBrowserAvailable,
         // Why: keyboard activations have detail=0; only pointer clicks carry
         // the modifier intent for the system-browser escape hatch.
         event: event.detail > 0 ? event : null,
@@ -159,9 +165,11 @@ function WorktreePortRow({ port }: { port: WorkspacePort }): React.JSX.Element {
       port,
       localhostLabelRoute,
       recordFeatureInteraction,
+      remoteHost,
       runtimeTarget,
       setRemoteBrowserPageHandle,
-      settings
+      settings,
+      systemBrowserAvailable
     ]
   )
 

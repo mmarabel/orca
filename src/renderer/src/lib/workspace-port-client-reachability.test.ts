@@ -158,7 +158,20 @@ describe('resolvePortClientReachability', () => {
     })
     expect(reachability.reachableUrl).toBe('http://100.64.1.20:5173')
     expect(reachability.address).toBe('100.64.1.20:5173')
+    expect(reachability.remoteHost).toBe(true)
     expect(reachability.systemBrowserAvailable).toBe(true)
+  })
+
+  it('keeps the port on a default-port listener, which URL.host would drop', () => {
+    // A row that reads a bare `100.64.1.20` next to rows that read `host:port` looks like
+    // a different kind of thing; the listener's own port is the honest one to show.
+    const reachability = resolvePortClientReachability(state, {
+      ...PORT,
+      hostScanKey: 'environment:env-1:all',
+      port: 80,
+      advertisedUrl: 'http://localhost'
+    })
+    expect(reachability.address).toBe('100.64.1.20:80')
   })
 
   it('keeps an IPv6 host bracketed so the row stays copy-pasteable', () => {

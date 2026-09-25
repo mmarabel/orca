@@ -144,8 +144,14 @@ export function LocalWorkspacePortsPanel({ isVisible }: { isVisible: boolean }):
 
   const handleOpenPortInBrowser = useCallback(
     async (port: WorkspacePort, event?: React.MouseEvent<HTMLButtonElement>) => {
+      // Why resolved per port rather than from the panel's target: this panel also lists
+      // other workspaces' and unassigned ports, which can belong to another host — and
+      // the modifier's meaning depends on where a plain click on *this* row lands.
+      const reachability = resolvePortClientReachability(useAppStore.getState(), port)
       const routing = resolvePortOpenRouting({
         settings,
+        remoteHost: reachability.remoteHost,
+        systemBrowserAvailable: reachability.systemBrowserAvailable,
         event,
         isMac: navigator.userAgent.includes('Mac')
       })
@@ -158,9 +164,7 @@ export function LocalWorkspacePortsPanel({ isVisible }: { isVisible: boolean }):
         openInOrcaBrowser: routing.openInOrcaBrowser,
         systemBrowserRequested: routing.systemBrowserRequested,
         localhostLabelRoute: resolveLocalhostLabelRouteForPort(useAppStore.getState(), port),
-        // Why resolved per port rather than from the panel's target: this panel also
-        // lists other workspaces' and unassigned ports, which can belong to another host.
-        clientReachableUrl: resolvePortClientReachability(useAppStore.getState(), port).reachableUrl
+        clientReachableUrl: reachability.reachableUrl
       })
       if (!result.ok) {
         toast.error(

@@ -39,9 +39,13 @@ export function LocalPortRow({
   // Why: on a remote workspace the OS-derived address is `localhost:<port>`, which names
   // *this* machine. Worse, a developer laptop often has its own server on that port, so
   // the old row could send a copied address to the wrong process silently.
-  const { address, systemBrowserAvailable } = usePortClientReachability(port)
+  const { address, remoteHost, systemBrowserAvailable } = usePortClientReachability(port)
   const settings = useAppStore((s) => s.settings)
-  const modifierDestination = resolvePortOpenModifierDestination(settings, systemBrowserAvailable)
+  const modifierDestination = resolvePortOpenModifierDestination({
+    settings,
+    remoteHost,
+    systemBrowserAvailable
+  })
 
   const handleCopy = useCallback(() => {
     void window.api.ui.writeClipboardText(address)

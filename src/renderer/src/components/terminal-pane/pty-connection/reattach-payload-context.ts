@@ -9,8 +9,12 @@ export type ReattachPayloadContext = {
   attemptGeneration: number
   prefetchedParkModelSnapshot: PtyBufferSnapshot | null
   revealFollowsTerminalPark: boolean
+  /** SSH reconnect remount that may paint from main's model under sshReconnectPaintsFromModel. */
+  reconnectMayUseModel: boolean
   fetchSshMainModelReattachSnapshot: () => Promise<PtyBufferSnapshot | null>
-  hasStructuralReplay: boolean
+  shouldApplyStructuralPayload: boolean
   coldRestoreStartup: ColdRestoreAgentResumeStartup | null | undefined
   reattachPayloadApplied: boolean
+  /** Capture width of an alt frame the replay omitted as too wide; null when the frame painted. */
+  skippedAltFrameCaptureCols: number | null
 }

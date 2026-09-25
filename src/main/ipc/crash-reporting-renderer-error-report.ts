@@ -11,6 +11,7 @@ import {
   UNRELIABLE_BOUNDARY_ATTRIBUTION_NOTE
 } from '../../shared/react-update-depth-attribution'
 import type { CrashReportStore } from '../crash-reporting/crash-report-store'
+import { rendererCrashBreadcrumbOrigin } from '../../shared/crash-breadcrumb-origin'
 import { getCrashBreadcrumbSnapshot } from '../crash-reporting/crash-breadcrumb-store'
 
 export const recentRendererErrorReportKeys = new Map<string, number>()
@@ -30,6 +31,7 @@ const REACT_ERROR_BOUNDARY_SURFACES = new Set<ReactErrorBoundaryReportArgs['surf
   'modal',
   'overlay',
   'rich-markdown-editor',
+  'code-editor',
   'dashboard-popout'
 ])
 
@@ -119,8 +121,12 @@ function pruneRendererErrorReportKeys(now: number): void {
   }
 }
 
-function getRendererErrorReportKey(args: ReactErrorBoundaryReportArgs): string {
+function getRendererErrorReportKey(
+  args: ReactErrorBoundaryReportArgs,
+  webContentsId?: number
+): string {
   return JSON.stringify({
+    webContentsId,
     boundaryId: args.boundaryId,
     surface: args.surface,
     errorName: args.errorName,
@@ -131,7 +137,8 @@ function getRendererErrorReportKey(args: ReactErrorBoundaryReportArgs): string {
 
 export async function recordRendererErrorReport(
   store: CrashReportStore,
-  args: unknown
+  args: unknown,
+  webContentsId?: number
 ): Promise<ReactErrorBoundaryReportResult> {
   const normalized = normalizeRendererErrorReportArgs(args)
   if (!normalized) {
@@ -140,7 +147,7 @@ export async function recordRendererErrorReport(
 
   const now = Date.now()
   pruneRendererErrorReportKeys(now)
-  const key = getRendererErrorReportKey(normalized)
+  const key = getRendererErrorReportKey(normalized, webContentsId)
   if (now - (recentRendererErrorReportKeys.get(key) ?? 0) < RENDERER_ERROR_DEDUPE_MS) {
     return { ok: true, report: null, deduped: true }
   }
@@ -186,7 +193,9 @@ export async function recordRendererErrorReport(
     },
     // Why: React render failures are recoverable only because a boundary
     // caught them; persist the same recent app breadcrumbs as native crashes.
-    breadcrumbs: getCrashBreadcrumbSnapshot()
+    breadcrumbs: getCrashBreadcrumbSnapshot(
+      webContentsId === undefined ? undefined : rendererCrashBreadcrumbOrigin(webContentsId)
+    )
   })
 
   return { ok: true, report, deduped: false }

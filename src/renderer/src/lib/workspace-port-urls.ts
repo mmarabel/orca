@@ -94,7 +94,11 @@ export function clientReachableBrowserUrlForPort(
     // Why: a DNS name in the advertised origin is the name the server answers to.
     // Substituting an IP there invalidates the certificate and misses any vhost or
     // reverse proxy keyed on the Host header — strictly worse whenever the name resolves.
-    if (customHostFromAdvertised(advertisedUrl)) {
+    // Except when the name is a loopback alias: `feature.localhost` and friends resolve to
+    // *this* machine, so passing one through would open whatever the laptop happens to run
+    // on that port instead of the remote server. Those fall through to substitution.
+    const advertisedHost = customHostFromAdvertised(advertisedUrl)
+    if (advertisedHost && classifyRemotePairingHostname(advertisedHost) !== 'loopback') {
       return advertisedUrl
     }
     try {

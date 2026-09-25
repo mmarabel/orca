@@ -93,6 +93,17 @@ describe('clientReachableBrowserUrlForPort', () => {
     ).toBe('https://local.example.com:3001')
   })
 
+  it('substitutes for a *.localhost advertised origin, which names the client, not the host', () => {
+    // `feature.localhost` resolves to this machine's own loopback, so passing it through
+    // would open whatever the laptop runs on 5173 while claiming to reach the remote.
+    expect(
+      clientReachableBrowserUrlForPort(
+        workspacePort({ advertisedUrl: 'http://feature.localhost:5173' }),
+        TAILNET_ENDPOINT
+      )
+    ).toBe('http://100.64.1.20:5173')
+  })
+
   it('refuses a path-bearing endpoint, whose hostname names a gateway and not the host', () => {
     // parseHostAccessLink allows a path, so a pairing routed through a reverse proxy at
     // wss://gw.example.com/orca/ws yields a hostname that says nothing about port 5173.

@@ -80,6 +80,8 @@ export class OrcaRuntimeWithSeedAdoptedPtyRestoreTitle extends OrcaRuntimeWithRe
       return
     }
     this.disposePtyTitleTracker(pty.ptyId)
+    // Why kept: a renderer pane republishes the title it showed on every graph sync.
+    pty.replacedRestoredTitle = restoredTitle.trim()
     pty.lastOscTitle = null
     pty.lastOscTitleAt = null
     pty.managementTitle = null

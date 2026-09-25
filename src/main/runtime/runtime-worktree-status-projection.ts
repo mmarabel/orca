@@ -115,13 +115,22 @@ export function ptyTitleProvesAgentPresence(
   )
 }
 
-/** The title is the PTY's OSC title from a restore snapshot, never observed live since.
- *  Why: only live observations stamp lastOscTitleEpochMs; a restored title can outlive its agent. */
+/** The title came from a restore snapshot, and no title has been observed live since.
+ *  Why: only live observations stamp lastOscTitleEpochMs; a restored title can outlive its agent.
+ *  Why the replaced title too: a pane keeps echoing it after its incarnation is gone. */
 export function ptyTitleIsRestored(
-  pty: { lastOscTitle: string | null; lastOscTitleEpochMs: number | null },
+  pty: {
+    lastOscTitle: string | null
+    lastOscTitleEpochMs: number | null
+    replacedRestoredTitle?: string
+  },
   title: string | null
 ): boolean {
-  return title !== null && title === pty.lastOscTitle?.trim() && pty.lastOscTitleEpochMs === null
+  return (
+    title !== null &&
+    pty.lastOscTitleEpochMs === null &&
+    (title === pty.lastOscTitle?.trim() || title === pty.replacedRestoredTitle)
+  )
 }
 
 export function classifyAgentTitle(title: string | null): 'agent' | 'management' | 'neutral' {

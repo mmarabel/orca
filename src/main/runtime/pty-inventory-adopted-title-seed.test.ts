@@ -584,6 +584,39 @@ describe('inventory-adopted daemon session title seed (#22809)', () => {
     expect(runtime.primaryLeaf()?.lastOscTitle).toBe(GEMINI_PERMISSION_TITLE)
   })
 
+  // A renderer pane echoes the restored title as its own pane title and republishes it on sync.
+  it('keeps checking a restored title a pane echoes after its incarnation is gone', async () => {
+    let rows = [processRow()]
+    let foreground = 'claude'
+    const answers: Snapshot[] = [providerSnapshot(), null]
+    const { runtime } = createHeadlessRuntime({
+      serializeProviderBuffer: async () => answers.shift() ?? null,
+      listProcesses: async () => rows,
+      getForegroundProcess: async () => foreground
+    })
+    await runtime.listTerminals()
+    await vi.waitFor(() => expect(runtime.record()?.lastOscTitle).toBe(CLAUDE_IDLE_TITLE))
+    runtime.syncWindowGraph(1, {
+      ...PANE_GRAPH,
+      leaves: [{ ...PANE_GRAPH.leaves[0], paneTitle: CLAUDE_IDLE_TITLE }]
+    })
+
+    // The successor is a bare shell that sets no title of its own.
+    rows = [processRow({ incarnationId: REPLACEMENT })]
+    foreground = 'bash'
+    await runtime.listTerminals()
+    await flushAsyncWork()
+    expect(runtime.record()?.lastOscTitle).toBeNull()
+
+    const { handle } = await onlyTerminal(runtime)
+    await expect(runtime.getTerminalAgentStatus(handle)).resolves.toEqual({
+      handle,
+      isRunningAgent: false,
+      status: null
+    })
+    await expect(runtime.isTerminalRunningAgent(handle)).resolves.toBe(false)
+  })
+
   it('keeps a title observed live when the inventory reports a new incarnation', async () => {
     let rows = [processRow()]
     const { runtime, serializeProviderBuffer } = createHeadlessRuntime({

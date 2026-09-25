@@ -1,4 +1,4 @@
-import type { LinearProjectSummary } from '../../../shared/types'
+import type { LinearProjectSummary } from '../../../shared/linear/project-types'
 
 import { translate } from '@/i18n/i18n'
 import { cn } from '@/lib/utils'

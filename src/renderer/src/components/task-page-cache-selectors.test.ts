@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { shallow } from 'zustand/shallow'
 
-import { workItemsCacheKey, type CacheEntry } from '@/store/slices/github'
+import { workItemsCacheKey } from '@/store/github/cache-identity'
+import type { CacheEntry } from '@/store/github/cache-model'
 import type { GitHubWorkItem } from '../../../shared/github/work-item-types'
 import type { LinearIssue } from '../../../shared/linear/issue-types'
 import type { LinearCollectionResult } from '../../../shared/linear/workspace-types'
@@ -356,7 +357,7 @@ describe('task page cache selectors', () => {
   })
 
   it('merges Linear landing refresh project-only changes', () => {
-    const current = {
+    const current: LinearIssue = {
       ...linearIssue('LIN-1'),
       identifier: 'ENG-1',
       url: 'https://linear.test/ENG-1',
@@ -367,7 +368,7 @@ describe('task page cache selectors', () => {
       priority: 2,
       updatedAt: '2026-01-01',
       project: { id: 'project-1', name: 'Orca', color: '#5e6ad2' }
-    } as LinearIssue
+    }
     const refreshed = {
       ...current,
       project: { id: 'project-1', name: 'Orca Desktop', color: '#26b5ce' }
@@ -379,11 +380,11 @@ describe('task page cache selectors', () => {
   })
 
   it('prefers a fresher context issue over a stale general-cache issue', () => {
-    const cached = {
+    const cached: LinearIssue = {
       ...linearIssue('LIN-1'),
       updatedAt: '2026-01-01T00:00:00.000Z',
       project: { id: 'project-1', name: 'Orca', color: '#5e6ad2' }
-    } as LinearIssue
+    }
     const current = {
       ...cached,
       updatedAt: '2026-01-02T00:00:00.000Z',
@@ -396,11 +397,11 @@ describe('task page cache selectors', () => {
   })
 
   it('prefers a parseable current issue over a cached issue with an unparseable updatedAt', () => {
-    const cached = {
+    const cached: LinearIssue = {
       ...linearIssue('LIN-1'),
       updatedAt: 'not-a-date',
       project: { id: 'project-1', name: 'Orca', color: '#5e6ad2' }
-    } as LinearIssue
+    }
     const current = {
       ...cached,
       updatedAt: '2026-01-02T00:00:00.000Z',

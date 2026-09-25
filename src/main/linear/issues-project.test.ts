@@ -4,15 +4,22 @@ import type { LinearClientForWorkspace } from './client'
 const rawRequest = vi.fn()
 const getClients = vi.fn()
 
-vi.mock('./client', () => ({
+vi.mock('./linear-request-concurrency', () => ({
   acquire: vi.fn().mockResolvedValue(undefined),
-  release: vi.fn(),
-  getClients: (...args: unknown[]) => getClients(...args),
-  isAuthError: vi.fn().mockReturnValue(false),
+  release: vi.fn()
+}))
+
+vi.mock('./linear-token-store', () => ({
   clearToken: vi.fn()
 }))
 
+vi.mock('./client', () => ({
+  getClients: (...args: unknown[]) => getClients(...args),
+  isAuthError: vi.fn().mockReturnValue(false)
+}))
+
 function makeEntry(): LinearClientForWorkspace {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: issue reads only use workspace fields and client.client.rawRequest.
   return {
     workspace: {
       id: 'workspace-1',
@@ -61,7 +68,7 @@ describe('Linear issue collection projects', () => {
         }
       }
     })
-    const { listIssues } = await import('./issues')
+    const { listIssues } = await import('./linear-issue-listing')
 
     await expect(listIssues('all', 10, 'workspace-1')).resolves.toMatchObject({
       items: [
@@ -81,7 +88,7 @@ describe('Linear issue collection projects', () => {
         }
       }
     })
-    const { searchIssues } = await import('./issues')
+    const { searchIssues } = await import('./linear-issue-lookups')
 
     await expect(searchIssues('Orca', 10, 'workspace-1')).resolves.toMatchObject([
       { project: { id: 'project-1', name: 'Orca', color: undefined } }

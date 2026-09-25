@@ -154,15 +154,20 @@
       }
     },
     {
-      "files": ["src/renderer/src/lib/browser-uuid.ts"],
+      "files": ["src/shared/**/*.ts"],
       "rules": {
-        "no-restricted-properties": "off"
+        "no-restricted-properties": [
+          "error",
+          {
+            "property": "randomUUID",
+            "message": "src/shared is compiled into the web bundle, where crypto.randomUUID is missing in non-secure contexts (Remote Web over plain HTTP). Use createNonSecureContextUuid() from './non-secure-context-uuid', or import randomUUID from 'node:crypto' in main-only code."
+          }
+        ]
       }
     },
     {
       "files": ["**/*.test.*", "**/*.spec.*", "**/*-benchmark.*"],
       "rules": {
-        "no-restricted-properties": "off",
         "react/globals": "off",
         "quadratic-buffer-concat/no-loop-carried-concat": "off",
         "renderer-scrollbar-style/require-styled-vertical-scrollbar": "off"

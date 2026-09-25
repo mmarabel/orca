@@ -295,4 +295,30 @@ describe('moveWebRuntimeSessionTab', () => {
     expect(isWebSessionTerminalPlacementUserMoved(placement)).toBe(true)
     expect(peekWebSessionTerminalPlacementGroup(placement)).toBeUndefined()
   })
+
+  it('keeps the user-placed mark when the host rejects the move', async () => {
+    const placement = {
+      environmentId: ENVIRONMENT_ID,
+      worktreeId: WORKTREE_ID,
+      hostTabId: 'host-tab-2'
+    }
+    recordWebSessionTerminalPlacement({ ...placement, groupId: 'group-left' })
+    const runtimeCall = vi.fn().mockRejectedValueOnce(new Error('host unavailable'))
+    vi.stubGlobal('window', { api: { runtimeEnvironments: { call: runtimeCall } } })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await expect(
+      moveWebRuntimeSessionTab({
+        worktreeId: WORKTREE_ID,
+        tabId: 'web-terminal-host-tab-2',
+        targetGroupId: 'group-left',
+        kind: 'split',
+        splitDirection: 'right'
+      })
+    ).resolves.toBe(false)
+
+    // The local split already happened, so the create must still not pull the tab back.
+    expect(isWebSessionTerminalPlacementUserMoved(placement)).toBe(true)
+    warn.mockRestore()
+  })
 })

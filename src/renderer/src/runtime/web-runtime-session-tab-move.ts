@@ -49,6 +49,7 @@ export async function moveWebRuntimeSessionTab(
   }
   if (isWebTerminalSurfaceTabId(args.tabId)) {
     // Why: synchronous, so a create still settling this tab cannot move it back to its requested pane.
+    // Kept even if the host rejects the move: the local move already happened and the client owns placement.
     markWebSessionTerminalPlacementUserMoved({
       environmentId,
       worktreeId: args.worktreeId,

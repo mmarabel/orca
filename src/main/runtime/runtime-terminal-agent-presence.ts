@@ -4,6 +4,7 @@ import {
   recognizeAgentProcess
 } from '../../shared/agent-process-recognition'
 import { isOpenCodeNativeTitle } from '../../shared/agent-detection'
+import { ptyForegroundIsShell } from './pty-shell-foreground-evidence'
 import { isKnownReadyPromptPreview } from './terminal-wait-detection'
 import { buildTerminalWaitText } from './terminal-wait-tail-state'
 import type { RuntimeLeafRecord, RuntimePtyWorktreeRecord } from './runtime-terminal-state-records'
@@ -13,6 +14,7 @@ import {
   classifyLatestAgentTitle,
   getLatestAgentCandidateTitle,
   getLatestLeafTitle,
+  ptyTitleIsRestored,
   ptyTitleProvesAgentPresence
 } from './runtime-worktree-status-projection'
 
@@ -28,6 +30,7 @@ type RuntimeTerminalAgentPresenceDependencies = {
   getTrackedPty(ptyId: string): RuntimePtyWorktreeRecord | null
   getTabTitle(tabId: string): string | null
   getForegroundProcess(ptyId: string): Promise<string | null> | null
+  confirmForegroundProcess?(ptyId: string): Promise<string | null> | null
 }
 
 export type RuntimeTerminalAgentPresenceOptions = {
@@ -127,7 +130,11 @@ export class RuntimeTerminalAgentPresence {
     )
     const ptyClassification = classifyAgentTitle(ptyTitle)
     if (leafTitle === null && ptyTitleProvesAgentPresence(pty, ptyTitle, ptyClassification)) {
-      return true
+      // Why: a restored title can outlive its agent, so a shell now in the foreground wins.
+      return (
+        !ptyTitleIsRestored(pty, ptyTitle) ||
+        !(await this.hasShellForegroundProcess(pty.ptyId, options))
+      )
     }
     const managementClassification = classifyLatestAgentTitle({
       title: pty.managementTitle,
@@ -166,6 +173,20 @@ export class RuntimeTerminalAgentPresence {
       suppressClaude,
       options.retryForegroundWrappers !== false
     )
+  }
+
+  private hasShellForegroundProcess(
+    ptyId: string,
+    options: RuntimeTerminalAgentPresenceOptions
+  ): Promise<boolean> {
+    return ptyForegroundIsShell({
+      readForegroundProcess: () => this.readForegroundProcess(ptyId, options),
+      // Why: a foreground the caller already confirmed needs no second confirmation.
+      confirmForegroundProcess: () =>
+        options.foregroundProcess !== undefined
+          ? null
+          : (this.deps.confirmForegroundProcess?.(ptyId) ?? null)
+    })
   }
 
   private async readForegroundProcess(

@@ -115,6 +115,15 @@ export function ptyTitleProvesAgentPresence(
   )
 }
 
+/** The title is the PTY's OSC title from a restore snapshot, never observed live since.
+ *  Why: only live observations stamp lastOscTitleEpochMs; a restored title can outlive its agent. */
+export function ptyTitleIsRestored(
+  pty: { lastOscTitle: string | null; lastOscTitleEpochMs: number | null },
+  title: string | null
+): boolean {
+  return title !== null && title === pty.lastOscTitle?.trim() && pty.lastOscTitleEpochMs === null
+}
+
 export function classifyAgentTitle(title: string | null): 'agent' | 'management' | 'neutral' {
   if (!title) {
     return 'neutral'

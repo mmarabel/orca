@@ -2,16 +2,16 @@ import {
   detectAgentStatusFromTitle,
   isOpenCodeNativeTitle,
   isQuarterCircleSpinnerOnlyAgentTitle,
-  isShellProcess,
   type AgentStatus
 } from '../../shared/agent-detection'
-import { recognizeAgentProcess } from '../../shared/agent-process-recognition'
+import { ptyForegroundIsShell } from './pty-shell-foreground-evidence'
 import type { RuntimeTerminalAgentStatus } from '../../shared/runtime-types'
 import type { RuntimePtyController } from './runtime-pty-controller-contract'
 import type { RuntimeLeafRecord, RuntimePtyWorktreeRecord } from './runtime-terminal-state-records'
 import {
   terminalTitleBlocksExplicitAgentStatus,
-  getLatestAgentCandidateTitleInfo
+  getLatestAgentCandidateTitleInfo,
+  ptyTitleIsRestored
 } from './runtime-worktree-status-projection'
 import { detectTerminalWaitBlockedReason } from './terminal-wait-detection'
 import { getTerminalState } from './terminal-wait-results'
@@ -23,6 +23,7 @@ export type RuntimeTerminalAgentStatusSnapshot = {
   title: string | null
   titleStatus: AgentStatus | null
   titleStatusIsLive: boolean
+  titleIsRestored: boolean
 }
 
 type Dependencies = {
@@ -82,7 +83,12 @@ export class RuntimeTerminalAgentStatusQuery {
       explicitStatus && explicitStatus.status !== 'permission' ? explicitStatus.updatedAt : -1,
       lifecycle?.status && lifecycle.status !== 'permission' ? lifecycle.updatedAt : -1
     )
-    if (terminal.titleStatus === 'permission' && terminal.titleStatusIsLive) {
+    // Why: a restored title can outlive its agent, so it proves permission only once verified below.
+    if (
+      terminal.titleStatus === 'permission' &&
+      terminal.titleStatusIsLive &&
+      !terminal.titleIsRestored
+    ) {
       return { handle, isRunningAgent: true, status: 'permission' }
     }
     if (
@@ -108,10 +114,12 @@ export class RuntimeTerminalAgentStatusQuery {
     }
     if (terminal.titleStatus) {
       // Why: an OpenCode marker and a lone quarter-circle spinner (STA-4028) are activity,
-      // not identity, so resolve both through the identity/foreground evidence path.
+      // not identity, and a restored title can outlive its agent, so resolve all three
+      // through the identity/foreground evidence path.
       if (
         isOpenCodeNativeTitle(terminal.title) ||
-        isQuarterCircleSpinnerOnlyAgentTitle(terminal.title)
+        isQuarterCircleSpinnerOnlyAgentTitle(terminal.title) ||
+        terminal.titleIsRestored
       ) {
         const isRunningAgent = await this.deps.isRunning(handle)
         this.assertTerminalAgentStatusPtyBinding(handle, ptyId)
@@ -156,16 +164,7 @@ export class RuntimeTerminalAgentStatusQuery {
     throw new Error('terminal_handle_stale')
   }
 
-  getSnapshot(
-    handle: string,
-    expectedPtyId: string
-  ): {
-    waitText: string
-    waitBlockedAt: number | null
-    title: string | null
-    titleStatus: AgentStatus | null
-    titleStatusIsLive: boolean
-  } {
+  getSnapshot(handle: string, expectedPtyId: string): RuntimeTerminalAgentStatusSnapshot {
     const pty = this.deps.getLivePty(handle)
     if (pty) {
       if (!pty.pty.connected || pty.pty.ptyId !== expectedPtyId) {
@@ -196,7 +195,8 @@ export class RuntimeTerminalAgentStatusQuery {
         titleStatus: ptyTitle
           ? detectAgentStatusFromTitle(ptyTitle.title)
           : pty.pty.lastAgentStatus,
-        titleStatusIsLive: ptyTitle !== null
+        titleStatusIsLive: ptyTitle !== null,
+        titleIsRestored: leafTitle === null && ptyTitleIsRestored(pty.pty, ptyTitle?.title ?? null)
       }
     }
 
@@ -220,7 +220,8 @@ export class RuntimeTerminalAgentStatusQuery {
       waitBlockedAt: leaf.waitBlockedAt,
       title: title?.title ?? null,
       titleStatus: title ? detectAgentStatusFromTitle(title.title) : leaf.lastAgentStatus,
-      titleStatusIsLive: (title?.updatedAt ?? 0) > 0
+      titleStatusIsLive: (title?.updatedAt ?? 0) > 0,
+      titleIsRestored: false
     }
   }
 
@@ -229,31 +230,11 @@ export class RuntimeTerminalAgentStatusQuery {
     if (!controller) {
       return false
     }
-    let foregroundProcess: string | null
-    try {
-      foregroundProcess = await controller.getForegroundProcess(ptyId)
-    } catch {
-      this.assertTerminalAgentStatusPtyBinding(handle, ptyId)
-      return false
-    }
-    this.assertTerminalAgentStatusPtyBinding(handle, ptyId)
-    if (!foregroundProcess || !isShellProcess(foregroundProcess)) {
-      return false
-    }
-    const confirmationController = this.deps.getController()
-    if (!confirmationController?.confirmForegroundProcess) {
-      return true
-    }
-    let confirmedProcess: string | null
-    try {
-      confirmedProcess = await confirmationController.confirmForegroundProcess(ptyId)
-    } catch {
-      this.assertTerminalAgentStatusPtyBinding(handle, ptyId)
-      return true
-    }
-    this.assertTerminalAgentStatusPtyBinding(handle, ptyId)
-    // Why: hook identity is generic; strong provider evidence only needs to
-    // prove that some recognized agent still owns this exact PTY.
-    return recognizeAgentProcess(confirmedProcess) === null
+    return ptyForegroundIsShell({
+      readForegroundProcess: () => controller.getForegroundProcess(ptyId),
+      confirmForegroundProcess: () =>
+        this.deps.getController()?.confirmForegroundProcess?.(ptyId) ?? null,
+      afterRead: () => this.assertTerminalAgentStatusPtyBinding(handle, ptyId)
+    })
   }
 }

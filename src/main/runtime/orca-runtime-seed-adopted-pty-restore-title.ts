@@ -80,8 +80,12 @@ export class OrcaRuntimeWithSeedAdoptedPtyRestoreTitle extends OrcaRuntimeWithRe
       return
     }
     this.disposePtyTitleTracker(pty.ptyId)
-    // Why kept: a renderer pane republishes the title it showed on every graph sync.
-    pty.replacedRestoredTitle = restoredTitle.trim()
+    // Why kept, every one: a renderer pane republishes the title it showed on every graph sync,
+    // and repeated respawns with no live title between them leave older echoes standing.
+    const replaced = restoredTitle.trim()
+    if (!pty.replacedRestoredTitles?.includes(replaced)) {
+      pty.replacedRestoredTitles = [...(pty.replacedRestoredTitles ?? []), replaced]
+    }
     pty.lastOscTitle = null
     pty.lastOscTitleAt = null
     pty.managementTitle = null

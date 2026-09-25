@@ -117,19 +117,19 @@ export function ptyTitleProvesAgentPresence(
 
 /** The title came from a restore snapshot, and no title has been observed live since.
  *  Why: only live observations stamp lastOscTitleEpochMs; a restored title can outlive its agent.
- *  Why the replaced title too: a pane keeps echoing it after its incarnation is gone. */
+ *  Why replaced titles too: a pane keeps echoing one after its incarnation is gone. */
 export function ptyTitleIsRestored(
   pty: {
     lastOscTitle: string | null
     lastOscTitleEpochMs: number | null
-    replacedRestoredTitle?: string
+    replacedRestoredTitles?: string[]
   },
   title: string | null
 ): boolean {
   return (
     title !== null &&
     pty.lastOscTitleEpochMs === null &&
-    (title === pty.lastOscTitle?.trim() || title === pty.replacedRestoredTitle)
+    (title === pty.lastOscTitle?.trim() || pty.replacedRestoredTitles?.includes(title) === true)
   )
 }
 

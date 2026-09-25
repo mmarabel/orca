@@ -585,37 +585,46 @@ describe('inventory-adopted daemon session title seed (#22809)', () => {
   })
 
   // A renderer pane echoes the restored title as its own pane title and republishes it on sync.
-  it('keeps checking a restored title a pane echoes after its incarnation is gone', async () => {
-    let rows = [processRow()]
-    let foreground = 'claude'
-    const answers: Snapshot[] = [providerSnapshot(), null]
-    const { runtime } = createHeadlessRuntime({
-      serializeProviderBuffer: async () => answers.shift() ?? null,
-      listProcesses: async () => rows,
-      getForegroundProcess: async () => foreground
-    })
-    await runtime.listTerminals()
-    await vi.waitFor(() => expect(runtime.record()?.lastOscTitle).toBe(CLAUDE_IDLE_TITLE))
-    runtime.syncWindowGraph(1, {
-      ...PANE_GRAPH,
-      leaves: [{ ...PANE_GRAPH.leaves[0], paneTitle: CLAUDE_IDLE_TITLE }]
-    })
+  // The second case restores a title for the first successor, then replaces it too.
+  it.each([
+    ['one respawn', [null]],
+    ['two respawns', [providerSnapshot({ lastTitle: GEMINI_PERMISSION_TITLE }), null]]
+  ] as const)(
+    'keeps checking a restored title a pane echoes after %s the runtime missed',
+    async (_label, successorAnswers) => {
+      let rows = [processRow()]
+      let foreground = 'claude'
+      const answers: Snapshot[] = [providerSnapshot(), ...successorAnswers]
+      const { runtime } = createHeadlessRuntime({
+        serializeProviderBuffer: async () => answers.shift() ?? null,
+        listProcesses: async () => rows,
+        getForegroundProcess: async () => foreground
+      })
+      await runtime.listTerminals()
+      await vi.waitFor(() => expect(runtime.record()?.lastOscTitle).toBe(CLAUDE_IDLE_TITLE))
+      runtime.syncWindowGraph(1, {
+        ...PANE_GRAPH,
+        leaves: [{ ...PANE_GRAPH.leaves[0], paneTitle: CLAUDE_IDLE_TITLE }]
+      })
 
-    // The successor is a bare shell that sets no title of its own.
-    rows = [processRow({ incarnationId: REPLACEMENT })]
-    foreground = 'bash'
-    await runtime.listTerminals()
-    await flushAsyncWork()
-    expect(runtime.record()?.lastOscTitle).toBeNull()
+      // Each successor is replaced in turn; the last is a bare shell that sets no title.
+      foreground = 'bash'
+      for (const [index, answer] of successorAnswers.entries()) {
+        rows = [processRow({ incarnationId: `40000000-0000-4000-8000-00000000010${index}` })]
+        await runtime.listTerminals()
+        await flushAsyncWork()
+        expect(runtime.record()?.lastOscTitle).toBe(answer?.lastTitle ?? null)
+      }
 
-    const { handle } = await onlyTerminal(runtime)
-    await expect(runtime.getTerminalAgentStatus(handle)).resolves.toEqual({
-      handle,
-      isRunningAgent: false,
-      status: null
-    })
-    await expect(runtime.isTerminalRunningAgent(handle)).resolves.toBe(false)
-  })
+      const { handle } = await onlyTerminal(runtime)
+      await expect(runtime.getTerminalAgentStatus(handle)).resolves.toEqual({
+        handle,
+        isRunningAgent: false,
+        status: null
+      })
+      await expect(runtime.isTerminalRunningAgent(handle)).resolves.toBe(false)
+    }
+  )
 
   it('keeps a title observed live when the inventory reports a new incarnation', async () => {
     let rows = [processRow()]

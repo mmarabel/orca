@@ -120,18 +120,22 @@ describe('launchAiVaultSessionInNewTab on a paired-runtime worktree', () => {
 
   it('keeps the split when the user dropped another tab into it while the launch was pending', async () => {
     const { store, sourceGroupId } = seedRuntimeWorktreeWithTerminal()
-    runtimeMocks.createWebRuntimeSessionTerminal.mockImplementation(
-      async (args: CreateWebRuntimeSessionTerminalArgs) => {
-        store.getState().createTab(WT, args.targetGroupId)
-        return { status: 'failed', message: 'offline' }
-      }
+    let failLaunch!: () => void
+    runtimeMocks.createWebRuntimeSessionTerminal.mockReturnValue(
+      new Promise((resolve) => {
+        failLaunch = () => resolve({ status: 'failed', message: 'offline' })
+      })
     )
 
     const result = await dropSessionOnRightEdge(sourceGroupId)
+    const splitGroupId = store.getState().activeGroupIdByWorktree[WT]
+    store.getState().createTab(WT, splitGroupId)
+    failLaunch()
     if (result.tabId === null) {
       await result.runtimeLaunch
     }
 
-    expect(store.getState().groupsByWorktree[WT]).toHaveLength(2)
+    const split = store.getState().groupsByWorktree[WT].find((group) => group.id === splitGroupId)
+    expect(split?.tabOrder).toHaveLength(1)
   })
 })

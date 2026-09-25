@@ -1,4 +1,10 @@
 import { readFetchResponseJsonWithinLimit } from '../../shared/fetch-response-body'
+import {
+  MAX_FEEDBACK_IMAGE_BYTES,
+  MAX_FEEDBACK_IMAGE_COUNT,
+  MAX_FEEDBACK_IMAGE_TOTAL_BYTES
+} from '../../shared/feedback-image-limits'
+import type { FeedbackImageAttachment } from '../../shared/feedback-submit-contract'
 
 // Why: mirrors the server allow-list. Slack picks a renderer from the filename
 // extension, so every accepted type needs one.
@@ -9,18 +15,15 @@ const FEEDBACK_IMAGE_EXTENSIONS: Record<string, string> = {
   'image/gif': 'gif'
 }
 
-export const MAX_FEEDBACK_IMAGE_COUNT = 4
-// Why: the endpoint's host rejects bodies over ~4.5 MB with 413; 4 MiB leaves
-// ~300 KB for multipart framing and the text, matching MAX_BUNDLE_BYTES.
-export const MAX_FEEDBACK_IMAGE_TOTAL_BYTES = 4 * 1024 * 1024
-export const MAX_FEEDBACK_IMAGE_BYTES = MAX_FEEDBACK_IMAGE_TOTAL_BYTES
+export {
+  MAX_FEEDBACK_IMAGE_BYTES,
+  MAX_FEEDBACK_IMAGE_COUNT,
+  MAX_FEEDBACK_IMAGE_TOTAL_BYTES
+} from '../../shared/feedback-image-limits'
+export type { FeedbackImageAttachment } from '../../shared/feedback-submit-contract'
+
 export const MAX_FEEDBACK_IMAGE_RESPONSE_BYTES = 64 * 1024
 export const FEEDBACK_IMAGE_FORM_FIELD = 'feedbackImage'
-
-export type FeedbackImageAttachment = {
-  contentType: string
-  data: Uint8Array
-}
 
 export function isSupportedFeedbackImageContentType(contentType: string): boolean {
   // Why: `in` walks the prototype chain, so "constructor" and "__proto__" would

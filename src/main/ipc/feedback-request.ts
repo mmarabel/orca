@@ -1,8 +1,9 @@
 import { net } from 'electron'
-import {
-  appendFeedbackImagesToFormData,
-  type FeedbackImageAttachment
-} from './feedback-image-attachments'
+import { appendFeedbackImagesToFormData } from './feedback-image-attachments'
+import type {
+  FeedbackImageAttachment,
+  FeedbackRequestFailure
+} from '../../shared/feedback-submit-contract'
 
 // Why: the production Mac build loads the renderer from a file:// origin, so a
 // cross-origin POST from fetch() triggers a CORS preflight that the feedback
@@ -35,10 +36,7 @@ export type FeedbackSubmitBody = {
   images?: FeedbackImageAttachment[]
 }
 
-export type FeedbackRequestFailure = {
-  status: number | null
-  error: string
-}
+export type { FeedbackRequestFailure } from '../../shared/feedback-submit-contract'
 
 export async function postFeedback(
   url: string,

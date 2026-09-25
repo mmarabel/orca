@@ -12,16 +12,22 @@ import {
   postFeedback,
   responseFailure,
   type FeedbackDiagnosticBundleAttachment,
-  type FeedbackRequestFailure,
   type FeedbackSubmissionType,
   type FeedbackSubmitBody
 } from './feedback-request'
+import type {
+  FeedbackRequestFailure,
+  FeedbackSubmitArgs,
+  FeedbackSubmitResult
+} from '../../shared/feedback-submit-contract'
 
 export type {
   FeedbackDiagnosticBundleAttachment,
   FeedbackImageAttachment,
   FeedbackRequestFailure,
-  FeedbackSubmissionType
+  FeedbackSubmissionType,
+  FeedbackSubmitArgs,
+  FeedbackSubmitResult
 }
 
 const FEEDBACK_ATTACHMENT_REQUEST_TIMEOUT_MS = 60_000
@@ -29,27 +35,6 @@ const FEEDBACK_ATTACHMENT_REQUEST_TIMEOUT_MS = 60_000
 // near 4.5 MB (413) while allowing the small JSON report, so content-shaped
 // failures should shed the attachment.
 const ATTACHMENT_JSON_RETRY_STATUSES = new Set([400, 403, 408, 413, 415, 422])
-
-export type FeedbackSubmitArgs = {
-  feedback: string
-  submitAnonymously?: boolean
-  githubLogin: string | null
-  githubEmail: string | null
-  images?: FeedbackImageAttachment[]
-}
-
-export type FeedbackSubmitResult =
-  | {
-      ok: true
-      diagnosticBundleFailure?: FeedbackRequestFailure
-      /** Absent when nothing was attached; false when the text landed but the images did not. */
-      imagesDelivered?: boolean
-      /** Set when the host rejected the images and the text was resent without them. */
-      imagesFailure?: FeedbackRequestFailure
-    }
-  | ({ ok: false } & FeedbackRequestFailure & {
-        diagnosticBundleFailure?: FeedbackRequestFailure
-      })
 
 type InternalFeedbackSubmitArgs = FeedbackSubmitArgs & {
   submissionType?: FeedbackSubmissionType

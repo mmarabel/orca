@@ -5,12 +5,18 @@ import {
   RASTER_IMAGE_PREVIEW_TOO_LARGE_ERROR,
   assertRasterImagePreviewWithinLimits
 } from '../../../shared/raster-image-preview-limits'
+import {
+  MAX_FEEDBACK_IMAGE_BYTES,
+  MAX_FEEDBACK_IMAGE_COUNT,
+  MAX_FEEDBACK_IMAGE_TOTAL_BYTES
+} from '../../../shared/feedback-image-limits'
 
-export const MAX_FEEDBACK_IMAGE_COUNT = 4
-// Why: mirrors the main-process caps, which keep uploads under the endpoint's
-// ~4.5 MB request body limit.
-export const MAX_FEEDBACK_IMAGE_TOTAL_BYTES = 4 * 1024 * 1024
-export const MAX_FEEDBACK_IMAGE_BYTES = MAX_FEEDBACK_IMAGE_TOTAL_BYTES
+export {
+  MAX_FEEDBACK_IMAGE_BYTES,
+  MAX_FEEDBACK_IMAGE_COUNT,
+  MAX_FEEDBACK_IMAGE_TOTAL_BYTES
+} from '../../../shared/feedback-image-limits'
+
 export const SUPPORTED_FEEDBACK_IMAGE_TYPES = [
   'image/png',
   'image/jpeg',
@@ -39,14 +45,21 @@ function isSupportedType(contentType: string): boolean {
  * Whether a paste should be consumed. Extraction stays broad so unsupported
  * image types still reach the rejection toast, but swallowing the paste when
  * nothing is attachable would also discard any text riding along on the
- * clipboard.
+ * clipboard. Every limit readFeedbackImageFiles enforces has to be mirrored
+ * here, or a doomed paste eats the co-pasted text on its way to a rejection.
  */
-export function hasAttachableFeedbackImage(files: readonly File[], existingCount = 0): boolean {
+export function hasAttachableFeedbackImage(
+  files: readonly File[],
+  existingCount = 0,
+  existingBytes = 0
+): boolean {
+  const remainingBytes = Math.min(
+    MAX_FEEDBACK_IMAGE_BYTES,
+    MAX_FEEDBACK_IMAGE_TOTAL_BYTES - existingBytes
+  )
   return (
     existingCount < MAX_FEEDBACK_IMAGE_COUNT &&
-    files.some(
-      (file) => isSupportedType(file.type) && file.size > 0 && file.size <= MAX_FEEDBACK_IMAGE_BYTES
-    )
+    files.some((file) => isSupportedType(file.type) && file.size > 0 && file.size <= remainingBytes)
   )
 }
 

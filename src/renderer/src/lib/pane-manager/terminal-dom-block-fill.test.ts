@@ -125,6 +125,40 @@ describe('applyDomBlockFills', () => {
     expect(span.style.backgroundRepeat).toBe('')
     expect(span.style.color).toBe('rgb(30, 30, 30)')
   })
+
+  it('uses a color set on a reused filled span instead of the saved one', () => {
+    const span = mountSpan('▀▀▀')
+    applyDomBlockFills(document)
+    span.style.color = 'rgb(200, 0, 0)'
+    applyDomBlockFills(document)
+    expect(span.style.color).toBe('transparent')
+    expect(span.style.getPropertyValue('--orca-block-fg')).toBe('rgb(200, 0, 0)')
+
+    span.textContent = 'tab agents'
+    applyDomBlockFills(document)
+    expect(span.style.color).toBe('rgb(200, 0, 0)')
+  })
+
+  it('keeps a color set after the fill when the span becomes ordinary text', () => {
+    const span = mountSpan('▀▀▀')
+    applyDomBlockFills(document)
+    span.style.color = 'rgb(0, 200, 0)'
+    span.textContent = 'tab agents'
+    applyDomBlockFills(document)
+    expect(span.style.color).toBe('rgb(0, 200, 0)')
+    expect(span.style.backgroundImage).toBe('')
+  })
+
+  it('does not pin an inherited color inline when clearing a fill', () => {
+    const span = mountSpan('▀▀▀', '')
+    span.parentElement!.style.color = 'rgb(5, 5, 5)'
+    applyDomBlockFills(document)
+    expect(span.style.getPropertyValue('--orca-block-fg')).toBe('rgb(5, 5, 5)')
+
+    span.textContent = 'tab agents'
+    applyDomBlockFills(document)
+    expect(span.style.color).toBe('')
+  })
 })
 
 describe('attachDomBlockFill', () => {

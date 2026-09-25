@@ -8,7 +8,8 @@
 
 const BLOCK_FG_VAR = '--orca-block-fg'
 const FILL_ATTR = 'data-orca-block-fill'
-const FG_ATTR = 'data-orca-block-fg'
+// The span's inline color before the fill ('' when it had none), restored on clear.
+const INLINE_FG_ATTR = 'data-orca-block-inline-fg'
 
 function gradient(axis: 'bottom' | 'right', solidPercent: number, fromStart: boolean): string {
   const dir = axis === 'bottom' ? 'to bottom' : 'to right'
@@ -59,13 +60,18 @@ function clearBlockFill(span: HTMLElement): void {
   if (!span.hasAttribute(FILL_ATTR)) {
     return
   }
-  const originalColor = span.getAttribute(FG_ATTR)
+  const originalColor = span.getAttribute(INLINE_FG_ATTR)
+  // Any other inline color was set after the fill and is the span's current foreground.
+  const ownsColor = span.style.color === 'transparent'
   span.removeAttribute(FILL_ATTR)
-  span.removeAttribute(FG_ATTR)
+  span.removeAttribute(INLINE_FG_ATTR)
   span.style.removeProperty('background-image')
   span.style.removeProperty('background-size')
   span.style.removeProperty('background-repeat')
   span.style.removeProperty(BLOCK_FG_VAR)
+  if (!ownsColor) {
+    return
+  }
   if (originalColor) {
     span.style.color = originalColor
   } else {
@@ -85,17 +91,20 @@ export function applyDomBlockFills(root: ParentNode): void {
       clearBlockFill(span)
       continue
     }
-    if (span.getAttribute(FILL_ATTR) === text) {
+    const inlineFg = span.style.color
+    const ownsColor = span.hasAttribute(FILL_ATTR) && inlineFg === 'transparent'
+    if (ownsColor && span.getAttribute(FILL_ATTR) === text) {
       continue
     }
-    const fg =
-      span.getAttribute(FG_ATTR) ||
-      span.style.color ||
-      (typeof getComputedStyle === 'function' ? getComputedStyle(span).color : '')
+    const fg = ownsColor
+      ? span.style.getPropertyValue(BLOCK_FG_VAR)
+      : inlineFg || (typeof getComputedStyle === 'function' ? getComputedStyle(span).color : '')
     if (!fg) {
       continue
     }
-    span.setAttribute(FG_ATTR, fg)
+    if (!ownsColor) {
+      span.setAttribute(INLINE_FG_ATTR, inlineFg)
+    }
     span.setAttribute(FILL_ATTR, text)
     span.style.setProperty(BLOCK_FG_VAR, fg)
     span.style.color = 'transparent'

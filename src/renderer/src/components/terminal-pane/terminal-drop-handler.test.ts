@@ -23,7 +23,6 @@ const mocks = vi.hoisted(() => ({
         | { kind: 'windows-host' }
         | { kind: 'wsl'; distro: string | null }
     }[],
-    lastTerminalInputAtByPaneKey: Object.fromEntries<number>([]),
     repos: [
       {
         id: 'repo1',
@@ -111,7 +110,6 @@ describe('handleTerminalFileDrop', () => {
       repo1: [{ id: 'wt-1', repoId: 'repo1', path: '/remote/repo' }]
     }
     mocks.storeState.sshConnectionStates = new Map()
-    mocks.storeState.lastTerminalInputAtByPaneKey = {}
   })
 
   it('uploads client-local drops into the active runtime before pasting paths', async () => {
@@ -158,7 +156,7 @@ describe('handleTerminalFileDrop', () => {
       { assertCurrent: expect.any(Function) }
     )
     expect(sendInput).toHaveBeenCalledWith(
-      wrapTerminalBracketedPasteText('/remote/repo/.orca/drops/logo.png')
+      ` ${wrapTerminalBracketedPasteText('/remote/repo/.orca/drops/logo.png')}`
     )
     expect(focus).toHaveBeenCalled()
     expect(mocks.recordTerminalUserInputForLeaf).toHaveBeenCalledWith('tab-1', 'leaf-1')
@@ -254,7 +252,7 @@ describe('handleTerminalFileDrop', () => {
       { assertCurrent: expect.any(Function) }
     )
     expect(sendInput).toHaveBeenCalledWith(
-      wrapTerminalBracketedPasteText('\\\\server\\share\\repo\\.orca\\drops\\logo.png')
+      ` ${wrapTerminalBracketedPasteText('\\\\server\\share\\repo\\.orca\\drops\\logo.png')}`
     )
   })
 
@@ -310,7 +308,7 @@ describe('handleTerminalFileDrop', () => {
       '/remote/repo/.orca/drops',
       { assertCurrent: expect.any(Function) }
     )
-    expect(sendInput).toHaveBeenCalledWith('/remote/repo/.orca/drops/spec.pdf ')
+    expect(sendInput).toHaveBeenCalledWith(' /remote/repo/.orca/drops/spec.pdf ')
   })
 
   it('keeps explicit local worktree drops local while a runtime is focused', async () => {
@@ -337,7 +335,7 @@ describe('handleTerminalFileDrop', () => {
     })
 
     expect(mocks.importExternalPathsToRuntime).not.toHaveBeenCalled()
-    expect(sendInput).toHaveBeenCalledWith('/Users/me/spec.pdf ')
+    expect(sendInput).toHaveBeenCalledWith(' /Users/me/spec.pdf ')
     expect(focus).toHaveBeenCalled()
   })
 
@@ -384,7 +382,7 @@ describe('handleTerminalFileDrop', () => {
     })
 
     expect(mocks.importExternalPathsToRuntime).not.toHaveBeenCalled()
-    expect(sendInput).toHaveBeenNthCalledWith(1, "'/mnt/c/Users/alice/Desktop/notes one.txt' ")
+    expect(sendInput).toHaveBeenNthCalledWith(1, " '/mnt/c/Users/alice/Desktop/notes one.txt' ")
     expect(sendInput).toHaveBeenNthCalledWith(2, '/home/alice/repo/README.md ')
     expect(mocks.recordTerminalUserInputForLeaf).toHaveBeenCalledWith('tab-1', 'leaf-1')
   })
@@ -415,7 +413,7 @@ describe('handleTerminalFileDrop', () => {
       data: { paths: ['/Users/me/spec.pdf'], target: 'terminal' }
     })
 
-    expect(sendInputAccepted).toHaveBeenCalledWith('/Users/me/spec.pdf ')
+    expect(sendInputAccepted).toHaveBeenCalledWith(' /Users/me/spec.pdf ')
     expect(sendInput).not.toHaveBeenCalled()
     expect(focus).toHaveBeenCalled()
     expect(mocks.recordTerminalUserInputForLeaf).toHaveBeenCalledWith('tab-1', 'leaf-1')
@@ -454,7 +452,7 @@ describe('handleTerminalFileDrop', () => {
 
     expect(activeSendInput).not.toHaveBeenCalled()
     expect(activeFocus).not.toHaveBeenCalled()
-    expect(targetSendInput).toHaveBeenCalledWith('/Users/me/spec.pdf ')
+    expect(targetSendInput).toHaveBeenCalledWith(' /Users/me/spec.pdf ')
     expect(targetFocus).toHaveBeenCalled()
     expect(mocks.recordTerminalUserInputForLeaf).toHaveBeenCalledWith('tab-1', 'leaf-target')
   })
@@ -510,7 +508,7 @@ describe('handleTerminalFileDrop', () => {
       worktreePath: '\\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\repo'
     })
     expect(sendInput.mock.calls).toEqual([
-      ["'/mnt/c/Users/Name/My Project/file.txt' "],
+      [" '/mnt/c/Users/Name/My Project/file.txt' "],
       ['/home/user/repo/README.md ']
     ])
     expect(focus).toHaveBeenCalled()
@@ -610,7 +608,7 @@ describe('handleTerminalFileDrop', () => {
       expectedSshTargetId: 'ssh-win',
       expectedSshConnectionGeneration: 4
     })
-    expect(sendInput).toHaveBeenCalledWith('"C:\\Remote Repo\\A&B.txt" ')
+    expect(sendInput).toHaveBeenCalledWith(' "C:\\Remote Repo\\A&B.txt" ')
     expect(focus).toHaveBeenCalled()
     expect(mocks.recordTerminalUserInputForLeaf).toHaveBeenCalledWith('tab-1', 'leaf-1')
   })
@@ -686,13 +684,10 @@ describe('handleTerminalFileDrop', () => {
       data: { paths: ["/Users/me/it's here.txt"], target: 'terminal' }
     })
 
-    expect(sendInput).toHaveBeenCalledWith("'/remote/repo/it'\\''s here.txt' ")
+    expect(sendInput).toHaveBeenCalledWith(" '/remote/repo/it'\\''s here.txt' ")
   })
 
-  describe('input typed while a remote upload is pending', () => {
-    const leafId = '11111111-1111-4111-8111-111111111111'
-    const paneKey = `tab-1:${leafId}`
-
+  describe('first-path separator across every native drop flow', () => {
     function configureSshRepo(): void {
       mocks.storeState.settings = { activeRuntimeEnvironmentId: null }
       mocks.storeState.repos = [
@@ -703,50 +698,70 @@ describe('handleTerminalFileDrop', () => {
       ])
     }
 
-    function holdUpload(flow: 'ssh' | 'runtime', remotePath: string): () => void {
-      let release = (): void => {}
-      const upload = new Promise<void>((resolve) => {
-        release = resolve
-      })
-      if (flow === 'ssh') {
-        configureSshRepo()
-        mocks.resolveDroppedPathsForAgent.mockImplementation(async () => {
-          await upload
-          return { failed: [], resolvedPaths: [remotePath], skipped: [] }
-        })
-      } else {
-        mocks.importExternalPathsToRuntime.mockImplementation(async () => {
-          await upload
-          return { results: [{ status: 'imported', destPath: remotePath, kind: 'file' }] }
-        })
+    function configureLocalRepo(worktreePath: string): void {
+      mocks.storeState.settings = { activeRuntimeEnvironmentId: null }
+      mocks.storeState.repos = [
+        { id: 'repo1', connectionId: null, path: worktreePath, executionHostId: 'local' }
+      ]
+      mocks.storeState.worktreesByRepo = {
+        repo1: [{ id: 'wt-1', repoId: 'repo1', path: worktreePath }]
       }
-      return release
     }
 
+    // Why: these flows differ in whether an upload or an IPC round-trip runs
+    // before the write, which is exactly what the separator must not depend on.
+    const flows = {
+      runtime: (resolvedPath: string) => {
+        mocks.importExternalPathsToRuntime.mockResolvedValue({
+          results: [{ status: 'imported', destPath: resolvedPath, kind: 'file' }]
+        })
+      },
+      ssh: (resolvedPath: string) => {
+        configureSshRepo()
+        mocks.resolveDroppedPathsForAgent.mockResolvedValue({
+          failed: [],
+          resolvedPaths: [resolvedPath],
+          skipped: []
+        })
+      },
+      'local-wsl-unc': (resolvedPath: string) => {
+        configureLocalRepo('\\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\repo')
+        mocks.resolveDroppedPathsForAgent.mockResolvedValue({
+          failed: [],
+          resolvedPaths: [resolvedPath],
+          skipped: []
+        })
+      },
+      'local-reference-in-place': () => {
+        configureLocalRepo('/repo')
+      }
+    } as const
+
     it.each([
-      { flow: 'ssh', typed: true, path: '/remote/repo/a.txt', sent: ' /remote/repo/a.txt ' },
-      { flow: 'ssh', typed: false, path: '/remote/repo/a.txt', sent: '/remote/repo/a.txt ' },
-      { flow: 'runtime', typed: true, path: '/remote/repo/b.txt', sent: ' /remote/repo/b.txt ' },
-      { flow: 'runtime', typed: false, path: '/remote/repo/b.txt', sent: '/remote/repo/b.txt ' },
+      { flow: 'runtime', path: '/remote/repo/a.txt', sent: ' /remote/repo/a.txt ' },
       {
         flow: 'runtime',
-        typed: true,
+        path: '/remote/repo/c.png',
+        sent: ` ${wrapTerminalBracketedPasteText('/remote/repo/c.png')}`
+      },
+      { flow: 'ssh', path: '/remote/repo/b.txt', sent: ' /remote/repo/b.txt ' },
+      {
+        flow: 'ssh',
         path: '/remote/repo/c.png',
         sent: ` ${wrapTerminalBracketedPasteText('/remote/repo/c.png')}`
       },
       {
-        flow: 'ssh',
-        typed: false,
-        path: '/remote/repo/c.png',
-        sent: wrapTerminalBracketedPasteText('/remote/repo/c.png')
-      }
-    ] as const)('$flow drop of $path with typed=$typed', async ({ flow, typed, path, sent }) => {
-      mocks.storeState.lastTerminalInputAtByPaneKey = { [paneKey]: 1_000 }
-      const release = holdUpload(flow, path)
+        flow: 'local-wsl-unc',
+        path: '/home/user/repo/d e.txt',
+        sent: " '/home/user/repo/d e.txt' "
+      },
+      { flow: 'local-reference-in-place', path: '/Users/me/dropped', sent: ' /Users/me/dropped ' }
+    ] as const)('$flow drop writes $sent', async ({ flow, path, sent }) => {
+      flows[flow](path)
       const sendInput = vi.fn(() => true)
-      const pane = { id: 1, leafId, terminal: { focus: vi.fn() } }
+      const pane = { id: 1, leafId: 'leaf-1', terminal: { focus: vi.fn() } }
 
-      const drop = handleTerminalFileDrop({
+      await handleTerminalFileDrop({
         manager: { getActivePane: () => pane, getPanes: () => [pane] } as never,
         paneTransports: new Map([[1, createTerminalTransport(sendInput)]]) as never,
         worktreeId: 'wt-1',
@@ -754,12 +769,6 @@ describe('handleTerminalFileDrop', () => {
         cwd: undefined,
         data: { paths: ['/Users/me/dropped'], target: 'terminal' }
       })
-      if (typed) {
-        // Keystrokes forwarded to this pane's PTY stamp its pane key.
-        mocks.storeState.lastTerminalInputAtByPaneKey = { [paneKey]: 2_000 }
-      }
-      release()
-      await drop
 
       expect(sendInput.mock.calls).toEqual([[sent]])
     })

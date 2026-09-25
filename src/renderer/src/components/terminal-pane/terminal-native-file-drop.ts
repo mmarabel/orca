@@ -72,7 +72,7 @@ async function handleNativeTerminalFileDropWithCapturedOwner(
   if (!transport) {
     return
   }
-  const dropTarget = captureTerminalDropTarget(pane, transport, tabId)
+  const dropTarget = captureTerminalDropTarget(pane, transport)
   const state = useAppStore.getState()
   const settings = state.settings
   const runtimeOwner = captureRuntimeTerminalDropOwner(worktreeId)

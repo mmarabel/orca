@@ -24,7 +24,9 @@ afterEach(() => {
 
 describe('non-secure context (plain HTTP LAN web client)', () => {
   it('crypto.randomUUID is undefined, like the browser reports', () => {
+    // oxlint-disable-next-line no-restricted-properties -- asserting the absence this suite exists for
     expect((globalThis.crypto as Crypto).randomUUID).toBeUndefined()
+    // oxlint-disable-next-line no-restricted-properties -- asserting the absence this suite exists for
     expect(() => (globalThis.crypto as Crypto).randomUUID()).toThrow()
   })
 
@@ -61,6 +63,15 @@ describe('non-secure context (plain HTTP LAN web client)', () => {
     expect(rendererAgentStatusObservations.getAuthorityId()).toMatch(
       /^renderer:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
     )
+  })
+
+  // Naming two modules only pins today's crash. The reported stack was the whole store
+  // chunk, so evaluate the store root: any new import-time secure-context call anywhere in
+  // that graph fails here.
+  it('evaluates the whole store graph', async () => {
+    vi.resetModules()
+    const { useAppStore } = await import('@/store')
+    expect(typeof useAppStore.getState).toBe('function')
   })
 
   it('createBrowserUuid does not throw when randomUUID is missing', async () => {

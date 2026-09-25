@@ -801,3 +801,31 @@ describe('useAiVaultSessionRefresh in-app agent session behavior', () => {
     expect(listSessionsMock.mock.calls.length).toBe(callsWhileHealthy)
   })
 })
+
+// Regression for #18096: over plain HTTP the browser hides crypto.randomUUID, so minting
+// the request token with a raw call threw during render and the panel showed "The right
+// sidebar hit an error". The fallback must still be a well-formed v4 UUID.
+describe('useAiVaultSessionRefresh in a non-secure context', () => {
+  it('mints a request token when crypto.randomUUID is unavailable', async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis.crypto, 'randomUUID')
+    Object.defineProperty(globalThis.crypto, 'randomUUID', {
+      configurable: true,
+      writable: true,
+      value: undefined
+    })
+    try {
+      await renderHook()
+      await flushMicrotasks()
+
+      expect(lastCallArgs()).toMatchObject({
+        requestToken: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+        )
+      })
+    } finally {
+      if (descriptor) {
+        Object.defineProperty(globalThis.crypto, 'randomUUID', descriptor)
+      }
+    }
+  })
+})

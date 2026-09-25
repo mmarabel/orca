@@ -64,7 +64,7 @@ vi.mock(
 )
 
 import { registerFilesystemHandlers } from './filesystem'
-import { invalidateAuthorizedRootsCache } from './filesystem-auth'
+import { invalidateAuthorizedRootsCache } from './registered-worktree-roots-cache'
 
 describe('registerFilesystemHandlers', () => {
   beforeEach(() => {
@@ -96,7 +96,9 @@ describe('registerFilesystemHandlers', () => {
       })
     ).resolves.toEqual({ success: true, message: 'Update README' })
 
-    expect(getStagedCommitContextMock).toHaveBeenCalledWith(WORKTREE_FEATURE_PATH, {})
+    expect(getStagedCommitContextMock).toHaveBeenCalledWith(WORKTREE_FEATURE_PATH, {
+      admissionTier: 'interactive'
+    })
     expect(generateCommitMessageFromContextMock).toHaveBeenCalledWith(context, params, {
       kind: 'local',
       cwd: WORKTREE_FEATURE_PATH
@@ -253,6 +255,7 @@ describe('registerFilesystemHandlers', () => {
       })
 
       expect(getStagedCommitContextMock).toHaveBeenCalledWith(WORKTREE_FEATURE_PATH, {
+        admissionTier: 'interactive',
         wslDistro: 'Ubuntu'
       })
       expect(prepareForCodexLaunch).toHaveBeenCalledWith({

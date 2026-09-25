@@ -1,21 +1,27 @@
+import { normalizeReconcileText } from './mobile-native-chat-draft-reconcile'
+
 export type MobileNativeChatPendingMessage = {
   id: string
   text: string
   expectedOccurrence: number
-  /** Whether the transcript snapshot captured before this send was authoritative. */
-  glueBaselineTrusted: boolean
   /** Local preview URIs carried by the send for its optimistic echo. */
   images?: string[]
   baselineTailMessageId: string | null
+  /** Whether the transcript this baseline was captured from was already this
+   *  session's own history. A send issued mid-hydration is captured unresolved
+   *  and rebased onto the first authoritative read instead of reconciling
+   *  against rows that may belong to another tab. */
+  baselineResolved: boolean
 }
 
 export type MobileNativeChatSendOrigin = {
   draftKey: string
+  draftEditGeneration: number
   pendingKey: string | null
   normalizedText: string
   baselineOccurrences: number
   baselineTailMessageId: string | null
-  glueBaselineTrusted: boolean
+  baselineResolved: boolean
 }
 
 type PendingByKey = Record<string, MobileNativeChatPendingMessage[]>
@@ -40,13 +46,17 @@ export function appendMobileNativeChatPending(
   images?: string[]
 ): PendingByKey {
   const current = previous[key] ?? []
+  // Count outstanding repeats with the same normalized key.
   const earlierOutstanding = current.filter(
     (pending) =>
-      pending.text.trim() === origin.normalizedText &&
+      normalizeReconcileText(pending.text) === origin.normalizedText &&
       pending.expectedOccurrence > origin.baselineOccurrences
   ).length
+  // Image ordinal selection and counting must share the empty-text discriminator.
   const expectedImageEchoOrdinal =
-    current.filter((pending) => pending.text.trim() === '' && pending.images?.length).length + 1
+    current.filter(
+      (pending) => normalizeReconcileText(pending.text) === '' && pending.images?.length
+    ).length + 1
   return {
     ...previous,
     [key]: [
@@ -59,7 +69,7 @@ export function appendMobileNativeChatPending(
             ? expectedImageEchoOrdinal
             : origin.baselineOccurrences + earlierOutstanding + 1,
         baselineTailMessageId: origin.baselineTailMessageId,
-        glueBaselineTrusted: origin.glueBaselineTrusted,
+        baselineResolved: origin.baselineResolved,
         ...(images?.length ? { images } : {})
       }
     ]

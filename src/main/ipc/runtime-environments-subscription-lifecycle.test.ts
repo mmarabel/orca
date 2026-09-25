@@ -124,7 +124,7 @@ describe('registerRuntimeEnvironmentHandlers', () => {
     registerRuntimeEnvironmentHandlers(store as never)
     const close = vi.fn()
     const sendBinary = vi.fn()
-    const markUsedSpy = vi.spyOn(environmentStore, 'markEnvironmentUsedIfPresent')
+    const markUsedSpy = vi.spyOn(environmentStore, 'markEnvironmentUsed')
     subscribeRemoteRuntimeRequestMock.mockImplementation(
       async (_pairing, _method, _params, _timeoutMs, callbacks) => {
         callbacks.onResponse({

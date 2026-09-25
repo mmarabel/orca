@@ -173,37 +173,12 @@ export function resolveEnvironmentPairingOffer(
 // Windows. lastUsedAt only needs coarse freshness, so skip writes within this window.
 const LAST_USED_PERSIST_INTERVAL_MS = 60_000
 
-type MarkEnvironmentUsedArgs = { runtimeId?: string | null; pairedDeviceId?: string; now?: number }
-
 export function markEnvironmentUsed(
   userDataPath: string,
   selector: string,
-  args: MarkEnvironmentUsedArgs = {}
+  args: { runtimeId?: string | null; pairedDeviceId?: string; now?: number } = {}
 ): void {
-  markStoredEnvironmentUsed(userDataPath, readEnvironmentStore(userDataPath), selector, args)
-}
-
-// Why: `orca environment rm` edits the store behind the app's back, so a response can
-// arrive for a removed server; skip it instead of throwing out of a socket callback.
-export function markEnvironmentUsedIfPresent(
-  userDataPath: string,
-  selector: string,
-  args: MarkEnvironmentUsedArgs = {}
-): boolean {
   const store = readEnvironmentStore(userDataPath)
-  if (!store.environments.some((entry) => entry.id === selector || entry.name === selector)) {
-    return false
-  }
-  markStoredEnvironmentUsed(userDataPath, store, selector, args)
-  return true
-}
-
-function markStoredEnvironmentUsed(
-  userDataPath: string,
-  store: RuntimeEnvironmentStore,
-  selector: string,
-  args: MarkEnvironmentUsedArgs
-): void {
   const environment = resolveEnvironmentFromStore(store, selector)
   const now = args.now ?? Date.now()
   const runtimeIdChanged = args.runtimeId != null && args.runtimeId !== environment.runtimeId

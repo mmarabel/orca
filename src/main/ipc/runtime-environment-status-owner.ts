@@ -8,7 +8,7 @@ import {
   getPreferredPairingOffer,
   type KnownRuntimeEnvironment
 } from '../../shared/runtime-environments'
-import { markEnvironmentUsedIfPresent } from '../../shared/runtime-environment-store'
+import { recordRuntimeEnvironmentUsage } from './runtime-environment-usage-record'
 import { RuntimeHostStatusOwner } from '../../shared/runtime-host-status-owner'
 import {
   RUNTIME_HOST_STATUS_CHANNEL,
@@ -61,12 +61,11 @@ export function createRuntimeEnvironmentStatusOwner(
         runtimeId: response._meta.runtimeId
       })
       if (accepted && active && !isRuntimeEnvironmentManuallyDisconnected(environment.id)) {
-        const present = markEnvironmentUsedIfPresent(userDataPath, environment.id, {
+        recordRuntimeEnvironmentUsage(userDataPath, environment.id, {
           runtimeId: response._meta.runtimeId,
           pairedDeviceId: response.result.pairedDeviceId
         })
-        // Why: a server removed via the CLI must not have its shared-control transport revived.
-        if (capable && present) {
+        if (capable) {
           transport.establish()
         } else {
           transport.pause()

@@ -220,6 +220,13 @@ export type AiVaultListResult = {
   sessions: AiVaultSession[]
   issues: AiVaultScanIssue[]
   scannedAt: string
+  /**
+   * True when every session inside the request's `scopePaths` is listed, cap or
+   * no cap — only agents whose on-disk layout buckets by cwd can be scanned that
+   * way, so a machine holding any other agent's transcripts reports false.
+   * Absent from hosts that do not report it, which a reader must treat as false.
+   */
+  scopeFullyScanned?: boolean
   /** Set only by the desktop IPC boundary: this scan was superseded, so its empty body means "nothing to apply". */
   cancelled?: true
 }

@@ -168,6 +168,14 @@ describe('remote runtime connect bound', () => {
     expect(withRemoteRuntimeTailscaleHint(message, 'ws://desk.example.com:6768')).toContain(
       'connect both devices to Tailscale'
     )
+    // Why: the LAN endpoint this case used to carry now takes a different hint; keep it
+    // covered on the wrapped path instead of dropping it to keep the old assertion green.
+    expect(
+      withRemoteRuntimeTailscaleHint(
+        remoteRuntimeConnectFailureMessage(handshakeTimeoutError(), 'ws://192.168.1.10:6768'),
+        'ws://192.168.1.10:6768'
+      )
+    ).toContain('local-network address')
     expect(
       withRemoteRuntimeTailscaleHint(
         remoteRuntimeConnectFailureMessage(handshakeTimeoutError(), 'wss://desk.tail1234.ts.net'),

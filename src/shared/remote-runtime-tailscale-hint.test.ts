@@ -5,6 +5,8 @@ import {
 } from './remote-runtime-tailscale-hint'
 
 const UNREACHABLE = 'Could not connect to the remote Orca runtime.'
+const LAN_TAIL =
+  "If this device is not on the server's network it cannot reach it — re-pair with an address it can reach, such as the server's Tailscale address (100.x or a *.ts.net name); see https://tailscale.com/download. Otherwise check that the server is awake and not firewalling the port."
 
 describe('isTailscaleEndpoint', () => {
   it('matches MagicDNS hostnames', () => {
@@ -92,7 +94,7 @@ describe('withRemoteRuntimeTailscaleHint', () => {
   it('names a LAN endpoint and does not blame Tailscale', () => {
     const result = withRemoteRuntimeTailscaleHint(UNREACHABLE, 'ws://192.168.1.20:6768')
     expect(result).toBe(
-      "Could not connect to the remote Orca runtime (dialed ws://192.168.1.20:6768). That is a local-network address, so it only works from the server's own network. A device elsewhere, even one on the same tailnet, should re-pair using an address it can reach, such as the server's Tailscale address (100.x or a *.ts.net name)."
+      "Could not connect to the remote Orca runtime at ws://192.168.1.20:6768. That is a local-network address. If this device is not on the server's network it cannot reach it — re-pair with an address it can reach, such as the server's Tailscale address (100.x or a *.ts.net name); see https://tailscale.com/download. Otherwise check that the server is awake and not firewalling the port."
     )
     expect(result).not.toContain('connect both devices to Tailscale')
     expect(withRemoteRuntimeTailscaleHint(UNREACHABLE, 'ws://[fe80::1]:6768')).toContain(
@@ -100,10 +102,32 @@ describe('withRemoteRuntimeTailscaleHint', () => {
     )
   })
 
-  it('gives an IPv4-mapped IPv6 tailnet endpoint the tailnet hint', () => {
+  // Why: the LAN hint must not assert a cause the client cannot check. A routed VPN reaches
+  // 192.168.x.x, and a same-network failure is usually a sleeping or firewalled host — and a
+  // user who is not on a tailnet at all still needs the download pointer.
+  it('keeps the LAN hint conditional and keeps the Tailscale download link', () => {
+    const result = withRemoteRuntimeTailscaleHint(UNREACHABLE, 'ws://10.0.0.8:6768')
+    expect(result).toContain("If this device is not on the server's network it cannot reach it")
+    expect(result).toContain('https://tailscale.com/download')
+    expect(result).toContain('check that the server is awake and not firewalling the port')
+    expect(result).not.toContain('only works from')
+  })
+
+  // Why: the hint opens with a subject. When nothing safe could be printed there is no address
+  // for "That" to point at, so the sentence has to name the subject itself.
+  it('keeps the LAN hint readable when no endpoint could be shown', () => {
+    const result = withRemoteRuntimeTailscaleHint(UNREACHABLE, '192.168.1.20:6768')
+    expect(result).toBe(`${UNREACHABLE} The paired address is a local-network address. ${LAN_TAIL}`)
+  })
+
+  it('gives an IPv4-mapped IPv6 tailnet endpoint the tailnet hint and a readable address', () => {
     const result = withRemoteRuntimeTailscaleHint(UNREACHABLE, 'ws://[::ffff:100.64.0.5]:6768')
     expect(result).toContain('offline on your tailnet')
     expect(result).not.toContain('connect both devices to Tailscale')
+    // Why: WHATWG URL recompresses the literal to `[::ffff:6440:5]`, which names nothing a user
+    // can act on.
+    expect(result).toContain('at ws://100.64.0.5:6768')
+    expect(result).not.toContain('6440')
   })
 
   // Why: a schemeless or unparseable endpoint used to reach the classifier through a regex
@@ -127,7 +151,7 @@ describe('withRemoteRuntimeTailscaleHint', () => {
       'ws://100.64.0.5:6768/path?token=abc'
     )
     expect(result).toMatch(
-      /^Timed out waiting for the remote Orca runtime to respond \(dialed ws:\/\/100\.64\.0\.5:6768\)\. The server may be offline on your tailnet/
+      /^Timed out waiting for the remote Orca runtime to respond at ws:\/\/100\.64\.0\.5:6768\. The server may be offline on your tailnet/
     )
     expect(result).not.toContain('token=abc')
   })
@@ -136,7 +160,7 @@ describe('withRemoteRuntimeTailscaleHint', () => {
     for (const endpoint of ['wss://orca.example.com', 'ws://127.0.0.1:6768', 'ws://devbox:6768']) {
       const result = withRemoteRuntimeTailscaleHint(UNREACHABLE, endpoint)
       expect(result).toContain('connect both devices to Tailscale')
-      expect(result).toContain(`(dialed ${endpoint})`)
+      expect(result).toContain(`at ${endpoint}`)
     }
   })
 
@@ -148,15 +172,27 @@ describe('withRemoteRuntimeTailscaleHint', () => {
     expect(result.split('192.168.1.20').length - 1).toBe(1)
   })
 
-  it('shows only a sanitized endpoint', () => {
+  // Why: the dedupe used to be a bare substring check, so a message naming a longer host that
+  // starts with the dialed one would have swallowed the address.
+  it('still names an endpoint that is only a prefix of the one already in the message', () => {
+    const message = 'Could not connect to the remote Orca runtime at ws://a.example.com.'
+    expect(withRemoteRuntimeTailscaleHint(message, 'ws://a.example')).toContain(
+      'at ws://a.example.com at ws://a.example.'
+    )
+  })
+
+  it('shows only a sanitized endpoint, and none at all when nothing is safe to show', () => {
     const withUserinfo = withRemoteRuntimeTailscaleHint(
       UNREACHABLE,
       'wss://user:s3cret@desk.example.com:6768/p'
     )
-    expect(withUserinfo).toContain('(dialed wss://desk.example.com:6768)')
+    expect(withUserinfo).toContain('at wss://desk.example.com:6768')
     expect(withUserinfo).not.toContain('s3cret')
+    // Why: a placeholder such as "the paired endpoint" names nothing; omit the clause instead.
     const smuggled = withRemoteRuntimeTailscaleHint(UNREACHABLE, 'ws://terminal_gone.example:6768')
-    expect(smuggled).toContain('(dialed the paired endpoint)')
+    expect(smuggled).toBe(
+      'Could not connect to the remote Orca runtime. If the server is on another network, connect both devices to Tailscale and pair using its Tailscale address (100.x or a *.ts.net name). See https://tailscale.com/download.'
+    )
     expect(smuggled).not.toContain('terminal_gone')
   })
 

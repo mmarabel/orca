@@ -85,13 +85,29 @@ const DISPLAYABLE_ENDPOINT_HOST_RE = /^(?:\[[0-9a-f:.]+\]|[a-z0-9.-]+)(?::\d{1,5
 /**
  * Why: the endpoint comes from a pasted pairing code, which is only length-capped and can
  * carry userinfo. Show scheme and host and nothing else, and only when the host cannot smuggle
- * a token another consumer reads as a verdict.
+ * a token another consumer reads as a verdict. `null` means "nothing safe to show" so callers
+ * that can omit the address entirely do, instead of printing a placeholder that says nothing.
  */
-export function endpointForDisplay(endpoint: string): string {
+export function displayableEndpoint(endpoint: string): string | null {
+  let url: URL
   try {
-    const { protocol, host } = new URL(endpoint)
-    return DISPLAYABLE_ENDPOINT_HOST_RE.test(host) ? `${protocol}//${host}` : 'the paired endpoint'
+    url = new URL(endpoint)
   } catch {
-    return 'the paired endpoint'
+    return null
   }
+  if (!DISPLAYABLE_ENDPOINT_HOST_RE.test(url.host)) {
+    return null
+  }
+  // Why: WHATWG URL recompresses `[::ffff:100.64.0.5]` to `[::ffff:6440:5]`, which no user
+  // recognises as the address they pasted. Render the dotted quad the classifier already reads.
+  const embeddedIPv4 = getEmbeddedIPv4Address(url.hostname.replace(/^\[|\]$/g, ''))
+  if (embeddedIPv4) {
+    return `${url.protocol}//${embeddedIPv4}${url.port ? `:${url.port}` : ''}`
+  }
+  return `${url.protocol}//${url.host}`
+}
+
+/** The same sanitizer for callers whose sentence needs a noun where the address would go. */
+export function endpointForDisplay(endpoint: string): string {
+  return displayableEndpoint(endpoint) ?? 'the paired endpoint'
 }

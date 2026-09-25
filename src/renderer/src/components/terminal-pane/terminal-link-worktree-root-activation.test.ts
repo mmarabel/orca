@@ -7,7 +7,8 @@ import { createTerminalLinkTestDoubles } from './terminal-link-handlers-test-fix
 import {
   createProviderSetup,
   makeBuffer,
-  makeBufferLine
+  makeBufferLine,
+  makeExistsCache
 } from './terminal-link-provider-buffer-fixtures'
 import {
   flushAsyncWork,
@@ -34,6 +35,7 @@ vi.mock('@/lib/language-detect', () => ({
 // unit tests. Mock it so these tests only assert on routing (browser tab vs.
 // openFile), not on activation internals.
 vi.mock('@/lib/worktree-activation', () => ({
+  activateAndRevealWorkspace: vi.fn(),
   activateAndRevealWorktree: vi.fn()
 }))
 
@@ -179,7 +181,7 @@ describe('createFilePathLinkProvider range bounds', () => {
     }
     const { provider, linkTooltip } = createProviderSetup(
       [makeBufferLine('/repo')],
-      new Map([['active\0/repo', false]])
+      makeExistsCache([['active\0/repo', false]])
     )
 
     const links = await new Promise<ILink[]>((resolve) => {

@@ -1,3 +1,4 @@
+import { createTerminalPathExistenceBatch } from './terminal-path-existence-batch'
 import type { IDisposable, ILink, ILinkProvider, Terminal } from '@xterm/xterm'
 import {
   extractTerminalFileLinkCandidates,
@@ -5,7 +6,7 @@ import {
   resolveTerminalFileLink
 } from '@/lib/terminal-links'
 import type { PaneManager } from '@/lib/pane-manager/pane-manager'
-import { isRemoteRuntimeFileOperation, runtimePathExists } from '@/runtime/runtime-file-client'
+import { isRemoteRuntimeFileOperation } from '@/runtime/runtime-file-client'
 import {
   buildCandidateLogicalLinesForBufferPosition,
   dedupeLogicalLines,
@@ -129,6 +130,7 @@ export function createFilePathLinkProvider(
         return
       }
 
+      const pathExists = createTerminalPathExistenceBatch()
       void Promise.all(
         logicalLines.flatMap((logicalLine) =>
           extractTerminalFileLinkCandidates(logicalLine.text).map(
@@ -173,10 +175,7 @@ export function createFilePathLinkProvider(
               if (!worktreeRootLink) {
                 const cachedExists = readTerminalPathExistsCache(pathExistsCache, cacheKey)
                 const exists =
-                  cachedExists ??
-                  (fileContext.connectionId || isRemoteRuntimePath
-                    ? await runtimePathExists(fileContext, mappedPath)
-                    : await window.api.shell.pathExists(mappedPath))
+                  cachedExists ?? (await pathExists(fileContext, mappedPath, isRemoteRuntimePath))
                 // Why: refreshing a cached negative's timestamp on every hover
                 // would keep frequently scanned missing paths stale forever.
                 if (cachedExists === undefined) {

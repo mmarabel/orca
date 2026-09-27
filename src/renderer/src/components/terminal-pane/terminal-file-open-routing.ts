@@ -2,12 +2,8 @@ import { absolutePathToFileUri } from '@/components/editor/markdown-internal-lin
 import { getWorkspaceFilePreviewPlan, openFileInBrowserTab } from '@/lib/file-preview'
 import { downloadAndOpenRemoteTerminalFile } from './terminal-remote-file-download-open'
 import { detectLanguage } from '@/lib/language-detect'
-import { findWorkspaceFileRoute } from '@/lib/runtime-workspace-file-route'
-import { isPathInsideWorktree, toWorktreeRelativePath } from '@/lib/terminal-links'
-import {
-  buildWorkspaceFileContext,
-  canClientOsOpenWorkspaceFile
-} from '@/lib/workspace-file-host-routing'
+import { canClientOsOpenWorkspaceFile } from '@/lib/workspace-file-host-routing'
+import { translate } from '@/i18n/i18n'
 import {
   isMissingRuntimePathError,
   statRuntimePath,
@@ -16,13 +12,9 @@ import {
 import { useAppStore } from '@/store'
 import { activateAndRevealWorkspace, activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { resolveKnownWorktreeRootPathLink } from './terminal-worktree-path-link'
+import { resolveTerminalFileOwner, type TerminalFileOwner } from './terminal-file-owner'
+import { resolveTerminalFileEditorTarget } from './terminal-file-editor-target'
 import { parseWslUncPath, toWindowsWslPath } from '../../../../shared/wsl-paths'
-import {
-  LOCAL_EXECUTION_HOST_ID,
-  toRuntimeExecutionHostId,
-  toSshExecutionHostId,
-  type ExecutionHostId
-} from '../../../../shared/execution-host'
 
 export type FileOpenFailure = {
   /** `missing` is a verified absence; `unverifiable` means the host could not answer (dropped SSH, timeout, denied path). */
@@ -54,15 +46,42 @@ function openHtmlFileInBrowser(filePath: string, worktreeId: string): void {
   }
   const fileUrl = absolutePathToFileUri(filePath)
   const title = filePath.split(/[/\\]/).pop() ?? filePath
-  store.createBrowserTab(worktreeId, fileUrl, { title, activate: true })
+  // Why explicitly client-hosted: a file:// URL names this machine's disk, so a runtime workspace
+  // must not hand the page to its runtime, whose browser would load the server's path instead.
+  store.createBrowserTab(worktreeId, fileUrl, {
+    title,
+    activate: true,
+    browserRuntimeEnvironmentId: null
+  })
 }
 
 export function getTerminalFileContext(
   worktreeId: string,
   worktreePath: string,
-  runtimeEnvironmentId?: string | null
+  runtimeEnvironmentId: string | null | undefined,
+  filePath: string
 ): RuntimeFileOperationArgs {
-  return buildWorkspaceFileContext(worktreeId, worktreePath, runtimeEnvironmentId)
+  return resolveTerminalFileOwner(worktreeId, worktreePath, runtimeEnvironmentId, filePath)
+    .fileContext
+}
+
+function toFileOpenFailure(owner: TerminalFileOwner, error: unknown): FileOpenFailure {
+  if (!isMissingRuntimePathError(error)) {
+    // Why: loss of contact with the host is not evidence the file is gone.
+    return { verdict: 'unverifiable', error }
+  }
+  // Why: absent here proves nothing about the runtime, which just cannot serve this path.
+  return owner.kind === 'client'
+    ? {
+        verdict: 'unverifiable',
+        error: new Error(
+          translate(
+            'components.native-chat.fileLinks.outsideRuntimeWorkspace',
+            'Not on this computer, and the remote host opens files only inside its workspaces'
+          )
+        )
+      }
+    : { verdict: 'missing', error }
 }
 
 // Why: a WSL-runtime pane prints POSIX paths even when the worktree lives on a
@@ -152,7 +171,13 @@ export function openDetectedFilePath(
 
   void (async () => {
     let statResult
-    const fileContext = getTerminalFileContext(worktreeId, worktreePath, runtimeEnvironmentId)
+    const owner = resolveTerminalFileOwner(
+      worktreeId,
+      worktreePath,
+      runtimeEnvironmentId,
+      mappedFilePath
+    )
+    const { fileContext } = owner
     const canOpenWithSystemDefault = shouldOpenTerminalFileWithSystemDefault(
       fileContext,
       mappedFilePath
@@ -180,11 +205,7 @@ export function openDetectedFilePath(
       statResult = await statRuntimePath(fileContext, mappedFilePath)
     } catch (error) {
       if (requestId === latestOpenDetectedFilePathRequestId && deps.onOpenFailure) {
-        // Why: loss of contact with the host is not evidence the file is gone.
-        deps.onOpenFailure({
-          verdict: isMissingRuntimePathError(error) ? 'missing' : 'unverifiable',
-          error
-        })
+        deps.onOpenFailure(toFileOpenFailure(owner, error))
       }
       return
     }
@@ -225,49 +246,38 @@ export function openDetectedFilePath(
       }
       // Why: the same gesture renders remote HTML too, through the doc preview; only an
       // unsupported plan (e.g. a paired doc outside the worktree) falls back to source.
-      const plan = getWorkspaceFilePreviewPlan(useAppStore.getState(), worktreeId, mappedFilePath)
+      const previewWorktreeId =
+        owner.kind === 'runtime-sibling' ? owner.route.worktreeId : worktreeId
+      const plan = getWorkspaceFilePreviewPlan(
+        useAppStore.getState(),
+        previewWorktreeId,
+        mappedFilePath
+      )
       if (plan.status === 'doc-preview') {
-        activateAndRevealWorktree(worktreeId, { providesInitialSurface: true })
-        openFileInBrowserTab({ filePath: mappedFilePath, worktreeId })
+        if (owner.kind === 'runtime-sibling') {
+          activateAndRevealWorkspace(previewWorktreeId, {
+            providesInitialSurface: true,
+            executionHostId: owner.route.executionHostId
+          })
+        } else {
+          activateAndRevealWorktree(worktreeId, { providesInitialSurface: true })
+        }
+        openFileInBrowserTab({ filePath: mappedFilePath, worktreeId: previewWorktreeId })
         return
       }
     }
 
     const store = useAppStore.getState()
-    let targetWorktreeId = worktreeId
-    let targetExecutionHostId: ExecutionHostId | undefined
-    let relativePath = mappedFilePath
-    if (worktreePath && isPathInsideWorktree(mappedFilePath, worktreePath)) {
-      const maybeRelative = toWorktreeRelativePath(mappedFilePath, worktreePath)
-      if (maybeRelative !== null && maybeRelative.length > 0) {
-        relativePath = maybeRelative
-      }
-    } else if (
-      store.openFiles.some(
-        (openFile) => openFile.filePath === mappedFilePath && openFile.worktreeId !== worktreeId
-      )
-    ) {
-      // Why: early resolution is only needed to avoid an existing sibling-tab collision.
-      const runtimeOwnerId = fileContext.settings?.activeRuntimeEnvironmentId?.trim()
-      const executionHostId = runtimeOwnerId
-        ? toRuntimeExecutionHostId(runtimeOwnerId)
-        : fileContext.connectionId
-          ? toSshExecutionHostId(fileContext.connectionId)
-          : LOCAL_EXECUTION_HOST_ID
-      const siblingRoute = findWorkspaceFileRoute(store, executionHostId, mappedFilePath)
-      if (siblingRoute) {
-        targetWorktreeId = siblingRoute.worktreeId
-        targetExecutionHostId = siblingRoute.executionHostId
-        relativePath = siblingRoute.relativePath
-      }
-    }
+    const target = resolveTerminalFileEditorTarget(store, owner, mappedFilePath, deps)
+    const targetWorktreeId = target.worktreeId
+    const relativePath = target.relativePath
 
     if (targetWorktreeId) {
       // Why: the route may name a folder-workspace key, and the same worktree id can exist
       // on several hosts — dispatch by workspace shape and keep the resolved host.
       activateAndRevealWorkspace(targetWorktreeId, {
         providesInitialSurface: true,
-        ...(targetExecutionHostId ? { executionHostId: targetExecutionHostId } : {})
+        ...(target.executionHostId ? { executionHostId: target.executionHostId } : {})
       })
     }
 
@@ -279,7 +289,8 @@ export function openDetectedFilePath(
         worktreeId: targetWorktreeId || '',
         language,
         mode: 'edit',
-        runtimeEnvironmentId,
+        runtimeEnvironmentId: target.runtimeEnvironmentId,
+        ...(target.readOnly ? { readOnly: true } : {}),
         // Why: absolute SSH paths outside the worktree otherwise look identical
         // to client-local external files when the editor reloads or restores.
         ...(relativePath === filePath &&

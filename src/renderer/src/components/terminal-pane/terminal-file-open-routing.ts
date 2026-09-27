@@ -15,6 +15,7 @@ import { resolveKnownWorktreeRootPathLink } from './terminal-worktree-path-link'
 import { resolveTerminalFileOwner, type TerminalFileOwner } from './terminal-file-owner'
 import { resolveTerminalFileEditorTarget } from './terminal-file-editor-target'
 import { parseWslUncPath, toWindowsWslPath } from '../../../../shared/wsl-paths'
+import type { ExecutionHostId } from '../../../../shared/execution-host'
 
 export type FileOpenFailure = {
   /** `missing` is a verified absence; `unverifiable` means the host could not answer (dropped SSH, timeout, denied path). */
@@ -36,13 +37,20 @@ export function isHtmlFilePath(filePath: string): boolean {
   return /\.html?$/i.test(filePath)
 }
 
-function openHtmlFileInBrowser(filePath: string, worktreeId: string): void {
+function openHtmlFileInBrowser(
+  filePath: string,
+  worktreeId: string,
+  executionHostId?: ExecutionHostId
+): void {
   const store = useAppStore.getState()
   if (worktreeId) {
     // Why: following an HTML file link changes which worktree is foregrounded,
     // so it must record a history visit before opening the browser tab — but the
     // browser tab is the surface, so an emptied workspace must not gain a shell.
-    activateAndRevealWorktree(worktreeId, { providesInitialSurface: true })
+    activateAndRevealWorktree(worktreeId, {
+      providesInitialSurface: true,
+      ...(executionHostId ? { executionHostId } : {})
+    })
   }
   const fileUrl = absolutePathToFileUri(filePath)
   const title = filePath.split(/[/\\]/).pop() ?? filePath
@@ -241,7 +249,11 @@ export function openDetectedFilePath(
     // and remain the fallback if Shift+Cmd/Ctrl cannot launch the OS default.
     if (isHtmlFilePath(mappedFilePath)) {
       if (shouldOpenTerminalFileWithSystemDefault(fileContext, mappedFilePath)) {
-        openHtmlFileInBrowser(mappedFilePath, worktreeId)
+        openHtmlFileInBrowser(
+          mappedFilePath,
+          worktreeId,
+          owner.kind === 'client' ? owner.paneExecutionHostId : undefined
+        )
         return
       }
       // Why: the same gesture renders remote HTML too, through the doc preview; only an

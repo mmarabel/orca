@@ -7,7 +7,7 @@ import { getActiveRuntimeTarget, settingsForRuntimeOwner } from '@/runtime/runti
 import type { RuntimeFileOperationArgs } from '@/runtime/runtime-file-client-types'
 import { getRemoteFileArgs } from '@/runtime/runtime-file-routing'
 import { useAppStore } from '@/store'
-import { toRuntimeExecutionHostId } from '../../../../shared/execution-host'
+import { toRuntimeExecutionHostId, type ExecutionHostId } from '../../../../shared/execution-host'
 
 export type TerminalFileOwner =
   | { kind: 'workspace'; fileContext: RuntimeFileOperationArgs }
@@ -16,7 +16,12 @@ export type TerminalFileOwner =
       fileContext: RuntimeFileOperationArgs
       route: ResolvedWorkspaceFileRoute
     }
-  | { kind: 'client'; fileContext: RuntimeFileOperationArgs }
+  | {
+      kind: 'client'
+      fileContext: RuntimeFileOperationArgs
+      /** Host of the pane's own workspace, which still hosts the tab showing this file. */
+      paneExecutionHostId: ExecutionHostId
+    }
 
 /**
  * Which host owns a path printed in a workspace pane. A runtime serves files only inside its
@@ -54,6 +59,7 @@ export function resolveTerminalFileOwner(
   }
   return {
     kind: 'client',
-    fileContext: { ...fileContext, settings: settingsForRuntimeOwner(fileContext.settings, null) }
+    fileContext: { ...fileContext, settings: settingsForRuntimeOwner(fileContext.settings, null) },
+    paneExecutionHostId: toRuntimeExecutionHostId(target.environmentId)
   }
 }

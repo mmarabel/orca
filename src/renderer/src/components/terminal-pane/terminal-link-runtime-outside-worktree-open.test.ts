@@ -1,7 +1,7 @@
 import type { ILink } from '@xterm/xterm'
 import { describe, expect, it, vi } from 'vitest'
 import { getConnectionId } from '@/lib/connection-context'
-import { activateAndRevealWorkspace } from '@/lib/worktree-activation'
+import { activateAndRevealWorkspace, activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { openDetectedFilePath } from './terminal-link-handlers'
 import {
   getTerminalFileContext,
@@ -138,6 +138,11 @@ describe('paths a runtime pane prints outside its own workspace', () => {
     expect(authorizeExternalPathMock).toHaveBeenCalledWith({ targetPath: filePath })
     expect(statMock).toHaveBeenCalledWith({ filePath, connectionId: undefined })
     expect(runtimeEnvironmentCallMock).not.toHaveBeenCalled()
+    // Why: the tab still sits in the runtime workspace, so its host must not be dropped.
+    expect(activateAndRevealWorktree).toHaveBeenCalledWith('wt-1', {
+      providesInitialSurface: true,
+      executionHostId: 'runtime:env-1'
+    })
     expect(createBrowserTabMock).toHaveBeenCalledWith(
       'wt-1',
       'file:///Users/me/Desktop/review.html',
@@ -175,6 +180,10 @@ describe('paths a runtime pane prints outside its own workspace', () => {
       }),
       { forceContentReload: true }
     )
+    expect(activateAndRevealWorkspace).toHaveBeenCalledWith('wt-1', {
+      providesInitialSurface: true,
+      executionHostId: 'runtime:env-1'
+    })
   })
 
   it('opens a client file inside a local workspace editable in that workspace', async () => {

@@ -51,7 +51,12 @@ export function resolveTerminalFileEditorTarget(
         }
       : // Why: an editable tab must share its workspace's host, so a client file shown in a
         // runtime workspace opens read-only, like AI Vault logs.
-        { ...paneTarget, runtimeEnvironmentId: null, readOnly: true }
+        {
+          ...paneTarget,
+          executionHostId: owner.paneExecutionHostId,
+          runtimeEnvironmentId: null,
+          readOnly: true
+        }
   }
 
   const { worktreePath, worktreeId } = pane

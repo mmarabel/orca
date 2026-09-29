@@ -42,26 +42,45 @@ function makeStatusState(titlesByWorktreeId: Record<string, string>): StatusStat
 }
 
 describe('lineage hidden activity', () => {
-  it('counts only live states and ranks permission over working over monitoring', () => {
+  it('counts attention states and ranks them the way the card resolves its own status', () => {
     const activity = summarizeLineageHiddenActivity([
       'working',
       'done',
       'monitoring',
       'working',
       'failed',
+      'interrupted',
       'inactive',
       'permission'
     ])
 
-    expect(activity).toEqual({ permission: 1, working: 2, monitoring: 1 })
+    expect(activity).toEqual({
+      permission: 1,
+      failed: 1,
+      working: 2,
+      monitoring: 1,
+      interrupted: 1
+    })
     expect(getLineageHiddenActivityStatus(activity)).toBe('permission')
     expect(getLineageHiddenActivityLabel(activity, 0)).toBe(
-      '1 waiting for permission · 2 working · 1 monitoring background tasks'
+      '1 waiting for permission · 1 failed · 2 working · 1 monitoring background tasks · 1 interrupted'
     )
   })
 
+  it('surfaces a hidden failure over live work, and a stop only once nothing is live', () => {
+    expect(
+      getLineageHiddenActivityStatus(summarizeLineageHiddenActivity(['working', 'failed']))
+    ).toBe('failed')
+    expect(
+      getLineageHiddenActivityStatus(summarizeLineageHiddenActivity(['interrupted', 'monitoring']))
+    ).toBe('monitoring')
+    expect(
+      getLineageHiddenActivityStatus(summarizeLineageHiddenActivity(['interrupted', 'done']))
+    ).toBe('interrupted')
+  })
+
   it('stays quiet when every hidden worktree is finished, read or idle', () => {
-    const activity = summarizeLineageHiddenActivity(['done', 'active', 'inactive', 'interrupted'])
+    const activity = summarizeLineageHiddenActivity(['done', 'active', 'inactive'])
 
     expect(getLineageHiddenActivityStatus(activity)).toBeNull()
     expect(getLineageHiddenActivityLabel(activity, 0)).toBeNull()
@@ -84,8 +103,10 @@ describe('lineage hidden activity', () => {
 
     expect(selectLineageHiddenActivity(state, ['child', 'grandchild'])).toEqual({
       permission: 0,
+      failed: 0,
       working: 1,
-      monitoring: 0
+      monitoring: 0,
+      interrupted: 0
     })
   })
 })

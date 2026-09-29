@@ -6294,7 +6294,9 @@
           "permission": "{{value0}} 件が権限待ち",
           "working": "{{value0}} 件が作業中",
           "monitoring": "{{value0}} 件がバックグラウンドタスクを監視中",
-          "unread": "{{value0}} 件未読"
+          "unread": "{{value0}} 件未読",
+          "failed": "{{value0}} 件が失敗",
+          "interrupted": "{{value0}} 件が中断"
         }
       },
       "shared": {

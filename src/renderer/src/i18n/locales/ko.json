@@ -6294,7 +6294,9 @@
           "permission": "{{value0}}개 권한 대기 중",
           "working": "{{value0}}개 작업 중",
           "monitoring": "{{value0}}개 백그라운드 작업 모니터링 중",
-          "unread": "{{value0}}개 읽지 않음"
+          "unread": "{{value0}}개 읽지 않음",
+          "failed": "{{value0}}개 실패",
+          "interrupted": "{{value0}}개 중단됨"
         }
       },
       "shared": {

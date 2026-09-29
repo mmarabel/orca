@@ -344,17 +344,9 @@ test.describe('Worktree Lineage', () => {
       if (!store) {
         throw new Error('window.__store is not available')
       }
-      // Why: stands in for the agent-completion notification marking the child unread.
-      store.setState((current) => ({
-        worktreesByRepo: Object.fromEntries(
-          Object.entries(current.worktreesByRepo).map(([repoId, worktrees]) => [
-            repoId,
-            worktrees.map((worktree) =>
-              worktree.id === childId ? { ...worktree, isUnread: true } : worktree
-            )
-          ])
-        )
-      }))
+      // Why: the same action agent-completion attention calls; that trigger has its own
+      // e2e coverage in droid-notification.spec.ts.
+      store.getState().markWorktreeUnread(childId)
     }, childId)
 
     await expect(showToggle).toHaveAccessibleDescription('1 unread')

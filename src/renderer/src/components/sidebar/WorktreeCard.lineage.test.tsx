@@ -14,7 +14,7 @@ const updateWorktreeMeta = vi.fn()
 
 let worktreeCardProperties: WorktreeCardProperty[] = []
 const WORKTREE_CARD_IMPORT_TIMEOUT_MS = 15_000
-const noHiddenActivity = { permission: 0, working: 0, monitoring: 0 }
+const noHiddenActivity = { permission: 0, failed: 0, working: 0, monitoring: 0, interrupted: 0 }
 const useLineageHiddenActivity = vi.fn((_worktreeIds: readonly string[]) => noHiddenActivity)
 
 vi.mock('./worktree-lineage-hidden-activity', async (importOriginal) => ({
@@ -157,11 +157,7 @@ describe('WorktreeCard lineage indicators', () => {
   it(
     'shows hidden descendant work on the collapsed child chip',
     async () => {
-      useLineageHiddenActivity.mockImplementation(() => ({
-        permission: 0,
-        working: 2,
-        monitoring: 0
-      }))
+      useLineageHiddenActivity.mockImplementation(() => ({ ...noHiddenActivity, working: 2 }))
       const { default: WorktreeCard } = await import('./WorktreeCard')
 
       const markup = renderToStaticMarkup(
@@ -190,9 +186,9 @@ describe('WorktreeCard lineage indicators', () => {
     'puts a hidden permission request ahead of hidden work',
     async () => {
       useLineageHiddenActivity.mockImplementation(() => ({
+        ...noHiddenActivity,
         permission: 1,
-        working: 1,
-        monitoring: 0
+        working: 1
       }))
       const { default: WorktreeCard } = await import('./WorktreeCard')
 
@@ -249,6 +245,31 @@ describe('WorktreeCard lineage indicators', () => {
       expect(useLineageHiddenActivity).not.toHaveBeenCalled()
       expect(expanded).toContain('lucide-workflow')
       expect(expanded).not.toContain('aria-describedby=')
+    },
+    WORKTREE_CARD_IMPORT_TIMEOUT_MS
+  )
+
+  it(
+    'shows a hidden failure on the collapsed child chip instead of the plain icon',
+    async () => {
+      useLineageHiddenActivity.mockImplementation(() => ({ ...noHiddenActivity, failed: 1 }))
+      const { default: WorktreeCard } = await import('./WorktreeCard')
+
+      const markup = renderToStaticMarkup(
+        <WorktreeCard
+          worktree={makeWorktree()}
+          repo={makeRepo()}
+          isActive={false}
+          lineageChildCount={1}
+          lineageCollapsed
+          lineageHiddenDescendants={{ worktreeIds: ['child'], unreadCount: 0 }}
+          onLineageToggle={vi.fn()}
+        />
+      )
+
+      expect(markup).not.toContain('lucide-workflow')
+      expect(markup).toContain('bg-red-500')
+      expect(markup).toContain('1 failed')
     },
     WORKTREE_CARD_IMPORT_TIMEOUT_MS
   )

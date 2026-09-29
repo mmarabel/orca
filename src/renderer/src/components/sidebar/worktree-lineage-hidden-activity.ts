@@ -7,30 +7,39 @@ import { selectWorktreeActivityStatuses } from './use-worktree-activity-statuses
 
 export type LineageHiddenActivityStatus = Extract<
   WorktreeStatus,
-  'permission' | 'working' | 'monitoring'
+  'permission' | 'failed' | 'working' | 'monitoring' | 'interrupted'
 >
 
-/** How many hidden worktrees are in each live state. */
+/** How many hidden worktrees are in each attention-worthy state. */
 export type LineageHiddenActivity = Record<LineageHiddenActivityStatus, number>
 
-// Why: most urgent first. Only live states surface; a finished, failed or idle
-// child stays quiet until the lineage is expanded.
+// Why: the card's own resolveWorktreeStatus order, so the chip ranks hidden
+// children the way their cards would; done and idle children stay quiet.
 const ACTIVITY_PRIORITY: readonly LineageHiddenActivityStatus[] = [
   'permission',
+  'failed',
   'working',
-  'monitoring'
+  'monitoring',
+  'interrupted'
 ]
+const ACTIVITY_STATUSES: ReadonlySet<WorktreeStatus> = new Set(ACTIVITY_PRIORITY)
 
 function isLineageHiddenActivityStatus(
   status: WorktreeStatus
 ): status is LineageHiddenActivityStatus {
-  return status === 'permission' || status === 'working' || status === 'monitoring'
+  return ACTIVITY_STATUSES.has(status)
 }
 
 export function summarizeLineageHiddenActivity(
   statuses: Iterable<WorktreeStatus>
 ): LineageHiddenActivity {
-  const activity: LineageHiddenActivity = { permission: 0, working: 0, monitoring: 0 }
+  const activity: LineageHiddenActivity = {
+    permission: 0,
+    failed: 0,
+    working: 0,
+    monitoring: 0,
+    interrupted: 0
+  }
   for (const status of statuses) {
     if (isLineageHiddenActivityStatus(status)) {
       activity[status] += 1
@@ -53,10 +62,24 @@ function getActivityCountLabel(status: LineageHiddenActivityStatus, count: numbe
       { value0: count }
     )
   }
+  if (status === 'failed') {
+    return translate(
+      'auto.components.sidebar.WorktreeLineageHiddenActivity.failed',
+      '{{value0}} failed',
+      { value0: count }
+    )
+  }
   if (status === 'working') {
     return translate(
       'auto.components.sidebar.WorktreeLineageHiddenActivity.working',
       '{{value0}} working',
+      { value0: count }
+    )
+  }
+  if (status === 'interrupted') {
+    return translate(
+      'auto.components.sidebar.WorktreeLineageHiddenActivity.interrupted',
+      '{{value0}} interrupted',
       { value0: count }
     )
   }
@@ -67,7 +90,7 @@ function getActivityCountLabel(status: LineageHiddenActivityStatus, count: numbe
   )
 }
 
-/** Live work first, then unread: a finished child is news the parent row otherwise hides. */
+/** States first, then unread: a finished child is news the parent row otherwise hides. */
 export function getLineageHiddenActivityLabel(
   activity: LineageHiddenActivity,
   unreadCount: number

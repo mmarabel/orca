@@ -3,7 +3,11 @@ import { separateImagePasteFromFollowingText } from '../../../../shared/image-pa
 import { shellEscapePath } from './pane-helpers'
 import type { PtyTransport } from './pty-transport'
 import { wrapTerminalBracketedPasteText } from './terminal-bracketed-paste'
-import { canPasteImageDropPathRaw, isImageDropPath } from './terminal-drop-image-path'
+import {
+  canPasteImageDropPathRaw,
+  formatImageDropPasteText,
+  isImageDropPath
+} from './terminal-drop-image-path'
 import {
   type CapturedTerminalDropTarget,
   getCurrentTerminalDropTransport
@@ -47,26 +51,26 @@ export async function writeTerminalDropPathsToCapturedTarget({
     }
     // Why: image drops are attachment payloads for terminal TUIs, which detect
     // them from a bracketed paste of the path — mirroring the clipboard
-    // screenshot flow (terminal-clipboard-paste.ts, issue #2842). Every image
-    // drop is framed as a paste; only its text differs. Safe image paths are
-    // pasted raw, because escaping would corrupt the file-existence check those
-    // tools run on the pasted path. Image paths with spaces or shell
-    // metacharacters (`download (1).png`) keep their shell-escaped text so a
-    // shell still gets a quoted argument; agent TUIs strip the quotes before
-    // that check. Unframed,
-    // the escaped text reaches the TUI as typed keystrokes and stays plain text
-    // instead of becoming an attachment. Non-image drops keep the original
-    // shell-escaped, space-separated behaviour for use in shell commands.
+    // screenshot flow (terminal-clipboard-paste.ts, issue #2842). Safe image
+    // paths are pasted raw, because escaping would corrupt the file-existence
+    // check those tools run on the pasted path. Image paths with spaces or shell
+    // metacharacters (`download (1).png`) are pasted escaped so a shell still
+    // gets one argument; agent TUIs undo that escaping before the check.
+    // Unframed, the escaped text reaches the TUI as typed keystrokes and stays
+    // plain text. Paths a paste frame would alter (control bytes) and non-image
+    // drops keep the original shell-escaped, space-separated typed input.
     //
     // Image payloads carry no trailing space of their own, so when an image is
     // immediately followed by another path the two would otherwise collide
     // (`<bracketed-paste>/repo/a.ts`). Add a single separating space unless
     // both are raw image pastes — those are self-delimiting for TUIs, and a
     // stray space between them would land in the TUI input. Keep it when
-    // either side is shell-escaped: a shell ignores paste boundaries, so
-    // `'/a (1).png''/b (2).png'` would otherwise become one argument.
-    const pathIsImage = isImageDropPath(path)
-    const pathIsRawPasteImage = pathIsImage && canPasteImageDropPathRaw(path, targetShell)
+    // either side is escaped: a shell ignores paste boundaries, so
+    // `/a\ \(1\).png/b\ \(2\).png` would otherwise become one argument.
+    const imagePasteText = isImageDropPath(path)
+      ? formatImageDropPasteText(path, targetShell)
+      : null
+    const pathIsRawPasteImage = imagePasteText === path
     const nextPath = paths[index + 1]
     const nextPathIsRawPasteImage =
       nextPath !== undefined &&
@@ -74,14 +78,13 @@ export async function writeTerminalDropPathsToCapturedTarget({
       canPasteImageDropPathRaw(nextPath, targetShell)
     const needsSeparatorAfterImage =
       nextPath !== undefined && !(pathIsRawPasteImage && nextPathIsRawPasteImage)
-    const payload = pathIsImage
-      ? separateImagePasteFromFollowingText(
-          wrapTerminalBracketedPasteText(
-            pathIsRawPasteImage ? path : shellEscapePath(path, targetShell)
-          ),
-          needsSeparatorAfterImage
-        )
-      : `${shellEscapePath(path, targetShell)} `
+    const payload =
+      imagePasteText !== null
+        ? separateImagePasteFromFollowingText(
+            wrapTerminalBracketedPasteText(imagePasteText),
+            needsSeparatorAfterImage
+          )
+        : `${shellEscapePath(path, targetShell)} `
     const writeResult = await runTerminalPasteOperationWithTimeout(
       () => writeTerminalPastePtyInput(liveTransport, payload, 'driving'),
       operationTimeoutMs

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { shellEscapePath } from './pane-helpers'
-import { canPasteImageDropPathRaw, isImageDropPath } from './terminal-drop-image-path'
+import {
+  canPasteImageDropPathRaw,
+  formatImageDropPasteText,
+  isImageDropPath
+} from './terminal-drop-image-path'
 
 describe('isImageDropPath', () => {
   it('detects common image extensions case-insensitively', () => {
@@ -114,28 +117,43 @@ function codexRecoverPath(pasted: string): string | null {
   return tokens.length === 1 ? tokens[0] : null
 }
 
+describe('formatImageDropPasteText', () => {
+  it('backslash-escapes unsafe POSIX characters and double-quotes on Windows', () => {
+    expect(formatImageDropPasteText('/t/shot.png', 'posix')).toBe('/t/shot.png')
+    expect(formatImageDropPasteText("/t/it's (1).png", 'posix')).toBe("/t/it\\'s\\ \\(1\\).png")
+    expect(formatImageDropPasteText('C:\\My Pictures\\shot.png', 'windows')).toBe(
+      '"C:\\My Pictures\\shot.png"'
+    )
+  })
+
+  it('refuses paths a paste frame would alter', () => {
+    expect(formatImageDropPasteText('/t/a\nb.png', 'posix')).toBeNull()
+    expect(formatImageDropPasteText('/t/a\u001bb.png', 'posix')).toBeNull()
+    expect(formatImageDropPasteText('C:\\t\\a\u0007b.png', 'windows')).toBeNull()
+  })
+})
+
 describe('agent recovery of pasted image paths', () => {
   const screenshot = '/t/Screenshot 2026-09-28 at 4.03.11\u202fPM.png'
 
-  it('recovers a quoted spaced screenshot path in Claude Code and Codex', () => {
-    const pasted = shellEscapePath(screenshot, 'posix')
-    expect(pasted).toBe(`'${screenshot}'`)
-    expect(claudeCodeRecoverPath(pasted)).toBe(screenshot)
-    expect(codexRecoverPath(pasted)).toBe(screenshot)
+  it.each([
+    screenshot,
+    "/t/it's.png",
+    '/t/download (1).png',
+    '/t/a.png; touch /tmp/pwned #.png',
+    '/t/"q" $HOME `x` \\ [1] {2} *?!&|<>~.png'
+  ])('recovers %j in Claude Code and Codex', (path) => {
+    const pasted = formatImageDropPasteText(path, 'posix') ?? ''
+    expect(claudeCodeRecoverPath(pasted)).toBe(path)
+    expect(codexRecoverPath(pasted)).toBe(path)
   })
 
   it('recovers a double-quoted spaced Windows path in Codex', () => {
     const path = 'C:\\Users\\me\\My Pictures\\shot.png'
-    expect(codexRecoverPath(shellEscapePath(path, 'windows'))).toBe(path)
+    expect(codexRecoverPath(formatImageDropPasteText(path, 'windows') ?? '')).toBe(path)
   })
 
   it('shows why a raw spaced path is not enough for Codex', () => {
     expect(codexRecoverPath(screenshot)).toBeNull()
-  })
-
-  it('documents the apostrophe case Claude Code cannot recover', () => {
-    const pasted = shellEscapePath("/t/it's.png", 'posix')
-    expect(codexRecoverPath(pasted)).toBe("/t/it's.png")
-    expect(claudeCodeRecoverPath(pasted)).toBe("/t/it'''s.png")
   })
 })

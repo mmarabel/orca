@@ -57,7 +57,7 @@ describe('canPasteImageDropPathRaw', () => {
 })
 
 // Why: small replays of how agents recover a path from pasted text, so the
-// quoted form is checked against what they actually accept.
+// escaped form is checked against what they actually accept.
 
 // Claude Code 2.1.285 `S` then `x`: strip one pair of outer quotes, then
 // unescape `\X` to `X` with `\\` kept as one backslash.
@@ -133,6 +133,45 @@ describe('formatImageDropPasteText', () => {
   })
 })
 
+// pi-image-paste 1.0.0 `tokenizePathLikeText` + `tryExtendBareToken`, bare tokens
+// only (the escaped POSIX form never starts with a quote): a token keeps `\X`
+// pairs, stops at any JS whitespace (U+202F included) and is shell-unescaped;
+// if no file exists it extends across up to 8 following words.
+function piImagePasteRecoverPath(pasted: string, exists: (path: string) => boolean): string | null {
+  const unescape = (text: string): string => text.replace(/\\(.)/gs, '$1')
+  let index = 0
+  let raw = ''
+  while (index < pasted.length && !/\s/.test(pasted[index])) {
+    if (pasted[index] === '\\' && index + 1 < pasted.length) {
+      raw += pasted.slice(index, index + 2)
+      index += 2
+    } else {
+      raw += pasted[index++]
+    }
+  }
+  let value = unescape(raw)
+  for (let step = 0; step < 8 && !exists(value); step += 1) {
+    let wordStart = index
+    while (
+      wordStart < pasted.length &&
+      /\s/.test(pasted[wordStart]) &&
+      pasted[wordStart] !== '\n'
+    ) {
+      wordStart += 1
+    }
+    let wordEnd = wordStart
+    while (wordEnd < pasted.length && !/\s/.test(pasted[wordEnd])) {
+      wordEnd += 1
+    }
+    if (wordStart === index || wordEnd === wordStart) {
+      break
+    }
+    value += pasted.slice(index, wordStart) + unescape(pasted.slice(wordStart, wordEnd))
+    index = wordEnd
+  }
+  return exists(value) ? value : null
+}
+
 describe('agent recovery of pasted image paths', () => {
   const screenshot = '/t/Screenshot 2026-09-28 at 4.03.11\u202fPM.png'
 
@@ -142,10 +181,15 @@ describe('agent recovery of pasted image paths', () => {
     '/t/download (1).png',
     '/t/a.png; touch /tmp/pwned #.png',
     '/t/"q" $HOME `x` \\ [1] {2} *?!&|<>~.png'
-  ])('recovers %j in Claude Code and Codex', (path) => {
+  ])('recovers %j in Claude Code, Codex and Pi', (path) => {
     const pasted = formatImageDropPasteText(path, 'posix') ?? ''
     expect(claudeCodeRecoverPath(pasted)).toBe(path)
     expect(codexRecoverPath(pasted)).toBe(path)
+    expect(piImagePasteRecoverPath(pasted, (candidate) => candidate === path)).toBe(path)
+  })
+
+  it("shows why the quoted `'\\''` form was not used: Claude Code corrupts it", () => {
+    expect(claudeCodeRecoverPath("'/t/it'\\''s.png'")).toBe("/t/it'''s.png")
   })
 
   it('recovers a double-quoted spaced Windows path in Codex', () => {

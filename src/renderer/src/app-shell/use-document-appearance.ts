@@ -26,32 +26,33 @@ export function useDocumentAppearance(): void {
     if (!theme) {
       return
     }
-    const dividerColors: SplitDividerColors = {
-      tabGroupSplitDividerColorDark: splitDividerDark,
-      tabGroupSplitDividerColorLight: splitDividerLight
-    }
-
-    if (theme === 'dark') {
-      applyDocumentTheme('dark')
-      applyWorkspaceSplitDivider(theme, dividerColors)
-      return undefined
-    } else if (theme === 'light') {
-      applyDocumentTheme('light')
-      applyWorkspaceSplitDivider(theme, dividerColors)
+    applyDocumentTheme(theme)
+    if (theme !== 'system') {
       return undefined
     }
-    // system
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    applyDocumentTheme('system')
-    applyWorkspaceSplitDivider(theme, dividerColors)
     const handler = (): void => {
       applyDocumentTheme('system')
-      applyWorkspaceSplitDivider(theme, dividerColors)
+      const settings = useAppStore.getState().settings
+      applyWorkspaceSplitDivider(theme, {
+        tabGroupSplitDividerColorDark: settings?.tabGroupSplitDividerColorDark,
+        tabGroupSplitDividerColorLight: settings?.tabGroupSplitDividerColorLight
+      })
       // System theme changes don't mutate the store, so mobile terminal colors need an explicit graph republish.
       scheduleRuntimeGraphSync()
     }
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
+  }, [theme])
+
+  useEffect(() => {
+    if (!theme) {
+      return
+    }
+    applyWorkspaceSplitDivider(theme, {
+      tabGroupSplitDividerColorDark: splitDividerDark,
+      tabGroupSplitDividerColorLight: splitDividerLight
+    })
   }, [theme, splitDividerDark, splitDividerLight])
 
   useEffect(() => {

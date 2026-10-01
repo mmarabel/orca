@@ -90,6 +90,7 @@ describe('useDocumentAppearance', () => {
     expect(document.documentElement.style.getPropertyValue('--tab-group-split-divider')).toBe(
       '#ff0000'
     )
+    expect(mocks.applyDocumentTheme).toHaveBeenCalledTimes(1)
     unmount()
   })
 })

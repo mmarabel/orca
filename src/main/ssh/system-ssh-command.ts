@@ -1,5 +1,5 @@
-import { spawn, type ChildProcess } from 'node:child_process'
 import { Duplex } from 'node:stream'
+import { spawnProcess, type SpawnedProcess } from '../../shared/child-process/run-process'
 import type { ClientChannel } from 'ssh2'
 import type { SshTarget } from '../../shared/ssh-types'
 import { wrapRemoteCommandForPosixShell, type SshExecOptions } from './ssh-connection-utils'
@@ -17,7 +17,7 @@ export type SystemSshProcess = {
 }
 
 export type SystemSshCommandChannel = ClientChannel & {
-  _process?: ChildProcess
+  _process?: SpawnedProcess
   _closeRequested?: boolean
 }
 
@@ -75,14 +75,15 @@ export function spawnSystemSshCommand(
   return wrapCommandProcess(proc)
 }
 
-function spawnSshProcess(executable: string, args: string[]): ChildProcess {
-  return spawn(executable, args, {
-    stdio: ['pipe', 'pipe', 'pipe'],
-    windowsHide: true
+function spawnSshProcess(executable: string, args: string[]): SpawnedProcess {
+  return spawnProcess({
+    program: executable,
+    args,
+    stdio: ['pipe', 'pipe', 'pipe']
   })
 }
 
-function wrapChildProcess(proc: ChildProcess): SystemSshProcess {
+function wrapChildProcess(proc: SpawnedProcess): SystemSshProcess {
   return {
     stdin: proc.stdin!,
     stdout: proc.stdout!,
@@ -112,7 +113,7 @@ function wrapChildProcess(proc: ChildProcess): SystemSshProcess {
   }
 }
 
-function wrapCommandProcess(proc: ChildProcess): SystemSshCommandChannel {
+function wrapCommandProcess(proc: SpawnedProcess): SystemSshCommandChannel {
   const duplex = new Duplex({
     read() {
       proc.stdout?.resume()
@@ -123,24 +124,22 @@ function wrapCommandProcess(proc: ChildProcess): SystemSshCommandChannel {
   })
   const channel = duplex as unknown as SystemSshCommandChannel
 
-  const mutableChannel = channel as unknown as {
-    stdin: NodeJS.WritableStream
-    stderr: NodeJS.ReadableStream
-    _process?: ChildProcess
-    _closeRequested?: boolean
-    close: () => void
-  }
-  mutableChannel.stdin = proc.stdin!
-  mutableChannel.stderr = proc.stderr!
-  mutableChannel._process = proc
-  mutableChannel.close = () => {
-    mutableChannel._closeRequested = true
-    try {
-      proc.kill('SIGTERM')
-    } catch {
-      // Process may already be dead
+  channel._process = proc
+  Object.defineProperties(channel, {
+    stdin: { value: proc.stdin!, configurable: true },
+    stderr: { value: proc.stderr!, configurable: true },
+    close: {
+      configurable: true,
+      value: () => {
+        channel._closeRequested = true
+        try {
+          proc.kill('SIGTERM')
+        } catch {
+          // Process may already be dead
+        }
+      }
     }
-  }
+  })
 
   const cleanupProcessListeners = (): void => {
     proc.stdout!.off('data', onStdoutData)

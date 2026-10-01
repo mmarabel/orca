@@ -1,5 +1,5 @@
-import { spawn } from 'node:child_process'
 import { lstat, readdir } from 'node:fs/promises'
+import { spawnProcess } from '../../shared/child-process/run-process'
 import { join as pathJoin } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import type { SshTarget } from '../../shared/ssh-types'
@@ -52,9 +52,10 @@ export async function uploadDirectoryViaSystemSsh(
     return
   }
 
-  const tarCreate = spawn('tar', ['-czf', '-', '-C', localDir, '.'], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true
+  const tarCreate = spawnProcess({
+    program: 'tar',
+    args: ['-czf', '-', '-C', localDir, '.'],
+    stdio: ['ignore', 'pipe', 'pipe']
   })
   const remoteCommand = `mkdir -p ${shellEscape(remoteDir)} && tar -xzf - -C ${shellEscape(remoteDir)}`
   const teleportCommand = buildTeleportSshCommand(
@@ -67,17 +68,14 @@ export async function uploadDirectoryViaSystemSsh(
     killProcess(tarCreate)
     throw new Error('No system ssh binary found. Install OpenSSH to use system SSH transport.')
   }
-  const sshExtract = spawn(
-    sshPath,
-    teleportCommand?.args ?? [
+  const sshExtract = spawnProcess({
+    program: sshPath,
+    args: teleportCommand?.args ?? [
       ...buildSshArgs(target, options),
       wrapRemoteCommandForPosixShell(remoteCommand)
     ],
-    {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true
-    }
-  )
+    stdio: ['pipe', 'pipe', 'pipe']
+  })
 
   let tarResult: ProcessResult | null = null
   let sshResult: ProcessResult | null = null

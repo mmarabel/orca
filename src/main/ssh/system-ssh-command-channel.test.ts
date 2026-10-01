@@ -1,3 +1,4 @@
+import type * as NodeChildProcess from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,7 +7,7 @@ import type { SshTarget } from '../../shared/ssh-types'
 const spawnMock = vi.hoisted(() => vi.fn())
 
 vi.mock('node:child_process', async (importOriginal) => {
-  const actual = await importOriginal()
+  const actual = await importOriginal<typeof NodeChildProcess>()
   return { ...actual, spawn: spawnMock }
 })
 

@@ -152,7 +152,7 @@ describe('fetchClaudeRateLimits extra usage', () => {
     })
   })
 
-  it('falls back to the legacy extra_usage shape when spend is absent', async () => {
+  it('keeps legacy extra_usage spend data without inventing a missing balance', async () => {
     vi.mocked(readActiveClaudeKeychainCredentialsStrict).mockResolvedValueOnce(
       JSON.stringify({
         claudeAiOauth: {
@@ -182,7 +182,7 @@ describe('fetchClaudeRateLimits extra usage', () => {
       provider: 'claude',
       status: 'ok',
       extraUsage: {
-        balance: 0,
+        balance: null,
         spent: 50,
         spendLimit: 2000,
         spentPercent: 2.5,

@@ -270,7 +270,11 @@ const CAP_THRESHOLD_PERCENT = 99.5
 
 // Why: only reveal the compact balance once a capped window can spend it.
 function isExtraUsageActive(p: ProviderRateLimits): boolean {
-  if (!p.extraUsage || !p.extraUsage.enabled) {
+  if (
+    !p.extraUsage ||
+    !p.extraUsage.enabled ||
+    (p.extraUsage.unit === 'currency' && p.extraUsage.balance === null)
+  ) {
     return false
   }
   return [p.session, p.weekly, p.monthly, p.fableWeekly].some(
@@ -287,7 +291,9 @@ function formatCompactExtraUsage(balance: ProviderRateLimits['extraUsage']): str
       ? translate('auto.components.status.bar.StatusBar.4025a6f62f', 'Unlimited')
       : `${formatCreditCount(balance.balance)} ${translate('auto.components.status.bar.StatusBar.a95969101f', 'credits')}`
   }
-  return `${formatCurrencyAmount(balance.balance, balance.currencyCode)} ${translate('auto.components.status.bar.StatusBar.4fba7dc1e7', 'bal')}`
+  return balance.balance === null
+    ? ''
+    : `${formatCurrencyAmount(balance.balance, balance.currencyCode)} ${translate('auto.components.status.bar.StatusBar.4fba7dc1e7', 'bal')}`
 }
 
 export function ProviderSegment({

@@ -12,7 +12,6 @@ export type RateLimitWindow = {
 export type ProviderRateLimitStatus = 'idle' | 'fetching' | 'ok' | 'error' | 'unavailable'
 
 type ExtraUsageBalanceBase = {
-  balance: number
   enabled: boolean
   disabledReason: string | null
   resetsAt: number | null
@@ -20,6 +19,8 @@ type ExtraUsageBalanceBase = {
 
 type CurrencyExtraUsageBalance = ExtraUsageBalanceBase & {
   unit: 'currency'
+  /** Null when the provider reports a spend cap but no current balance. */
+  balance: number | null
   currencyCode: string
   spent: number | null
   spendLimit: number | null
@@ -28,6 +29,7 @@ type CurrencyExtraUsageBalance = ExtraUsageBalanceBase & {
 
 type CreditExtraUsageBalance = ExtraUsageBalanceBase & {
   unit: 'credits'
+  balance: number
   unlimited: boolean
 }
 

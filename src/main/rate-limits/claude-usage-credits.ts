@@ -103,7 +103,7 @@ function mapLegacyExtraUsage(extra: ClaudeOAuthExtraUsage | undefined): ExtraUsa
         ? clampPercent((spent / spendLimit) * 100)
         : null
   return {
-    balance: 0,
+    balance: null,
     unit: 'currency',
     currencyCode: extra.currency?.trim() || 'USD',
     enabled: extra.is_enabled === true,

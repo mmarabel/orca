@@ -49,6 +49,28 @@ function openCodeGo(sessionUsedPercent: number): ProviderRateLimits {
   }
 }
 
+function claudeUnknownBalance(): ProviderRateLimits {
+  return {
+    provider: 'claude',
+    session: { usedPercent: 100, windowMinutes: 300, resetsAt: null, resetDescription: null },
+    weekly: { usedPercent: 40, windowMinutes: 10080, resetsAt: null, resetDescription: null },
+    extraUsage: {
+      balance: null,
+      unit: 'currency',
+      currencyCode: 'EUR',
+      enabled: true,
+      disabledReason: null,
+      spent: 50,
+      spendLimit: 2000,
+      spentPercent: 2.5,
+      resetsAt: null
+    },
+    updatedAt: Date.now(),
+    error: null,
+    status: 'ok'
+  }
+}
+
 function codexCredits(sessionUsedPercent: number): ProviderRateLimits {
   return {
     provider: 'codex',
@@ -115,6 +137,17 @@ describe('ProviderSegment extra-usage balance token', () => {
     )
 
     expect(markup).not.toContain('$12.40')
+    expect(markup).not.toContain('bal')
+  })
+
+  it('does not reveal an unavailable balance as zero when a window is capped', async () => {
+    const { ProviderSegment } = await import('./StatusBar')
+
+    const markup = renderToStaticMarkup(
+      <ProviderSegment p={claudeUnknownBalance()} compact={false} display="used" />
+    )
+
+    expect(markup).not.toContain('€0.00')
     expect(markup).not.toContain('bal')
   })
 

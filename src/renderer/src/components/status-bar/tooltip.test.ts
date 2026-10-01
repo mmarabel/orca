@@ -498,6 +498,30 @@ describe('ProviderPanel extra-usage rendering', () => {
     expect(markup).toContain('Balance €10.00')
   })
 
+  it('renders a legacy spend cap without presenting an unavailable balance as zero', () => {
+    const p = provider({
+      status: 'ok',
+      session: { usedPercent: 100, windowMinutes: 300, resetsAt: null, resetDescription: null },
+      extraUsage: {
+        balance: null,
+        unit: 'currency',
+        currencyCode: 'EUR',
+        enabled: true,
+        disabledReason: null,
+        spent: 50,
+        spendLimit: 2000,
+        spentPercent: 2.5,
+        resetsAt: null
+      }
+    })
+
+    const markup = renderToStaticMarkup(createElement(ProviderPanel, { p }))
+
+    expect(markup).toContain('Usage credits')
+    expect(markup).toContain('€50.00 / €2,000.00')
+    expect(markup).not.toContain('Balance €0.00')
+  })
+
   it('renders a disabled, out-of-credits cap with a zero balance', () => {
     const p = provider({
       status: 'ok',

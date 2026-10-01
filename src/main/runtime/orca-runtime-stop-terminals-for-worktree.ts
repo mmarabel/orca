@@ -13,6 +13,7 @@ import type { WorktreeTerminalMutationKind } from './worktree-terminal-mutation-
 import type { TabActivationIntent } from '../../shared/tab-activation-intent'
 import {
   acquireWorktreeTerminalSpawnLease,
+  captureTerminalSleepPanes,
   type WorktreeTerminalSpawnSurface
 } from './worktree-terminal-spawn-sleep-guard'
 import type { WorkspaceSessionState } from '../../shared/workspace-session-state-types'
@@ -265,6 +266,18 @@ export class OrcaRuntimeWithStopTerminalsForWorktree extends OrcaRuntimeWithReso
         this.terminalSleepByWorktreeId.delete(worktree.id)
       }
     }
+  }
+
+  protected captureTerminalSleepPanes(
+    worktreeId: string,
+    ptyIds: Iterable<string>
+  ): Record<string, string> {
+    return captureTerminalSleepPanes(
+      ptyIds,
+      this.ptysById,
+      this.getWorkspaceSessionForWorktree(worktreeId),
+      worktreeId
+    )
   }
 
   async acquireWorktreeTerminalSpawn(

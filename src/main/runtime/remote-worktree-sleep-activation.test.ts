@@ -225,6 +225,21 @@ describe('remote workspace sleep activation', () => {
     )
   })
 
+  it('protects a restored slept pane when its live record lacked a pane identity', async () => {
+    const { runtime, livePtys } = makePartialSleepActivationRuntime(true)
+    await expect(runtime.sleepTerminalsForWorktree(`id:${TEST_WORKTREE_ID}`)).rejects.toThrow(
+      'terminal_worktree_sleep_failed'
+    )
+    expect(livePtys.has('persisted-pty')).toBe(false)
+
+    await expect(
+      runtime.acquireWorktreeTerminalSpawn(TEST_WORKTREE_ID, 'automatic', {
+        ptyId: 'replacement-pty',
+        paneKey: makePaneKey('host-tab', HEADLESS_LEAF_ID)
+      })
+    ).rejects.toThrow(WORKTREE_TERMINAL_SLEEP_BLOCKED_ERROR)
+  })
+
   it('allows recovery after a failed sleep with no committed stops', async () => {
     const { runtime, physicalSpawn, listProcesses } = makeSleepActivationRuntime(false)
     listProcesses.mockRejectedValueOnce(new Error('host_unavailable'))

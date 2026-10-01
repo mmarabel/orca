@@ -14,7 +14,7 @@ import {
   makeWorkspaceSessionWithHeadlessTerminal
 } from './orca-runtime-test-fixtures.spec'
 
-export function makeSleepActivationRuntime(initiallyLive = true) {
+export function makeSleepActivationRuntime(initiallyLive = true, registerSurface = true) {
   const { runtimeStore, getSession, setSession } = makeRuntimeStoreWithWorkspaceSession(
     makeWorkspaceSessionWithHeadlessTerminal()
   )
@@ -64,7 +64,7 @@ export function makeSleepActivationRuntime(initiallyLive = true) {
   }
   runtime.setPtyController(controller)
   runtime.syncWindowGraph(0, { tabs: [], leaves: [] })
-  if (initiallyLive) {
+  if (initiallyLive && registerSurface) {
     runtime.registerPty('persisted-pty', TEST_WORKTREE_ID, null, {
       tabId: 'host-tab',
       leafId: HEADLESS_LEAF_ID
@@ -83,8 +83,8 @@ export function makeSleepActivationRuntime(initiallyLive = true) {
   }
 }
 
-export function makePartialSleepActivationRuntime() {
-  const fixture = makeSleepActivationRuntime()
+export function makePartialSleepActivationRuntime(restoredWithoutPaneIdentity = false) {
+  const fixture = makeSleepActivationRuntime(true, !restoredWithoutPaneIdentity)
   const session = fixture.getSession()
   const firstTab = session.tabsByWorktree[TEST_WORKTREE_ID]?.[0]
   if (!firstTab) {

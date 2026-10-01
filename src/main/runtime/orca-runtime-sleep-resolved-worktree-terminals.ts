@@ -8,7 +8,6 @@ import {
   runtimeWorktreeIdentityKey
 } from './runtime-worktree-path-identity'
 import { teardownRpcDeadline } from './worktree-teardown'
-import { captureTerminalSleepPanes } from './worktree-terminal-spawn-sleep-guard'
 
 export class OrcaRuntimeWithSleepResolvedWorktreeTerminals extends OrcaRuntimeWithStopTerminalsForWorktree {
   protected async sleepResolvedWorktreeTerminals(
@@ -89,7 +88,7 @@ export class OrcaRuntimeWithSleepResolvedWorktreeTerminals extends OrcaRuntimeWi
       const livePtyIds = this.getLivePtyIdsForWorktree(worktree.id, refreshedPtyLiveness)
       generation = ++this.terminalSleepGeneration
       sleepStateBase.generation = generation
-      Object.assign(paneKeysByPtyId, captureTerminalSleepPanes(livePtyIds, this.ptysById))
+      Object.assign(paneKeysByPtyId, this.captureTerminalSleepPanes(worktree.id, livePtyIds))
       for (const ptyId of livePtyIds) {
         pendingPtyIds.add(ptyId)
         terminalHandlesByPtyId[ptyId] = this.getTerminalHandlesForPtyId(ptyId)

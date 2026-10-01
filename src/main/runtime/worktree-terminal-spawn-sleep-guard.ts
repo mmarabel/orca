@@ -3,7 +3,12 @@ import {
   isAutomaticTabActivation,
   type TabActivationIntent
 } from '../../shared/tab-activation-intent'
-import { runtimeWorktreeIdentityKey } from './runtime-worktree-path-identity'
+import {
+  runtimeWorktreeIdentityKey,
+  runtimeWorktreeIdsEqual
+} from './runtime-worktree-path-identity'
+import type { WorkspaceSessionState } from '../../shared/workspace-session-state-types'
+import { indexPersistedPtyPaneBindings } from './runtime-worktree-binding-index'
 import { WORKTREE_TERMINAL_SLEEP_BLOCKED_ERROR } from './worktree-terminal-mutation-lock'
 
 export type WorktreeTerminalSleepState = {
@@ -20,11 +25,17 @@ export type WorktreeTerminalSpawnSurface = { ptyId?: string; paneKey?: string }
 
 export function captureTerminalSleepPanes(
   ptyIds: Iterable<string>,
-  records: ReadonlyMap<string, { paneKey?: string | null }>
+  records: ReadonlyMap<string, { paneKey?: string | null }>,
+  session: WorkspaceSessionState | null | undefined,
+  worktreeId: string
 ): Record<string, string> {
   const paneKeys: Record<string, string> = {}
+  const persisted = indexPersistedPtyPaneBindings(session)
   for (const ptyId of ptyIds) {
-    const paneKey = records.get(ptyId)?.paneKey
+    const saved = persisted.get(ptyId)
+    const paneKey =
+      records.get(ptyId)?.paneKey ??
+      (saved && runtimeWorktreeIdsEqual(saved.worktreeId, worktreeId) ? saved.paneKey : undefined)
     if (paneKey) {
       paneKeys[ptyId] = paneKey
     }
@@ -42,10 +53,18 @@ export function blocksAutomaticTerminalSpawnForSleep(
   if (state.phase !== 'partial') {
     return true
   }
-  return state.ptyIds.some(
-    (ptyId) =>
-      ptyId === surface.ptyId ||
-      (surface.paneKey !== undefined && state.paneKeysByPtyId[ptyId] === surface.paneKey)
+  const matches = (ptyId: string): boolean =>
+    ptyId === surface.ptyId ||
+    (surface.paneKey !== undefined && state.paneKeysByPtyId[ptyId] === surface.paneKey)
+  if (state.ptyIds.some(matches)) {
+    return true
+  }
+  if (state.ptyIds.every((ptyId) => Boolean(state.paneKeysByPtyId[ptyId]))) {
+    return false
+  }
+  // Unknown committed identities cannot license a fresh automatic replacement.
+  return !Object.keys(state.terminalHandlesByPtyId).some(
+    (ptyId) => !state.ptyIds.includes(ptyId) && matches(ptyId)
   )
 }
 

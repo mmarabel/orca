@@ -626,6 +626,9 @@ export function createRemoteRuntimePtyTransport(
         throw error
       }
     }
+    if (!isCurrent()) {
+      return undefined
+    }
     const immediate = activated ? findReadyHostSessionTerminal(activated, hostTabId) : undefined
     if (immediate) {
       adoptExecutionMetadata(immediate)
@@ -679,6 +682,9 @@ export function createRemoteRuntimePtyTransport(
         activationOutcomeUnknown = true
         nextRequest = 'list'
         continue
+      }
+      if (!isCurrent()) {
+        return undefined
       }
       const terminal = findReadyHostSessionTerminal(snapshot, hostTabId)
       if (terminal) {

@@ -79,12 +79,35 @@ type Snapshot = PtyProviderBufferSnapshot | null
 
 // Why a subclass: the assertions read the runtime's own PTY records, which are protected.
 class AdoptedTitleRuntime extends OrcaRuntimeService {
+  private explicitStatus: {
+    status: 'permission'
+    updatedAt: number
+    stateStartedAt: number
+  } | null = null
+
   record(ptyId = PTY_ID) {
     return this.ptysById.get(ptyId)
   }
 
   primaryLeaf(ptyId = PTY_ID) {
     return this.getPrimaryLeafForPty(ptyId)
+  }
+
+  setExplicitPermission(updatedAt: number): void {
+    this.explicitStatus = { status: 'permission', updatedAt, stateStartedAt: updatedAt }
+  }
+
+  clearExplicitStatus(): void {
+    this.explicitStatus = null
+  }
+
+  protected override getFreshExplicitAgentStatusForHandle(
+    handle: string,
+    paneKeyOverride?: string | null
+  ) {
+    return (
+      this.explicitStatus ?? super.getFreshExplicitAgentStatusForHandle(handle, paneKeyOverride)
+    )
   }
 }
 
@@ -361,6 +384,13 @@ describe('inventory-adopted daemon session title seed (#22809)', () => {
       status: 'permission'
     })
     await expect(runtime.getTerminalInteractiveWait(handle)).resolves.toEqual({ source: 'title' })
+
+    runtime.setExplicitPermission(1_234)
+    await expect(runtime.getTerminalInteractiveWait(handle)).resolves.toEqual({
+      source: 'hook',
+      since: 1_234
+    })
+    runtime.clearExplicitStatus()
 
     // A different agent that set no title of its own took over the foreground.
     foreground = 'claude'

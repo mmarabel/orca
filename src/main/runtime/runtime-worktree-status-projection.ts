@@ -173,8 +173,17 @@ export function getLatestAgentCandidateTitleInfo(
   return latest
 }
 
-export function getSavedTabWorktreeStatus(title: string, hasPty: boolean): RuntimeWorktreeStatus {
-  return getDetectedWorktreeStatus(detectAgentStatusFromTitle(title), hasPty)
+export function getSavedTabWorktreeStatus(
+  title: string,
+  hasPty: boolean,
+  titleIsRestored = false
+): RuntimeWorktreeStatus {
+  const detected = detectAgentStatusFromTitle(title)
+  // Historical permission is not a live block; canonical hook rows still merge separately.
+  return getDetectedWorktreeStatus(
+    titleIsRestored && detected === 'permission' ? null : detected,
+    hasPty
+  )
 }
 
 export function getDetectedWorktreeStatus(

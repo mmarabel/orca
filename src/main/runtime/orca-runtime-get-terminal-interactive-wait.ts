@@ -53,9 +53,12 @@ export class OrcaRuntimeWithGetTerminalInteractiveWait extends OrcaRuntimeWithAd
       if (!restored) {
         return undefined
       }
-      return restored.isRunningAgent && restored.status === 'permission'
-        ? { source: 'title' }
-        : null
+      if (!restored.isRunningAgent || restored.status !== 'permission') {
+        return null
+      }
+      return explicitStatus?.status === 'permission'
+        ? { source: 'hook', since: explicitStatus.updatedAt }
+        : { source: 'title' }
     }
     if (explicitStatus?.status !== 'permission') {
       return null

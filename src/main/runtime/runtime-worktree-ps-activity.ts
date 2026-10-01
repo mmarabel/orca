@@ -11,6 +11,7 @@ import {
   getLeafWorktreeStatus,
   getSavedTabWorktreeStatus,
   maxTimestamp,
+  ptyTitleIsRestored,
   mergeWorktreeSummaryStatus
 } from './runtime-worktree-status-projection'
 import { runtimeWorktreeIdsEqual } from './runtime-worktree-path-identity'
@@ -148,7 +149,11 @@ export function applyRuntimeWorktreePsTerminalActivity(args: {
     summary.hasAttachedPty = true
     summary.hasHostSidebarActivity = true
     summary.lastOutputAt = maxTimestamp(summary.lastOutputAt, pty.lastOutputAt)
-    const ptyStatus = getSavedTabWorktreeStatus(owner.title, true)
+    const ptyStatus = getSavedTabWorktreeStatus(
+      owner.title,
+      true,
+      ptyTitleIsRestored(pty, owner.title)
+    )
     if (ptyStatus === 'working') {
       addWorkingTerminalEvidence(workingEvidence, summary.worktreeId, {
         paneKey: pty.paneKey,

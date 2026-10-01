@@ -106,11 +106,7 @@ export function useResourceUsageActions({
         activateAndRevealWorkspace(worktreeId, { executionHostId })
         return
       }
-      const target = resolveResourceManagerWorktreeTarget(
-        worktreeId,
-        getAllWorktreesFromState(useAppStore.getState()),
-        executionHostId
-      )
+      const target = useAppStore.getState().getKnownWorktreeById(worktreeId, executionHostId)
       if (!target) {
         return
       }

@@ -7,7 +7,8 @@ import type { ResourceManagerWorktreeTarget } from './resource-manager-worktree-
 const mocks = vi.hoisted(() => ({
   activateAndRevealWorkspace: vi.fn(),
   activateAndRevealWorktree: vi.fn(),
-  worktrees: [] as ResourceManagerWorktreeTarget[]
+  getKnownWorktreeById: vi.fn(),
+  worktrees: Array<ResourceManagerWorktreeTarget & { runtimeOwnerEnvironmentId?: string }>()
 }))
 
 vi.mock('@/lib/worktree-activation', () => ({
@@ -15,7 +16,9 @@ vi.mock('@/lib/worktree-activation', () => ({
   activateAndRevealWorktree: mocks.activateAndRevealWorktree
 }))
 vi.mock('@/lib/activate-tab-and-focus-pane', () => ({ activateTabAndFocusPane: vi.fn() }))
-vi.mock('../../store', () => ({ useAppStore: { getState: () => ({}) } }))
+vi.mock('../../store', () => ({
+  useAppStore: { getState: () => ({ getKnownWorktreeById: mocks.getKnownWorktreeById }) }
+}))
 vi.mock('../../store/selectors', () => ({ getAllWorktreesFromState: () => mocks.worktrees }))
 vi.mock('../sidebar/delete-worktree-flow', () => ({ runWorktreeDelete: vi.fn() }))
 
@@ -56,7 +59,18 @@ function renderActions(activeHostId: ExecutionHostId = 'local') {
 beforeEach(() => {
   mocks.activateAndRevealWorkspace.mockReset()
   mocks.activateAndRevealWorktree.mockReset()
+  mocks.getKnownWorktreeById.mockReset()
   mocks.worktrees = [{ id: 'repo::/notes', hostId: 'ssh:box' }]
+  mocks.getKnownWorktreeById.mockImplementation(
+    (worktreeId: string, executionHostId: ExecutionHostId) =>
+      mocks.worktrees.find(
+        (worktree) =>
+          worktree.id === worktreeId &&
+          (worktree.hostId === executionHostId ||
+            (worktree.runtimeOwnerEnvironmentId &&
+              executionHostId === `runtime:${worktree.runtimeOwnerEnvironmentId}`))
+      )
+  )
 })
 afterEach(cleanup)
 
@@ -77,6 +91,22 @@ describe('Resource Manager row navigation', () => {
       executionHostId: 'ssh:box'
     })
     expect(mocks.activateAndRevealWorkspace).not.toHaveBeenCalled()
+  })
+
+  it('routes a runtime-owned SSH alias through its selected runtime host', () => {
+    mocks.worktrees = [
+      {
+        id: 'runtime-alias',
+        hostId: 'ssh:runtime-owned',
+        runtimeOwnerEnvironmentId: 'paired'
+      }
+    ]
+
+    renderActions('runtime:paired').navigateToWorktree('runtime-alias')
+
+    expect(mocks.activateAndRevealWorktree).toHaveBeenCalledWith('runtime-alias', {
+      executionHostId: 'runtime:paired'
+    })
   })
 
   it('routes a duplicate worktree id to the host selected in Resource Manager', () => {

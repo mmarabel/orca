@@ -36,9 +36,12 @@ export function useResourceManagerHostSelection() {
   const activeHostId = resolveSelectedResourceManagerHostId(resourceHosts, selectedHostId)
   const viewingRemoteHost = isRemoteResourceManagerHost(activeHostId)
   const resourceSnapshotError = snapshotErrorByHostId[activeHostId] ?? null
+  const activeHostConnected =
+    resourceHosts.find((host) => host.id === activeHostId)?.connected !== false
   // Why: an unreachable remote host is unverifiable, never idle — and a stale
   // reading left on screen under that banner would contradict it.
-  const remoteHostUnreachable = viewingRemoteHost && resourceSnapshotError !== null
+  const remoteHostUnreachable =
+    viewingRemoteHost && (!activeHostConnected || resourceSnapshotError !== null)
   const resourceSnapshot = remoteHostUnreachable ? null : (snapshotByHostId[activeHostId] ?? null)
   // Why: the closed status-bar badge reports this machine's own footprint; it must
   // not start describing a remote box because the popover was left on one.

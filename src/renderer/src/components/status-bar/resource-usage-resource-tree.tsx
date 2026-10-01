@@ -1,7 +1,10 @@
 import React, { useMemo } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { translate } from '@/i18n/i18n'
-import { useWorktreeMap } from '../../store/selectors'
+import { useAppStore } from '../../store'
+import { findKnownWorktreeById } from '../../store/slices/worktrees/listing/detected-worktree-meta'
+import { parseExecutionHostId } from '../../../../shared/execution-host'
+import type { Worktree } from '../../../../shared/worktree/types'
 import type {
   Metric,
   UnifiedProjectGroup,
@@ -57,6 +60,7 @@ function sortProjectGroups(groups: UnifiedProjectGroup[], sort: SortOption): Uni
 
 export function ResourceTree({
   repos,
+  activeHostId,
   sortOption,
   collapsedRepos,
   toggleRepo,
@@ -70,6 +74,7 @@ export function ResourceTree({
   readOnly
 }: {
   repos: UnifiedProjectGroup[]
+  activeHostId: string
   sortOption: SortOption
   collapsedRepos: Set<string>
   toggleRepo: (repoId: string) => void
@@ -82,7 +87,29 @@ export function ResourceTree({
   onKillSession: (session: UnifiedSessionRow) => void
   readOnly: boolean
 }): React.JSX.Element {
-  const worktreeById = useWorktreeMap()
+  const worktreesByRepo = useAppStore((state) => state.worktreesByRepo)
+  const detectedWorktreesByRepo = useAppStore((state) => state.detectedWorktreesByRepo)
+  const folderWorkspaces = useAppStore((state) => state.folderWorkspaces)
+  const executionHostId = parseExecutionHostId(activeHostId)?.id
+  const storeRecordById = useMemo(() => {
+    const map = new Map<string, Worktree>()
+    if (!executionHostId) {
+      return map
+    }
+    for (const repo of repos) {
+      for (const worktree of repo.worktrees) {
+        const record = findKnownWorktreeById(
+          { worktreesByRepo, detectedWorktreesByRepo, folderWorkspaces },
+          worktree.worktreeId,
+          executionHostId
+        )
+        if (record) {
+          map.set(worktree.worktreeId, record)
+        }
+      }
+    }
+    return map
+  }, [repos, executionHostId, worktreesByRepo, detectedWorktreesByRepo, folderWorkspaces])
 
   const sortedRepos = useMemo(() => {
     const grouped = sortProjectGroups(repos, sortOption)
@@ -93,7 +120,9 @@ export function ResourceTree({
   }, [repos, sortOption])
 
   const renderWorktree = (wt: UnifiedWorktreeRow): React.JSX.Element => {
-    const storeRecord = worktreeById.get(wt.worktreeId) ?? null
+    // Why: the id-keyed map cannot distinguish twins; resolve display/action
+    // metadata through the same host-qualified catalog boundary as navigation.
+    const storeRecord = storeRecordById.get(wt.worktreeId) ?? null
     return (
       <WorktreeRow
         key={wt.worktreeId}

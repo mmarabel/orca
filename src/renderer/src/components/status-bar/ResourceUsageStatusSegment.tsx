@@ -126,8 +126,13 @@ export function ResourceUsageStatusSegment({
             selectedHostId={activeHostId}
             onSelect={setSelectedHostId}
           />
-          {daemonUnreachable && renderDaemonUnreachableBanner({ daemonActions })}
-          {!daemonUnreachable && sessionsOnlyError && renderSessionsOnlyErrorBanner()}
+          {!viewingRemoteHost &&
+            daemonUnreachable &&
+            renderDaemonUnreachableBanner({ daemonActions })}
+          {!viewingRemoteHost &&
+            !daemonUnreachable &&
+            sessionsOnlyError &&
+            renderSessionsOnlyErrorBanner()}
           {remoteHostUnreachable && renderRemoteHostUnreachableBanner()}
           {renderResourceUsageSummary({
             hasSnapshot: resourceSnapshot !== null,
@@ -143,6 +148,7 @@ export function ResourceUsageStatusSegment({
           })}
           {renderResourceUsagePopoverBody({
             setPopoverBodyNode,
+            activeHostId,
             unifiedRepos,
             resourceSnapshot,
             sortOption,

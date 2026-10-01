@@ -1,12 +1,14 @@
 // @vitest-environment happy-dom
 import { cleanup, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ExecutionHostId } from '../../../../shared/execution-host'
 import type { ResourceManagerWorktreeTarget } from './resource-manager-worktree-target'
 
 const mocks = vi.hoisted(() => ({
   activateAndRevealWorkspace: vi.fn(),
   activateAndRevealWorktree: vi.fn(),
-  worktrees: [] as ResourceManagerWorktreeTarget[]
+  getKnownWorktreeById: vi.fn(),
+  worktrees: Array<ResourceManagerWorktreeTarget & { runtimeOwnerEnvironmentId?: string }>()
 }))
 
 vi.mock('@/lib/worktree-activation', () => ({
@@ -14,15 +16,18 @@ vi.mock('@/lib/worktree-activation', () => ({
   activateAndRevealWorktree: mocks.activateAndRevealWorktree
 }))
 vi.mock('@/lib/activate-tab-and-focus-pane', () => ({ activateTabAndFocusPane: vi.fn() }))
-vi.mock('../../store', () => ({ useAppStore: { getState: () => ({}) } }))
+vi.mock('../../store', () => ({
+  useAppStore: { getState: () => ({ getKnownWorktreeById: mocks.getKnownWorktreeById }) }
+}))
 vi.mock('../../store/selectors', () => ({ getAllWorktreesFromState: () => mocks.worktrees }))
 vi.mock('../sidebar/delete-worktree-flow', () => ({ runWorktreeDelete: vi.fn() }))
 
 import { useResourceUsageActions } from './use-resource-usage-actions'
 
-function renderActions() {
+function renderActions(activeHostId: ExecutionHostId = 'local') {
   return renderHook(() =>
     useResourceUsageActions({
+      activeHostId,
       setCollapsedRepos: vi.fn(),
       setCollapsedWorktrees: vi.fn(),
       tabsByWorktree: {},
@@ -54,7 +59,18 @@ function renderActions() {
 beforeEach(() => {
   mocks.activateAndRevealWorkspace.mockReset()
   mocks.activateAndRevealWorktree.mockReset()
+  mocks.getKnownWorktreeById.mockReset()
   mocks.worktrees = [{ id: 'repo::/notes', hostId: 'ssh:box' }]
+  mocks.getKnownWorktreeById.mockImplementation(
+    (worktreeId: string, executionHostId: ExecutionHostId) =>
+      mocks.worktrees.find(
+        (worktree) =>
+          worktree.id === worktreeId &&
+          (worktree.hostId === executionHostId ||
+            (worktree.runtimeOwnerEnvironmentId &&
+              executionHostId === `runtime:${worktree.runtimeOwnerEnvironmentId}`))
+      )
+  )
 })
 afterEach(cleanup)
 
@@ -62,16 +78,47 @@ describe('Resource Manager row navigation', () => {
   it('activates a folder workspace row through the workspace dispatcher', () => {
     renderActions().navigateToWorktree('folder:notes')
 
-    expect(mocks.activateAndRevealWorkspace).toHaveBeenCalledWith('folder:notes')
+    expect(mocks.activateAndRevealWorkspace).toHaveBeenCalledWith('folder:notes', {
+      executionHostId: 'local'
+    })
     expect(mocks.activateAndRevealWorktree).not.toHaveBeenCalled()
   })
 
   it('still routes worktree rows through the host-resolved activator', () => {
-    renderActions().navigateToWorktree('repo::/notes')
+    renderActions('ssh:box').navigateToWorktree('repo::/notes')
 
     expect(mocks.activateAndRevealWorktree).toHaveBeenCalledWith('repo::/notes', {
       executionHostId: 'ssh:box'
     })
     expect(mocks.activateAndRevealWorkspace).not.toHaveBeenCalled()
+  })
+
+  it('routes a runtime-owned SSH alias through its selected runtime host', () => {
+    mocks.worktrees = [
+      {
+        id: 'runtime-alias',
+        hostId: 'ssh:runtime-owned',
+        runtimeOwnerEnvironmentId: 'paired'
+      }
+    ]
+
+    renderActions('runtime:paired').navigateToWorktree('runtime-alias')
+
+    expect(mocks.activateAndRevealWorktree).toHaveBeenCalledWith('runtime-alias', {
+      executionHostId: 'runtime:paired'
+    })
+  })
+
+  it('routes a duplicate worktree id to the host selected in Resource Manager', () => {
+    mocks.worktrees = [
+      { id: 'same-id', hostId: 'local' },
+      { id: 'same-id', hostId: 'runtime:env-1' }
+    ]
+
+    renderActions('runtime:env-1').navigateToWorktree('same-id')
+
+    expect(mocks.activateAndRevealWorktree).toHaveBeenCalledWith('same-id', {
+      executionHostId: 'runtime:env-1'
+    })
   })
 })

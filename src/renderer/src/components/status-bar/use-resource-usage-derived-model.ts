@@ -2,7 +2,12 @@ import { useMemo } from 'react'
 import type { AppState } from '../../store/types'
 import type { MemorySnapshot } from '../../../../shared/process-stats-types'
 import type { Worktree } from '../../../../shared/worktree/types'
-import { getRepoExecutionHostId, parseExecutionHostId } from '../../../../shared/execution-host'
+import {
+  getRepoExecutionHostId,
+  parseExecutionHostId,
+  type ExecutionHostId
+} from '../../../../shared/execution-host'
+import { isExecutionHostAliasForWorktree } from '../../lib/worktree-execution-host-alias'
 import { mergeSnapshotAndSessions } from './mergeSnapshotAndSessions'
 import type { DaemonSession } from './resource-usage-merge-types'
 import type { ResourceSessionBindingInputs } from './resource-session-bindings'
@@ -40,6 +45,7 @@ function summarizeSnapshotMemory(snapshot: MemorySnapshot | null) {
 
 export function useResourceUsageDerivedModel({
   open,
+  activeHostId,
   viewingRemoteHost,
   resourceSnapshot,
   sessions,
@@ -57,6 +63,7 @@ export function useResourceUsageDerivedModel({
   spaceScanReady
 }: {
   open: boolean
+  activeHostId: ExecutionHostId
   viewingRemoteHost: boolean
   /** The host on screen in the popover. */
   resourceSnapshot: MemorySnapshot | null
@@ -112,10 +119,17 @@ export function useResourceUsageDerivedModel({
     return map
   }, [repos])
 
-  const worktreeById = useMemo(
-    () => new Map(allWorktrees.map((worktree) => [worktree.id, worktree])),
-    [allWorktrees]
-  )
+  const worktreeById = useMemo(() => {
+    const map = new Map<string, Worktree>()
+    for (const worktree of allWorktrees) {
+      // Why: retain unique off-host rows for ownership filtering, but when an id
+      // repeats, its display metadata must follow the selected host like activation.
+      if (!map.has(worktree.id) || isExecutionHostAliasForWorktree(activeHostId, worktree)) {
+        map.set(worktree.id, worktree)
+      }
+    }
+    return map
+  }, [activeHostId, allWorktrees])
   // Why: a bare resource identity cannot choose between the same workspace id on different
   // hosts, but the id still exists; keep the map whole and let the merge gate attribution only.
   const ambiguousWorktreeIds = useMemo(() => findAmbiguousWorktreeIds(allWorktrees), [allWorktrees])

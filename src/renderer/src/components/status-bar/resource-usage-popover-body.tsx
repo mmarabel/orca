@@ -18,6 +18,7 @@ import { ResourceManagerSkeleton } from './ResourceManagerSkeleton'
 
 export function renderResourceUsagePopoverBody({
   setPopoverBodyNode,
+  activeHostId,
   unifiedRepos,
   resourceSnapshot,
   sortOption,
@@ -38,6 +39,7 @@ export function renderResourceUsagePopoverBody({
   showLoadingSkeleton
 }: {
   setPopoverBodyNode: (node: HTMLDivElement | null) => void
+  activeHostId: string
   unifiedRepos: UnifiedProjectGroup[]
   resourceSnapshot: MemorySnapshot | null
   sortOption: SortOption
@@ -115,6 +117,7 @@ export function renderResourceUsagePopoverBody({
         {unifiedRepos.length > 0 && (
           <ResourceTree
             repos={unifiedRepos}
+            activeHostId={activeHostId}
             sortOption={sortOption}
             collapsedRepos={collapsedRepos}
             toggleRepo={toggleRepo}

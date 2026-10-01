@@ -1,4 +1,4 @@
-import type { TuiAgent } from './types'
+import type { TuiAgent } from './tui-agent'
 import { isTuiAgent } from './tui-agent-config'
 
 // Keep this order in sync with the desktop agent catalog. It defines the
@@ -10,11 +10,18 @@ export const TUI_AGENT_AUTO_PICK_ORDER = [
   'codex',
   'grok',
   'copilot',
+  'opencode2',
   'opencode',
   'mimo-code',
   'ante',
+  'trae',
+  'muse',
+  'dsh',
+  'qoder',
+  'zcode',
   'pi',
   'omp',
+  'prime-agent',
   'gemini',
   'antigravity',
   'aider',
@@ -27,6 +34,7 @@ export const TUI_AGENT_AUTO_PICK_ORDER = [
   'autohand',
   'cline',
   'codebuff',
+  'freebuff',
   'command-code',
   'continue',
   'cursor',
@@ -37,7 +45,8 @@ export const TUI_AGENT_AUTO_PICK_ORDER = [
   'rovo',
   'hermes',
   'devin',
-  'openclaw'
+  'openclaw',
+  'codebuddy'
 ] as const satisfies readonly TuiAgent[]
 
 // Why: fresh installs should expose Claude Agent Teams in agent pickers; the
@@ -76,6 +85,12 @@ export function normalizeDisabledTuiAgents(value: unknown): TuiAgent[] {
     }
   }
   return [...seen]
+}
+
+export function haveSameDisabledTuiAgents(left: unknown, right: unknown): boolean {
+  const leftSet = new Set(normalizeDisabledTuiAgents(left))
+  const rightSet = new Set(normalizeDisabledTuiAgents(right))
+  return leftSet.size === rightSet.size && [...leftSet].every((agent) => rightSet.has(agent))
 }
 
 export function isTuiAgentEnabled(agent: TuiAgent, disabled?: Iterable<unknown> | null): boolean {

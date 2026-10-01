@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { copyFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, linkSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { rename } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { setTimeout } from 'node:timers/promises'
 import { grantDirAcl, isPermissionError } from '../win32-utils'
+import { nodeFileContentsEqualSync } from '../../shared/node-file-content-equality'
 
 export function writeFileAtomically(
   targetPath: string,
@@ -39,6 +42,158 @@ export function writeFileAtomically(
   }
 }
 
+export function writeFileAtomicallyIfUnchanged(
+  targetPath: string,
+  expectedContents: string | null,
+  contents: string,
+  options?: { mode?: number }
+): boolean {
+  try {
+    return attemptGuardedAtomicWrite(targetPath, expectedContents, contents, options)
+  } catch (error) {
+    if (!isPermissionError(error) || process.platform !== 'win32') {
+      throw error
+    }
+    grantDirAcl(dirname(targetPath))
+    return attemptGuardedAtomicWrite(targetPath, expectedContents, contents, options)
+  }
+}
+
+export function removeFileAtomicallyIfUnchanged(
+  targetPath: string,
+  expectedContents: string
+): boolean {
+  const heldPath = getGuardedOperationHeldPath(targetPath)
+  recoverInterruptedGuardedOperation(heldPath, targetPath)
+  try {
+    assertHardLinkPublicationSupported(targetPath, targetPath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false
+    }
+    throw error
+  }
+  try {
+    renameFileWithWindowsRetry(targetPath, heldPath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false
+    }
+    throw error
+  }
+  try {
+    if (!nodeFileContentsEqualSync(heldPath, expectedContents)) {
+      restoreMovedFileWithoutOverwrite(heldPath, targetPath)
+      return false
+    }
+    rmSync(heldPath, { force: true })
+    return !existsSync(targetPath)
+  } catch (error) {
+    restoreMovedFileWithoutOverwrite(heldPath, targetPath)
+    throw error
+  }
+}
+
+export function recoverInterruptedGuardedFileOperation(targetPath: string): void {
+  recoverInterruptedGuardedOperation(getGuardedOperationHeldPath(targetPath), targetPath)
+}
+
+function restoreMovedFileWithoutOverwrite(sourcePath: string, targetPath: string): void {
+  if (!existsSync(sourcePath)) {
+    return
+  }
+  publishFileWithoutOverwrite(sourcePath, targetPath)
+  rmSync(sourcePath, { force: true })
+}
+
+function getGuardedOperationHeldPath(targetPath: string): string {
+  return `${targetPath}.orca-guarded`
+}
+
+function recoverInterruptedGuardedOperation(heldPath: string, targetPath: string): void {
+  if (!existsSync(heldPath)) {
+    return
+  }
+  publishFileWithoutOverwrite(heldPath, targetPath)
+  rmSync(heldPath, { force: true })
+}
+
+function attemptGuardedAtomicWrite(
+  targetPath: string,
+  expectedContents: string | null,
+  contents: string,
+  options?: { mode?: number }
+): boolean {
+  const tmpPath = `${targetPath}.${process.pid}.${randomUUID()}.tmp`
+  const heldPath = getGuardedOperationHeldPath(targetPath)
+  recoverInterruptedGuardedOperation(heldPath, targetPath)
+  try {
+    writeFileSync(tmpPath, contents, { encoding: 'utf-8', mode: options?.mode })
+    if (expectedContents === null) {
+      return publishFileWithoutOverwrite(tmpPath, targetPath)
+    }
+    assertHardLinkPublicationSupported(tmpPath, targetPath)
+    try {
+      renameFileWithWindowsRetry(targetPath, heldPath)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return false
+      }
+      throw error
+    }
+    if (!nodeFileContentsEqualSync(heldPath, expectedContents)) {
+      restoreMovedFileWithoutOverwrite(heldPath, targetPath)
+      return false
+    }
+    if (!publishFileWithoutOverwrite(tmpPath, targetPath)) {
+      rmSync(heldPath, { force: true })
+      return false
+    }
+    rmSync(heldPath, { force: true })
+    return true
+  } catch (error) {
+    restoreMovedFileWithoutOverwrite(heldPath, targetPath)
+    throw error
+  } finally {
+    rmSync(tmpPath, { force: true })
+  }
+}
+
+function assertHardLinkPublicationSupported(sourcePath: string, targetPath: string): void {
+  const probePath = `${targetPath}.${process.pid}.${randomUUID()}.link-probe`
+  try {
+    if (!publishFileWithoutOverwrite(sourcePath, probePath)) {
+      throw new Error(`Guarded file publication probe already exists: ${probePath}`)
+    }
+  } finally {
+    rmSync(probePath, { force: true })
+  }
+}
+
+export function publishFileWithoutOverwrite(sourcePath: string, targetPath: string): boolean {
+  try {
+    linkSync(sourcePath, targetPath)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      return false
+    }
+    if (isPermissionError(error) && process.platform === 'win32') {
+      grantDirAcl(dirname(targetPath))
+      try {
+        linkSync(sourcePath, targetPath)
+        return true
+      } catch (retryError) {
+        if ((retryError as NodeJS.ErrnoException).code === 'EEXIST') {
+          return false
+        }
+        throw retryError
+      }
+    }
+    throw error
+  }
+}
+
 // Why: on Windows, file replacement and backup-copy operations can fail with
 // EPERM/EACCES/EBUSY if another process (antivirus, Claude CLI, Codex CLI)
 // holds the target file open. A short retry avoids transient failures without
@@ -48,25 +203,54 @@ export function renameFileWithWindowsRetry(source: string, target: string): void
   runFileOperationWithWindowsRetry(() => renameSync(source, target))
 }
 
+export async function renameFileWithWindowsRetryAsync(
+  source: string,
+  target: string,
+  isCurrent: () => boolean = () => true
+): Promise<boolean> {
+  for (let attempt = 1; ; attempt++) {
+    if (!isCurrent()) {
+      return false
+    }
+    try {
+      await rename(source, target)
+      return true
+    } catch (error) {
+      if (!shouldRetryFileOperation(error, attempt)) {
+        throw error
+      }
+      await setTimeout(attempt * 50)
+    }
+  }
+}
+
 export function copyFileWithWindowsRetry(source: string, target: string): void {
   runFileOperationWithWindowsRetry(() => copyFileSync(source, target))
 }
 
 function runFileOperationWithWindowsRetry(operation: () => void): void {
-  const maxAttempts = process.platform === 'win32' ? 6 : 1
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+  for (let attempt = 1; ; attempt++) {
     try {
       operation()
       return
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code
-      if (attempt < maxAttempts && (code === 'EPERM' || code === 'EACCES' || code === 'EBUSY')) {
+      if (shouldRetryFileOperation(error, attempt)) {
         sleepSync(attempt * 50)
         continue
       }
       throw error
     }
   }
+}
+
+function shouldRetryFileOperation(error: unknown, attempt: number): boolean {
+  return (
+    process.platform === 'win32' &&
+    attempt < 6 &&
+    error instanceof Error &&
+    'code' in error &&
+    (error.code === 'EPERM' || error.code === 'EACCES' || error.code === 'EBUSY')
+  )
 }
 
 // Why: writeFileAtomically is a sync API called from sync paths, so the retry

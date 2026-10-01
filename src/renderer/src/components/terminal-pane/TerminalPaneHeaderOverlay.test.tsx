@@ -22,7 +22,6 @@ vi.mock('@/i18n/i18n', () => ({
       fallback
     )
 }))
-
 const mounted: { container: HTMLDivElement; root: Root }[] = []
 
 function makePane(id: number): ManagedPane {
@@ -44,18 +43,26 @@ function renderOverlay({
   paneTitles,
   paneCount = 2,
   showAlwaysOnHeaders = true,
+  showSplitButton = true,
+  isTabPinned = false,
   onClosePane = vi.fn(),
   onRemoveTitle = vi.fn(),
   onRenameSubmit = vi.fn(),
+  canContinueAgentSessionInNewSession = false,
+  onContinueAgentSessionInNewSession = vi.fn(),
   renameValue = '',
   renamingPaneId = null
 }: {
   paneTitles: Record<number, string>
   paneCount?: number
   showAlwaysOnHeaders?: boolean
+  showSplitButton?: boolean
+  isTabPinned?: boolean
   onClosePane?: ReturnType<typeof vi.fn>
   onRemoveTitle?: ReturnType<typeof vi.fn>
   onRenameSubmit?: ReturnType<typeof vi.fn>
+  canContinueAgentSessionInNewSession?: boolean
+  onContinueAgentSessionInNewSession?: ReturnType<typeof vi.fn>
   renameValue?: string
   renamingPaneId?: number | null
 }): {
@@ -64,7 +71,7 @@ function renderOverlay({
   onRemoveTitle: ReturnType<typeof vi.fn>
   onRenameSubmit: ReturnType<typeof vi.fn>
 } {
-  const panes = [makePane(1), makePane(2)]
+  const panes = [makePane(1), makePane(2)].slice(0, paneCount)
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
@@ -75,6 +82,8 @@ function renderOverlay({
         worktreeId="wt-1"
         cwd={path.join(path.sep, 'tmp')}
         showAlwaysOnHeaders={showAlwaysOnHeaders}
+        showSplitButton={showSplitButton}
+        isTabPinned={isTabPinned}
         paneCount={paneCount}
         activePaneId={1}
         panes={panes}
@@ -92,6 +101,10 @@ function renderOverlay({
         hiddenStartupStyle={{}}
         managerRef={{ current: null } as RefObject<PaneManager | null>}
         paneTransportsRef={{ current: new Map() } as RefObject<Map<number, PtyTransport>>}
+        canContinueAgentSessionInNewSession={canContinueAgentSessionInNewSession}
+        onContinueAgentSessionInNewSession={
+          onContinueAgentSessionInNewSession as (pane: ManagedPane) => void
+        }
         onSplitPane={vi.fn()}
         onBeginPaneDrag={vi.fn()}
         onActivatePaneTitleInteraction={vi.fn()}
@@ -135,7 +148,7 @@ afterEach(() => {
 })
 
 describe('TerminalPaneHeaderOverlay', () => {
-  it('keeps the titled-pane close affordance as remove-title while headers are always on', () => {
+  it('keeps the titled split-pane X as remove-title only', () => {
     const { container, onClosePane, onRemoveTitle } = renderOverlay({
       paneTitles: { 1: 'server', 2: '' }
     })
@@ -144,15 +157,34 @@ describe('TerminalPaneHeaderOverlay', () => {
       'button[aria-label="Remove pane title: server"]'
     )
     expect(removeTitle).not.toBeNull()
+    expect(
+      container.querySelector('.pane-title-bar[data-active-pane] button[aria-label="Close Pane"]')
+    ).toBeNull()
 
     act(() => removeTitle?.click())
 
     expect(onRemoveTitle).toHaveBeenCalledWith(1)
-    expect(onClosePane).not.toHaveBeenCalledWith(1)
+    expect(onClosePane).not.toHaveBeenCalled()
+  })
+
+  it('offers close tab beside remove-title for a titled single pane', () => {
+    const { container, onClosePane, onRemoveTitle } = renderOverlay({
+      paneTitles: { 1: 'server' },
+      paneCount: 1
+    })
+
+    expect(container.querySelector('button[aria-label="Remove pane title: server"]')).not.toBeNull()
+    const closeTab = container.querySelector<HTMLButtonElement>('button[aria-label="Close tab"]')
+    expect(closeTab).not.toBeNull()
+
+    act(() => closeTab?.click())
+
+    expect(onClosePane).toHaveBeenCalledWith(1)
+    expect(onRemoveTitle).not.toHaveBeenCalled()
   })
 
   it('keeps split and close-pane controls available for untitled split pane headers', () => {
-    const { container, onClosePane, onRemoveTitle } = renderOverlay({
+    const { container, onClosePane } = renderOverlay({
       paneTitles: { 1: '', 2: '' }
     })
 
@@ -164,7 +196,42 @@ describe('TerminalPaneHeaderOverlay', () => {
     act(() => closePane?.click())
 
     expect(onClosePane).toHaveBeenCalledWith(1)
-    expect(onRemoveTitle).not.toHaveBeenCalled()
+  })
+
+  it('offers close tab for an untitled single pane', () => {
+    const { container, onClosePane } = renderOverlay({ paneTitles: { 1: '' }, paneCount: 1 })
+
+    const closeTab = container.querySelector<HTMLButtonElement>('button[aria-label="Close tab"]')
+    expect(closeTab).not.toBeNull()
+    expect(container.querySelector('button[aria-label="Close Pane"]')).toBeNull()
+
+    act(() => closeTab?.click())
+
+    expect(onClosePane).toHaveBeenCalledWith(1)
+  })
+
+  it.each([
+    { label: 'untitled', title: '' },
+    { label: 'titled', title: 'server' }
+  ])('keeps a pinned $label single-pane tab without a close button', ({ title }) => {
+    const { container } = renderOverlay({
+      paneTitles: { 1: title },
+      paneCount: 1,
+      isTabPinned: true
+    })
+
+    expect(container.querySelector('button[aria-label="Close tab"]')).toBeNull()
+  })
+
+  it('omits the split control when the header affordance is hidden', () => {
+    const { container } = renderOverlay({
+      paneTitles: { 1: '', 2: '' },
+      paneCount: 1,
+      showSplitButton: false
+    })
+
+    expect(container.querySelector('button[aria-label="Split Terminal Right"]')).toBeNull()
+    expect(container.querySelector('button[aria-label="Close tab"]')).toBeNull()
   })
 
   it('ignores IME composition Enter before submitting a pane title rename', () => {
@@ -184,5 +251,24 @@ describe('TerminalPaneHeaderOverlay', () => {
     pressInputKey(input as HTMLInputElement, 'Enter')
 
     expect(onRenameSubmit).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows new-session continuation on the active agent pane header', () => {
+    const onContinueAgentSessionInNewSession = vi.fn()
+    const { container } = renderOverlay({
+      paneTitles: { 1: '', 2: '' },
+      canContinueAgentSessionInNewSession: true,
+      onContinueAgentSessionInNewSession
+    })
+    const handoff = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Continue in New Session…"]'
+    )
+
+    expect(handoff).not.toBeNull()
+    act(() => handoff?.click())
+
+    expect(onContinueAgentSessionInNewSession).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 1 })
+    )
   })
 })

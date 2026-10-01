@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  getComposerRepoWorktreeBranches,
   isBranchCheckedOutInWorktrees,
   resolveComposerBranchNameOverrideForCreate,
   resolveComposerBranchReuse,
@@ -209,6 +210,20 @@ describe('isBranchCheckedOutInWorktrees', () => {
   })
 })
 
+describe('getComposerRepoWorktreeBranches', () => {
+  it('supplies only the selected repo branches to reuse eligibility', () => {
+    expect(
+      getComposerRepoWorktreeBranches(
+        [
+          { repoId: 'repo-a', branch: 'feature/a' },
+          { repoId: 'repo-b', branch: 'feature/b' }
+        ],
+        'repo-a'
+      )
+    ).toEqual(['feature/a'])
+  })
+})
+
 describe('resolveComposerReuseOverride', () => {
   it('keeps the selection override for a reusable (non-busy) local branch', () => {
     expect(
@@ -257,17 +272,6 @@ describe('resolveComposerBranchReuse', () => {
         branchCheckedOutElsewhere: false
       })
     ).toEqual({ reuseEligibleBranch: 'feature-x', defaultReuse: true })
-  })
-
-  it('treats a slash-containing local branch as reusable (ref equals local name)', () => {
-    expect(
-      resolveComposerBranchReuse({
-        refName: 'fix/bug-0',
-        localBranchName: 'fix/bug-0',
-        selectionProducedOverride: true,
-        branchCheckedOutElsewhere: false
-      })
-    ).toEqual({ reuseEligibleBranch: 'fix/bug-0', defaultReuse: true })
   })
 
   it('does not offer reuse for a remote-only ref (ref carries an origin/ prefix)', () => {

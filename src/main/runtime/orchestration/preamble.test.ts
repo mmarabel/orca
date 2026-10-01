@@ -1,4 +1,6 @@
 import { spawnSync } from 'node:child_process'
+import remarkParse from 'remark-parse'
+import { unified } from 'unified'
 import { describe, expect, it } from 'vitest'
 import { buildDispatchPreamble } from './preamble'
 
@@ -8,6 +10,7 @@ function baseParams(overrides: Partial<Parameters<typeof buildDispatchPreamble>[
     dispatchId: 'ctx_def456',
     taskSpec: 'Implement the login form',
     coordinatorHandle: 'term_coord',
+    workerHandle: 'term_worker',
     ...overrides
   }
 }
@@ -22,6 +25,22 @@ function afterWorkerDoneSection(result: string) {
   return result.slice(sectionStart, sectionEnd)
 }
 
+function cliFence(result: string): string {
+  const match = result.match(/=== CLI COMMANDS ===\n\n```sh\n([\s\S]*?)\n```/)
+  expect(match).not.toBeNull()
+  return match?.[1] ?? ''
+}
+
+function markdownBlocks(result: string) {
+  const tree = unified().use(remarkParse).parse(result)
+  return {
+    headings: tree.children.filter((node) => node.type === 'heading'),
+    codeBlocks: tree.children.filter((node) => node.type === 'code')
+  }
+}
+
+const driftParams = { base: 'origin/main', behind: 3, recentSubjects: ['fix: a', 'feat: b'] }
+
 describe('buildDispatchPreamble', () => {
   it('substitutes template variables', () => {
     const result = buildDispatchPreamble(baseParams())
@@ -33,7 +52,7 @@ describe('buildDispatchPreamble', () => {
     expect(result).not.toContain('{{')
   })
 
-  it('includes worker_done command with --body 3-sentence summary prompt and reportPath', () => {
+  it('includes the mandatory worker_done command without fake optional metadata', () => {
     const result = buildDispatchPreamble(baseParams())
 
     expect(result).toContain('worker_done')
@@ -41,11 +60,16 @@ describe('buildDispatchPreamble', () => {
     expect(result).toContain('orchestration check')
     expect(result).toContain('--body')
     expect(result).toMatch(/3-sentence summary/)
-    expect(result).toContain('reportPath')
+    expect(result).toContain('Append --files-modified only when files changed')
+    expect(result).toContain('Always pass real values')
     expect(result).toContain('--task-id task_abc123')
     expect(result).toContain('--dispatch-id ctx_def456')
-    expect(result).toContain('--files-modified "path/a,path/b"')
-    expect(result).toContain('--report-path "<optional: path to the full artifact>"')
+    expect(result).toContain('--outcome succeeded')
+    expect(result).toContain('replace it with --outcome failed')
+    expect(result).not.toContain('--files-modified "path/a,path/b"')
+    expect(result).not.toContain('--report-path "<optional: path to the full artifact>"')
+    expect(result).toMatch(/orchestration send --from term_worker/)
+    expect(result).not.toContain('orchestration send --to term_coord')
   })
 
   it(
@@ -53,24 +77,56 @@ describe('buildDispatchPreamble', () => {
     { timeout: 15_000 },
     () => {
       const result = buildDispatchPreamble(baseParams())
-      // Why: feeding `bash -n` the full preamble falsely fails on apostrophes
-      // in the surrounding prose. Slice between the CLI markers and strip
-      // shell-style comment lines so we only syntax-check the commands.
-      const cliStart = result.indexOf('=== CLI COMMANDS ===')
-      const cliEnd = result.indexOf('=== AFTER YOU SEND worker_done ===')
-      expect(cliStart).toBeGreaterThan(-1)
-      expect(cliEnd).toBeGreaterThan(cliStart)
-      const block = result.slice(cliStart, cliEnd)
-      const stripped = block
-        .split('\n')
-        .filter((line) => !line.trim().startsWith('#'))
-        .filter((line) => !line.trim().startsWith('==='))
-        .join('\n')
-
-      const check = spawnSync('bash', ['-n'], { input: stripped, encoding: 'utf8' })
+      const check = spawnSync('bash', ['-n'], { input: cliFence(result), encoding: 'utf8' })
       expect(check.status).toBe(0)
     }
   )
+
+  it('renders every injected lifecycle command on one cross-shell-safe line', () => {
+    const result = buildDispatchPreamble(baseParams())
+    const commandLines = result
+      .split('\n')
+      .filter((line) => line.trimStart().startsWith('orca orchestration'))
+
+    expect(commandLines).toHaveLength(5)
+    expect(result).not.toContain('\\\n')
+    expect(commandLines.filter((line) => line.includes('--type worker_done'))).toHaveLength(1)
+    expect(commandLines.filter((line) => line.includes('--type heartbeat'))).toHaveLength(1)
+    expect(commandLines.filter((line) => line.includes('orchestration ask'))).toHaveLength(1)
+    expect(commandLines.filter((line) => line.includes('--type escalation'))).toHaveLength(1)
+  })
+
+  it('fences shell comments so Markdown does not promote them to headings', () => {
+    const result = buildDispatchPreamble(baseParams())
+    const { headings, codeBlocks } = markdownBlocks(result)
+
+    expect(headings).toHaveLength(0)
+    expect(codeBlocks).toHaveLength(1)
+    expect(codeBlocks[0]).toMatchObject({ lang: 'sh', value: cliFence(result) })
+  })
+
+  // Why: a `---` rule directly under a paragraph is a setext H2, so the optional
+  // sections' closing rules must not turn their last sentence into a heading.
+  it('renders no Markdown headings when the sub-dispatch and drift sections are present', () => {
+    const result = buildDispatchPreamble(
+      baseParams({ canDispatchSubWorkers: true, baseDrift: driftParams })
+    )
+    const { headings, codeBlocks } = markdownBlocks(result)
+
+    expect(headings).toHaveLength(0)
+    expect(codeBlocks).toHaveLength(2)
+    expect(codeBlocks[1]).toMatchObject({ lang: 'sh' })
+    expect(codeBlocks[1].value).toContain('orchestration worker-start --task <task_id>')
+    expect(result).toContain('able to dispatch further.\n\n---')
+    expect(result).toContain('before starting.\n\n---')
+  })
+
+  it('sub-dispatch fence passes bash -n', { timeout: 15_000 }, () => {
+    const result = buildDispatchPreamble(baseParams({ canDispatchSubWorkers: true }))
+    const { codeBlocks } = markdownBlocks(result)
+    const check = spawnSync('bash', ['-n'], { input: codeBlocks[1].value, encoding: 'utf8' })
+    expect(check.status).toBe(0)
+  })
 
   it('includes heartbeat CLI block with taskId and dispatchId and 5-minute cadence', () => {
     const result = buildDispatchPreamble(baseParams())
@@ -83,27 +139,61 @@ describe('buildDispatchPreamble', () => {
     expect(result).toContain('--task-id task_abc123')
     expect(result).toContain('--dispatch-id ctx_def456')
     expect(result).toContain('--phase "<short: investigating|implementing|reviewing|waiting>"')
+    expect(result).toMatch(/orchestration send --from term_worker/)
   })
 
-  it('includes ask block with BEHAVIOR RULE #1 forbidding AskUserQuestion', () => {
+  it('includes ask block that steers questions away from AskUserQuestion', () => {
     const result = buildDispatchPreamble(baseParams())
-    expect(result).toContain('orchestration ask')
+    expect(result).toMatch(/orchestration ask --from term_worker/)
     expect(result).toContain('--question')
     expect(result).toContain('--timeout-ms 600000')
+    expect(result).not.toContain('--type decision_gate')
     // Why: the exact phrase is asserted so the rule can't be trimmed away by
-    // accident. BEHAVIOR RULE #1 is the only place AskUserQuestion appears.
-    expect(result).toContain('BEHAVIOR RULE #1')
-    expect(result).toContain('NEVER use AskUserQuestion')
-    // AskUserQuestion must appear ONLY inside the rule text, not anywhere
-    // else (e.g., not in an example payload or header). Count occurrences
-    // of the exact token as a sanity check.
-    const occurrences = (result.match(/AskUserQuestion/g) ?? []).length
-    // Three mentions: the one-liner ban, the TUI-prompt rationale, and the
-    // "when tempted to reach for AskUserQuestion" closing line.
-    expect(occurrences).toBe(3)
+    // accident. The ask block is the only place AskUserQuestion appears.
+    expect(result).toContain('Use this instead of AskUserQuestion')
+    expect(result).toContain('Send every question through `ask`')
+    expect((result.match(/AskUserQuestion/g) ?? []).length).toBe(1)
   })
 
-  it('tells prompt-returning workers to idle without post-done polling', () => {
+  it('avoids shouted rules', () => {
+    // Why: Claude workers cited shouted rules when refusing briefs as prompt injection (STA-8200).
+    expect(buildDispatchPreamble(baseParams())).not.toMatch(
+      /MUST NOT VIOLATE|BEHAVIOR RULE|NEVER use/
+    )
+  })
+
+  it('binds every injected worker command to the dispatched terminal', () => {
+    const result = buildDispatchPreamble(baseParams())
+
+    expect(result).toMatch(/orchestration ask --from term_worker/)
+    expect(result).toMatch(/orchestration send --from term_worker --type escalation/)
+    expect(result).toContain('--task-id task_abc123 --dispatch-id ctx_def456')
+    expect(result).toContain('orchestration check --terminal term_worker --json')
+  })
+
+  it('gives the worker a concrete cadence for reading coordinator follow-ups', () => {
+    const result = buildDispatchPreamble(baseParams())
+    const checkLine = result.indexOf('orchestration check --terminal term_worker --json')
+    const cadence = result.slice(0, checkLine)
+
+    // Why: the transport is durable but never interrupts, so "you may check" produced
+    // workers that never read a single follow-up.
+    expect(cadence).toContain('before you\n  # start a new file and after a test run')
+    expect(cadence).toContain('immediately before\n  # you send worker_done')
+  })
+
+  it('renders worker_done and heartbeat recipes bound to the exact Dispatch', () => {
+    const result = buildDispatchPreamble(baseParams())
+
+    expect(result).toMatch(
+      /orchestration send --from term_worker --type worker_done .*?--task-id task_abc123 --dispatch-id ctx_def456/u
+    )
+    expect(result).toMatch(
+      /orchestration send --from term_worker --type heartbeat .*?--task-id task_abc123 --dispatch-id ctx_def456/u
+    )
+  })
+
+  it('idles prompt-returning workers while preserving direct user authority', () => {
     const result = buildDispatchPreamble(baseParams())
     const section = afterWorkerDoneSection(result)
 
@@ -113,6 +203,12 @@ describe('buildDispatchPreamble', () => {
     expect(section).toContain('Do not exit the shell')
     expect(section).toContain('do NOT run a sleep/poll loop')
     expect(section).toContain('do NOT keep calling')
+    expect(section).toContain('A direct instruction from the user takes precedence')
+    expect(section).toMatch(/follow it without coordinator approval or a\s+fresh Dispatch/)
+    expect(section).toMatch(
+      /do not send lifecycle messages using the settled task or\s+Dispatch IDs/
+    )
+    expect(section).toContain('Never refuse a direct user request because you were a worker')
     expect(section).toMatch(/fresh\s+preamble \+ TASK block/)
     expect(section).not.toMatch(/2 minutes/)
     expect(section).not.toMatch(/10 minutes/)
@@ -146,7 +242,7 @@ describe('buildDispatchPreamble', () => {
   })
 
   it('uses orca-dev CLI when devMode is true', () => {
-    const result = buildDispatchPreamble(baseParams({ devMode: true }))
+    const result = buildDispatchPreamble(baseParams({ devMode: true, cliCommand: 'orca-ide' }))
     expect(result).toContain('orca-dev orchestration send')
     expect(result).toContain('orca-dev orchestration check')
     expect(result).toContain('orca-dev orchestration ask')
@@ -156,10 +252,13 @@ describe('buildDispatchPreamble', () => {
     }
   })
 
-  it('uses orca CLI when devMode is false', () => {
-    const result = buildDispatchPreamble(baseParams({ devMode: false }))
-    expect(result).toContain('orca orchestration send')
-    expect(result).toContain('orca orchestration check')
+  it('uses the exact orca-ide command for packaged WSL workers', () => {
+    const result = buildDispatchPreamble(baseParams({ cliCommand: 'orca-ide' }))
+
+    expect(result).toContain('orca-ide orchestration send')
+    expect(result).toContain('orca-ide orchestration check')
+    expect(result).toContain('orca-ide orchestration ask')
+    expect(result).not.toMatch(/(^|\s)orca orchestration/m)
   })
 
   it('appends a BASE DRIFT section when baseDrift.behind > 0', () => {
@@ -168,6 +267,7 @@ describe('buildDispatchPreamble', () => {
       dispatchId: 'ctx_x',
       taskSpec: 'do stuff',
       coordinatorHandle: 'term_c',
+      workerHandle: 'term_w',
       baseDrift: {
         base: 'origin/main',
         behind: 7,
@@ -190,6 +290,7 @@ describe('buildDispatchPreamble', () => {
       dispatchId: 'ctx_x',
       taskSpec: 'do stuff',
       coordinatorHandle: 'term_c',
+      workerHandle: 'term_w',
       baseDrift: {
         base: 'origin/main',
         behind: 0,
@@ -206,7 +307,8 @@ describe('buildDispatchPreamble', () => {
       taskId: 'task_x',
       dispatchId: 'ctx_x',
       taskSpec: 'do stuff',
-      coordinatorHandle: 'term_c'
+      coordinatorHandle: 'term_c',
+      workerHandle: 'term_w'
     })
 
     expect(result).not.toContain('--- BASE DRIFT ---')
@@ -219,6 +321,7 @@ describe('buildDispatchPreamble', () => {
       dispatchId: 'ctx_x',
       taskSpec: 'do stuff',
       coordinatorHandle: 'term_c',
+      workerHandle: 'term_w',
       baseDrift: {
         base: 'origin/main',
         behind: 3,
@@ -241,8 +344,43 @@ describe('buildDispatchPreamble', () => {
       taskId: 'task_SNAP',
       dispatchId: 'ctx_SNAP',
       taskSpec: 'TASK_BODY',
-      coordinatorHandle: 'term_COORD'
+      coordinatorHandle: 'term_COORD',
+      workerHandle: 'term_WORKER'
     })
     expect(result).toMatchSnapshot()
+  })
+})
+
+describe('sub-dispatch section', () => {
+  const base = {
+    taskId: 'task_1',
+    dispatchId: 'ctx_1',
+    taskSpec: 'do the thing',
+    coordinatorHandle: 'term_coord',
+    workerHandle: 'term_worker'
+  }
+
+  it('is omitted when the worker has no nesting budget', () => {
+    const preamble = buildDispatchPreamble(base)
+    expect(preamble).not.toContain('=== SUB-DISPATCH ===')
+    expect(preamble).not.toContain('worker-start')
+  })
+
+  it('is omitted explicitly when nesting is disallowed', () => {
+    expect(buildDispatchPreamble({ ...base, canDispatchSubWorkers: false })).not.toContain(
+      '=== SUB-DISPATCH ==='
+    )
+  })
+
+  it('appears with the run-create sequence when budget remains', () => {
+    const preamble = buildDispatchPreamble({ ...base, canDispatchSubWorkers: true })
+    expect(preamble).toContain('=== SUB-DISPATCH ===')
+    expect(preamble).toContain('orchestration run-create')
+    expect(preamble).toContain('orchestration worker-start')
+  })
+
+  it('keeps the task block last so the spec is not buried', () => {
+    const preamble = buildDispatchPreamble({ ...base, canDispatchSubWorkers: true })
+    expect(preamble.indexOf('=== SUB-DISPATCH ===')).toBeLessThan(preamble.indexOf('=== TASK ==='))
   })
 })

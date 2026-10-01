@@ -1,16 +1,15 @@
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../shared/constants'
-import type { BrowserTab, TerminalTab } from '../../../shared/types'
+import type { BrowserTab } from '../../../shared/browser-workspace-types'
+import type { TerminalTab } from '../../../shared/terminal-tab-types'
 import { createUntitledMarkdownFileWithTemplateSelection } from './create-untitled-markdown'
 import { getConnectionId } from './connection-context'
 import { detectLanguage } from './language-detect'
 import type { AppState } from '@/store/types'
 import { focusTerminalTabSurface } from './focus-terminal-tab-surface'
 import { translate } from '@/i18n/i18n'
+import { assertClientCreationActionAvailable } from './client-creation-action-policy'
 
-type FloatingWorkspaceTerminalStore = Pick<
-  AppState,
-  'activeGroupIdByWorktree' | 'createTab' | 'activateTab'
->
+type FloatingWorkspaceTerminalStore = Pick<AppState, 'activeGroupIdByWorktree' | 'createTab'>
 
 type FloatingWorkspaceBrowserStore = Pick<
   AppState,
@@ -27,10 +26,7 @@ export async function createFloatingWorkspaceTerminalTab(
 
   // Why: the floating workspace is a local scratchpad; a focused remote runtime
   // must not own its SSH/tmux terminals or prune them via session snapshots.
-  const tab = store.createTab(FLOATING_TERMINAL_WORKTREE_ID, targetGroupId, shellOverride, {
-    activate: false
-  })
-  store.activateTab(tab.id)
+  const tab = store.createTab(FLOATING_TERMINAL_WORKTREE_ID, targetGroupId, shellOverride)
   focusTerminalTabSurface(tab.id)
   return tab
 }
@@ -38,6 +34,11 @@ export async function createFloatingWorkspaceTerminalTab(
 export async function createFloatingWorkspaceBrowserTab(
   store: FloatingWorkspaceBrowserStore
 ): Promise<BrowserTab | null> {
+  assertClientCreationActionAvailable(
+    store as AppState,
+    FLOATING_TERMINAL_WORKTREE_ID,
+    'managed-browser'
+  )
   const targetGroupId = store.activeGroupIdByWorktree[FLOATING_TERMINAL_WORKTREE_ID]
   const url = store.browserDefaultUrl ?? 'about:blank'
 

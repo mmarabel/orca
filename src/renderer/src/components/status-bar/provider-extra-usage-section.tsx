@@ -83,10 +83,27 @@ export function ProviderExtraUsageSection({
   const balanceText =
     balance.balance === null ? null : formatCurrencyAmount(balance.balance, balance.currencyCode)
   if (!capped) {
-    return balanceText === null ? null : (
+    const limitText =
+      balance.spendLimit === null
+        ? null
+        : formatCurrencyAmount(balance.spendLimit, balance.currencyCode)
+    const limitLabel =
+      limitText === null
+        ? null
+        : translate(
+            'auto.components.status.bar.provider.extra.usage.section.135d51c19f',
+            'Limit {{value0}}',
+            { value0: limitText }
+          )
+    if (balanceText === null && limitLabel === null) {
+      return null
+    }
+    return (
       <div className="space-y-1">
         <div className={`font-medium ${textClass}`}>{label}</div>
-        <div className={mutedClass}>{renderUncappedBalanceLine(balance)}</div>
+        <div className={mutedClass}>
+          {balanceText === null ? limitLabel : renderUncappedBalanceLine(balance)}
+        </div>
       </div>
     )
   }

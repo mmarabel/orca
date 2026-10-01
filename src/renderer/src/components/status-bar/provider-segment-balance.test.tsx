@@ -22,7 +22,7 @@ vi.mock('../../store', () => ({
     selector({ usagePercentageDisplay: 'used' })
 }))
 
-function openCodeGo(sessionUsedPercent: number): ProviderRateLimits {
+function openCodeGo(sessionUsedPercent: number, balance = 12.4): ProviderRateLimits {
   return {
     provider: 'opencode-go',
     session: {
@@ -33,7 +33,7 @@ function openCodeGo(sessionUsedPercent: number): ProviderRateLimits {
     },
     weekly: { usedPercent: 40, windowMinutes: 10080, resetsAt: null, resetDescription: null },
     extraUsage: {
-      balance: 12.4,
+      balance,
       unit: 'currency',
       currencyCode: 'USD',
       enabled: true,
@@ -128,6 +128,21 @@ describe('ProviderSegment extra-usage balance token', () => {
     expect(markup).toContain('$12.40')
     expect(markup).toContain('bal')
   })
+
+  it.each([0, -1.25])(
+    'hides a depleted currency balance of %s from the compact segment',
+    async (balance) => {
+      const { ProviderSegment } = await import('./StatusBar')
+
+      const markup = renderToStaticMarkup(
+        <ProviderSegment p={openCodeGo(100, balance)} compact={false} display="used" />
+      )
+
+      expect(markup).not.toContain('bal')
+      expect(markup).not.toContain('$0.00')
+      expect(markup).not.toContain('-$1.25')
+    }
+  )
 
   it('hides the balance while plan windows still have headroom', async () => {
     const { ProviderSegment } = await import('./StatusBar')

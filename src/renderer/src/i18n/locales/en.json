@@ -3986,6 +3986,15 @@
               }
             }
           },
+          "provider": {
+            "extra": {
+              "usage": {
+                "section": {
+                  "135d51c19f": "Limit {{value0}}"
+                }
+              }
+            }
+          },
           "tooltip": {
             "zcode": {
               "mcp": "MCP"

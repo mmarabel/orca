@@ -273,7 +273,8 @@ function isExtraUsageActive(p: ProviderRateLimits): boolean {
   if (
     !p.extraUsage ||
     !p.extraUsage.enabled ||
-    (p.extraUsage.unit === 'currency' && p.extraUsage.balance === null)
+    (p.extraUsage.unit === 'currency' &&
+      (p.extraUsage.balance === null || p.extraUsage.balance <= 0))
   ) {
     return false
   }

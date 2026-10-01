@@ -522,6 +522,31 @@ describe('ProviderPanel extra-usage rendering', () => {
     expect(markup).not.toContain('Balance €0.00')
   })
 
+  it('renders a known legacy cap without inventing spend, percent, balance, or a meter', () => {
+    const p = provider({
+      status: 'ok',
+      extraUsage: {
+        balance: null,
+        unit: 'currency',
+        currencyCode: 'EUR',
+        enabled: true,
+        disabledReason: null,
+        spent: null,
+        spendLimit: 2000,
+        spentPercent: null,
+        resetsAt: null
+      }
+    })
+
+    const markup = renderToStaticMarkup(createElement(ProviderPanel, { p }))
+
+    expect(markup).toContain('Usage credits')
+    expect(markup).toContain('Limit €2,000.00')
+    expect(markup).not.toContain('€0.00')
+    expect(markup).not.toContain('% used')
+    expect(markup).not.toContain('h-[6px]')
+  })
+
   it('renders a disabled, out-of-credits cap with a zero balance', () => {
     const p = provider({
       status: 'ok',
@@ -568,6 +593,34 @@ describe('ProviderPanel extra-usage rendering', () => {
 
     expect(markup).toContain('Zen balance')
     expect(markup).toContain('$12.40')
+    expect(markup).toContain('available')
+  })
+
+  it.each([
+    [0, '$0.00'],
+    [-1.25, '-$1.25']
+  ])('keeps a depleted Zen balance of %s visible in the popover', (balance, formatted) => {
+    const p = provider({
+      provider: 'opencode-go',
+      status: 'ok',
+      session: { usedPercent: 100, windowMinutes: 300, resetsAt: null, resetDescription: null },
+      extraUsage: {
+        balance,
+        unit: 'currency',
+        currencyCode: 'USD',
+        enabled: true,
+        disabledReason: null,
+        spent: null,
+        spendLimit: null,
+        spentPercent: null,
+        resetsAt: null
+      }
+    })
+
+    const markup = renderToStaticMarkup(createElement(ProviderPanel, { p }))
+
+    expect(markup).toContain('Zen balance')
+    expect(markup).toContain(formatted)
     expect(markup).toContain('available')
   })
 

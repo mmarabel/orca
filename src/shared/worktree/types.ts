@@ -1,4 +1,5 @@
 import type { ExecutionHostId } from '../execution-host'
+import type { WorktreeCatalogVersion } from './catalog-version'
 import type { AutomationExecutionTargetType } from '../automations-types'
 import type { TaskSourceContext } from '../task-source-context'
 import type { TuiAgent } from '../tui-agent'
@@ -142,6 +143,9 @@ export type Worktree = {
   mobileDiffReview?: MobileDiffReviewState
   automationProvenance?: AutomationWorkspaceProvenance
   cliProvenance?: CliWorkspaceProvenance
+  /** The host is deleting this checkout in the background; Git lists it until that finishes.
+   *  Sent only to clients that advertise `worktree.background-removal.v1`. */
+  removing?: true
 } & GitWorktreeInfo
 
 /** Provenance for workspaces created through `orca worktree create`. Absent on
@@ -226,4 +230,6 @@ export type DetectedWorktreeListResult = {
   unavailableReason?: string
   /** Structured cause captured by the execution host when a scan fails. */
   failureKind?: WorktreeScanFailureKind
+  /** Which catalog this listing describes; additive, older hosts omit it. */
+  catalogVersion?: WorktreeCatalogVersion
 }

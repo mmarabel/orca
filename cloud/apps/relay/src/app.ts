@@ -2,7 +2,7 @@ import {
   AssignmentRequestSchema,
   IdleRegionalRehomeRequestSchema,
   type IdleRegionalRehomeRequest,
-  type IdleRegionalRehomeOutcome,
+  type IdleRegionalRehomeResult,
   type RegionCorrectionResponse,
   isRelayCellConnectionHardCap,
   RELAY_ADMISSION_BUDGETS,
@@ -28,6 +28,7 @@ import {
   createRuntimeTokenVerifier
 } from './admin-token-verifier.js'
 import {
+  RelayAssignmentRowBusyError,
   RelayHomeCellUnavailableError,
   type CellFenceAttemptEvidence,
   type RelayAssignment,
@@ -58,6 +59,8 @@ const RelayCellConnectionHardCapSchema = z.custom<RelayCellConnectionHardCap>(
 )
 
 const ASSIGNMENT_REJECTION_LOG_WINDOW_MS = 10_000
+// A release holds the row for about one lock timeout, so one second is enough.
+const ASSIGNMENT_ROW_BUSY_RETRY_AFTER_SECONDS = 1
 const REGION_CATALOG_CACHE_MS = 30_000
 // A drain that outlives the roll step it belongs to is an outage, not a pacing win.
 const DRAIN_PACE_WINDOW_MAX_MS = 5 * 60 * 1_000
@@ -79,7 +82,7 @@ export function createRelayApp(
     idleRehome?: (input: IdleRegionalRehomeRequest & {
       cohortPercent: number
       directorSafety: RegionalRehomeSafetySnapshot
-    }) => Promise<{ outcome: IdleRegionalRehomeOutcome }>
+    }) => Promise<IdleRegionalRehomeResult>
     drainHost?: (input: {
       attemptId: string
       userId: string
@@ -362,6 +365,18 @@ export function createRelayApp(
         }
       }
     } catch (error) {
+      if (error instanceof RelayAssignmentRowBusyError) {
+        logAssignmentRejection({
+          route: 'assign',
+          lane,
+          hinted: Boolean(body.data.reconnect),
+          relayHostId: claims.relayHostId,
+          reason: operationError(error)
+        })
+        // The host's own release is settling; its next dial finds the row free.
+        context.header('Retry-After', String(ASSIGNMENT_ROW_BUSY_RETRY_AFTER_SECONDS))
+        return context.json({ error: 'assignment_row_busy' }, 503)
+      }
       if (isRelayAssignmentUnavailableError(error) || isRelayDatabaseTransientError(error)) {
         logAssignmentRejection({
           route: 'assign',
@@ -481,6 +496,9 @@ export function createRelayApp(
         })
       }
       if (isRelayAssignmentUnavailableError(error)) {
+        if (error instanceof RelayAssignmentRowBusyError) {
+          context.header('Retry-After', String(ASSIGNMENT_ROW_BUSY_RETRY_AFTER_SECONDS))
+        }
         return context.json({ error: operationError(error) }, 503)
       }
       if (isRelayDatabaseTransientError(error)) return rejectPublicAssignment(context)
@@ -1614,7 +1632,15 @@ const AdminAdmissionSelectorApplySchema = z
     attemptId: AdmissionSelectorAttemptIdSchema,
     expectedGeneration: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
     expectedMembershipSha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
-    membership: AdmissionSelectorMembershipSchema
+    membership: AdmissionSelectorMembershipSchema,
+    // Optional, so an older caller reaching an updated director is unchanged:
+    // the cell goes unmarked and its hosts stay pinned, today's behaviour. The
+    // other direction is NOT ignored — the schema below is .strict(), so an
+    // updated caller reaching an older director is a 400. That fails closed,
+    // before the isolate step sets MUTATION_STARTED and before anything is
+    // written, but it is a deploy ordering constraint: the director ships
+    // first, then any workflow run that uses the updated script.
+    rollIsolatedCells: z.array(CellIdSchema).max(256).optional()
   })
   .strict()
   .refine(
@@ -1975,7 +2001,8 @@ function isRelayAssignmentUnavailableError(error: unknown): boolean {
     [
       'relay_capacity_exhausted',
       'relay_connection_headroom_exhausted',
-      'relay_home_cell_unavailable'
+      'relay_home_cell_unavailable',
+      'relay_assignment_row_busy'
     ].includes(error.message)
   )
 }

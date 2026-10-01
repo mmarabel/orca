@@ -1,5 +1,7 @@
-import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
-import { router } from 'expo-router'
+import { useWallAppUpdate } from '../app-update/use-wall-app-update'
+import { openExternalLink } from '../platform/external-link'
+import { useRouteHandoff } from '../navigation/route-handoff'
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native'
 import { colors, radii, spacing, typography } from '../theme/mobile-theme'
 import type { CompatVerdict } from '../transport/protocol-compat'
 import type { MobileWebBundleCompatVerdict } from '../transport/mobile-web-bundle-compat'
@@ -65,18 +67,23 @@ function blockBody(verdict: BlockedVerdict, remedy: BlockRemedy, storeName: stri
 }
 
 export function ProtocolBlockScreen({ verdict }: Props) {
+  const router = useRouteHandoff()
+  const mobileUpdate = useWallAppUpdate()
   const remedy = blockRemedy(verdict)
   // Why: Android APKs ship through GitHub Releases until a Play Store listing exists.
   const mobileUpdateTarget =
     Platform.OS === 'ios'
       ? { label: 'Open App Store', url: IOS_APP_STORE_URL, storeName: 'the App Store' }
       : { label: 'Open GitHub Releases', url: RELEASES_URL, storeName: 'GitHub Releases' }
+  const mobileAction = mobileUpdate
+    ? { label: `Get Orca ${mobileUpdate.version}`, url: mobileUpdate.url }
+    : { label: mobileUpdateTarget.label, url: mobileUpdateTarget.url }
   // No download to offer when the fix is a refetch: reconnecting is what this screen leaves you to do.
   const primaryAction =
     remedy === 'refresh-bundle'
       ? null
       : remedy === 'update-mobile'
-        ? { label: mobileUpdateTarget.label, url: mobileUpdateTarget.url }
+        ? mobileAction
         : { label: 'Open GitHub Releases', url: RELEASES_URL }
 
   const title = blockTitle(remedy)
@@ -95,7 +102,9 @@ export function ProtocolBlockScreen({ verdict }: Props) {
           <Pressable
             style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
             onPress={() => {
-              void Linking.openURL(primaryAction.url)
+              // The seam: this screen is in the tasks page closure, where react-native's `openURL`
+              // calls a `window.open` both shells refuse and resolves anyway.
+              openExternalLink(primaryAction.url)
             }}
           >
             <Text style={styles.primaryButtonText}>{primaryAction.label}</Text>
@@ -104,8 +113,9 @@ export function ProtocolBlockScreen({ verdict }: Props) {
         <Pressable
           style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
           onPress={() => {
-            // Why: route back to the host list so the user can pair a
-            // different host instead of getting trapped on this screen.
+            // The handoff, not expo-router's singleton: `/` is the phone's home screen and the
+            // page does not carry it, so inside the shell a singleton replace renders the root
+            // route in the WebView rather than leaving it. This posts the target to the shell.
             router.replace('/')
           }}
         >

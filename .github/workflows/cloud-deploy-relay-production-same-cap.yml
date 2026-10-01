@@ -10,7 +10,7 @@ on:
         type: choice
         options: [verify, canary-apply, batch-apply, rollback]
       cell-ids:
-        description: Ordered comma-separated serving cells; one canary or two to four batch cells
+        description: Ordered comma-separated serving cells; one canary or two to ten batch cells
         required: true
         type: string
       target-image-digest:
@@ -205,13 +205,43 @@ jobs:
         run: |
           [[ "${MONITOR_RUN_ID}" =~ ^[1-9][0-9]*$ ]]
           [[ "${MONITOR_RUN_ATTEMPT}" =~ ^[1-9][0-9]*$ ]]
+          # Cell jobs refuse a re-run attempt, so a re-run gate must not burn the evidence.
+          test "${GITHUB_RUN_ATTEMPT}" = 1
           MARKER_NAME="relay-same-cap-monitor-consumed-${MONITOR_RUN_ID}-${MONITOR_RUN_ATTEMPT}"
           COUNT="$(gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts?name=${MARKER_NAME}&per_page=1" \
             --jq '.total_count')"
           test "${COUNT}" = 0
+
+      - name: Download private aggregate monitor evidence
+        if: ${{ inputs.mode != 'verify' && inputs.gate-override-confirmation == '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: relay-monitor-dry-run-${{ inputs.monitor-run-id }}-${{ inputs.monitor-run-attempt }}
+          path: ${{ runner.temp }}/relay-monitor-evidence
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.monitor-run-id }}
+
+      # Freshness is decided here, where the run is authorized; cell jobs verify against this
+      # recorded instant so their own startup cannot age the evidence out.
+      - name: Authorize this run on fresh monitor evidence
+        if: ${{ inputs.mode != 'verify' && inputs.gate-override-confirmation == '' }}
+        env:
+          MONITOR_RUN_ID: ${{ inputs.monitor-run-id }}
+          MONITOR_RUN_ATTEMPT: ${{ inputs.monitor-run-attempt }}
+        run: |
+          MARKER_NAME="relay-same-cap-monitor-consumed-${MONITOR_RUN_ID}-${MONITOR_RUN_ATTEMPT}"
           mkdir -p "${RUNNER_TEMP}/relay-same-cap-monitor-authority"
-          printf '%s\n' "${GITHUB_RUN_ID}" \
-            > "${RUNNER_TEMP}/relay-same-cap-monitor-authority/${MARKER_NAME}"
+          node dev/scripts/relay-monitor-evidence.mjs verify-authority \
+            --directory "${RUNNER_TEMP}/relay-monitor-evidence" \
+            --incident-id "relay-${MONITOR_RUN_ID}-dry-run" \
+            --run-id "${MONITOR_RUN_ID}" \
+            --run-attempt "${MONITOR_RUN_ATTEMPT}" \
+            --commit-sha "${GITHUB_SHA}" \
+            --mode dry-run \
+            --required-migration-policy strict \
+            --consumer-run-id "${GITHUB_RUN_ID}" \
+            --record-authorization \
+            "${RUNNER_TEMP}/relay-same-cap-monitor-authority/${MARKER_NAME}"
 
       - name: Consume aggregate safety evidence for this exact wave
         if: ${{ inputs.mode != 'verify' && inputs.gate-override-confirmation == '' }}
@@ -313,6 +343,144 @@ jobs:
       wave-index: '3'
     secrets: inherit
 
+  cell_5:
+    if: ${{ needs.cell_4.result == 'success' && fromJSON(needs.gate.outputs.cells)[4] != null }}
+    needs: [gate, cell_4]
+    uses: ./.github/workflows/cloud-deploy-relay-production-same-cap-job.yml
+    with:
+      mode: ${{ needs.gate.outputs.job-mode }}
+      target-cell-id: ${{ fromJSON(needs.gate.outputs.cells)[4] }}
+      target-image-digest: ${{ inputs.target-image-digest }}
+      rollback-image-digest: ${{ inputs.rollback-image-digest }}
+      target-rehome-protocol: ${{ inputs.target-rehome-protocol }}
+      rollback-rehome-protocol: ${{ inputs.rollback-rehome-protocol }}
+      expected-selector-generation: ${{ inputs.expected-selector-generation }}
+      expected-existing-only-cells: ${{ inputs.expected-existing-only-cells }}
+      expected-migration-only-cells: ${{ inputs.expected-migration-only-cells }}
+      expected-general-cells: ${{ inputs.expected-general-cells }}
+      expected-rehome-generation: ${{ inputs.expected-rehome-generation }}
+      monitor-run-id: ${{ inputs.monitor-run-id }}
+      monitor-run-attempt: ${{ inputs.monitor-run-attempt }}
+      gate-override-reason: ${{ inputs.gate-override-reason }}
+      gate-override-confirmation: ${{ inputs.gate-override-confirmation }}
+      wave-index: '4'
+    secrets: inherit
+
+  cell_6:
+    if: ${{ needs.cell_5.result == 'success' && fromJSON(needs.gate.outputs.cells)[5] != null }}
+    needs: [gate, cell_5]
+    uses: ./.github/workflows/cloud-deploy-relay-production-same-cap-job.yml
+    with:
+      mode: ${{ needs.gate.outputs.job-mode }}
+      target-cell-id: ${{ fromJSON(needs.gate.outputs.cells)[5] }}
+      target-image-digest: ${{ inputs.target-image-digest }}
+      rollback-image-digest: ${{ inputs.rollback-image-digest }}
+      target-rehome-protocol: ${{ inputs.target-rehome-protocol }}
+      rollback-rehome-protocol: ${{ inputs.rollback-rehome-protocol }}
+      expected-selector-generation: ${{ inputs.expected-selector-generation }}
+      expected-existing-only-cells: ${{ inputs.expected-existing-only-cells }}
+      expected-migration-only-cells: ${{ inputs.expected-migration-only-cells }}
+      expected-general-cells: ${{ inputs.expected-general-cells }}
+      expected-rehome-generation: ${{ inputs.expected-rehome-generation }}
+      monitor-run-id: ${{ inputs.monitor-run-id }}
+      monitor-run-attempt: ${{ inputs.monitor-run-attempt }}
+      gate-override-reason: ${{ inputs.gate-override-reason }}
+      gate-override-confirmation: ${{ inputs.gate-override-confirmation }}
+      wave-index: '5'
+    secrets: inherit
+
+  cell_7:
+    if: ${{ needs.cell_6.result == 'success' && fromJSON(needs.gate.outputs.cells)[6] != null }}
+    needs: [gate, cell_6]
+    uses: ./.github/workflows/cloud-deploy-relay-production-same-cap-job.yml
+    with:
+      mode: ${{ needs.gate.outputs.job-mode }}
+      target-cell-id: ${{ fromJSON(needs.gate.outputs.cells)[6] }}
+      target-image-digest: ${{ inputs.target-image-digest }}
+      rollback-image-digest: ${{ inputs.rollback-image-digest }}
+      target-rehome-protocol: ${{ inputs.target-rehome-protocol }}
+      rollback-rehome-protocol: ${{ inputs.rollback-rehome-protocol }}
+      expected-selector-generation: ${{ inputs.expected-selector-generation }}
+      expected-existing-only-cells: ${{ inputs.expected-existing-only-cells }}
+      expected-migration-only-cells: ${{ inputs.expected-migration-only-cells }}
+      expected-general-cells: ${{ inputs.expected-general-cells }}
+      expected-rehome-generation: ${{ inputs.expected-rehome-generation }}
+      monitor-run-id: ${{ inputs.monitor-run-id }}
+      monitor-run-attempt: ${{ inputs.monitor-run-attempt }}
+      gate-override-reason: ${{ inputs.gate-override-reason }}
+      gate-override-confirmation: ${{ inputs.gate-override-confirmation }}
+      wave-index: '6'
+    secrets: inherit
+
+  cell_8:
+    if: ${{ needs.cell_7.result == 'success' && fromJSON(needs.gate.outputs.cells)[7] != null }}
+    needs: [gate, cell_7]
+    uses: ./.github/workflows/cloud-deploy-relay-production-same-cap-job.yml
+    with:
+      mode: ${{ needs.gate.outputs.job-mode }}
+      target-cell-id: ${{ fromJSON(needs.gate.outputs.cells)[7] }}
+      target-image-digest: ${{ inputs.target-image-digest }}
+      rollback-image-digest: ${{ inputs.rollback-image-digest }}
+      target-rehome-protocol: ${{ inputs.target-rehome-protocol }}
+      rollback-rehome-protocol: ${{ inputs.rollback-rehome-protocol }}
+      expected-selector-generation: ${{ inputs.expected-selector-generation }}
+      expected-existing-only-cells: ${{ inputs.expected-existing-only-cells }}
+      expected-migration-only-cells: ${{ inputs.expected-migration-only-cells }}
+      expected-general-cells: ${{ inputs.expected-general-cells }}
+      expected-rehome-generation: ${{ inputs.expected-rehome-generation }}
+      monitor-run-id: ${{ inputs.monitor-run-id }}
+      monitor-run-attempt: ${{ inputs.monitor-run-attempt }}
+      gate-override-reason: ${{ inputs.gate-override-reason }}
+      gate-override-confirmation: ${{ inputs.gate-override-confirmation }}
+      wave-index: '7'
+    secrets: inherit
+
+  cell_9:
+    if: ${{ needs.cell_8.result == 'success' && fromJSON(needs.gate.outputs.cells)[8] != null }}
+    needs: [gate, cell_8]
+    uses: ./.github/workflows/cloud-deploy-relay-production-same-cap-job.yml
+    with:
+      mode: ${{ needs.gate.outputs.job-mode }}
+      target-cell-id: ${{ fromJSON(needs.gate.outputs.cells)[8] }}
+      target-image-digest: ${{ inputs.target-image-digest }}
+      rollback-image-digest: ${{ inputs.rollback-image-digest }}
+      target-rehome-protocol: ${{ inputs.target-rehome-protocol }}
+      rollback-rehome-protocol: ${{ inputs.rollback-rehome-protocol }}
+      expected-selector-generation: ${{ inputs.expected-selector-generation }}
+      expected-existing-only-cells: ${{ inputs.expected-existing-only-cells }}
+      expected-migration-only-cells: ${{ inputs.expected-migration-only-cells }}
+      expected-general-cells: ${{ inputs.expected-general-cells }}
+      expected-rehome-generation: ${{ inputs.expected-rehome-generation }}
+      monitor-run-id: ${{ inputs.monitor-run-id }}
+      monitor-run-attempt: ${{ inputs.monitor-run-attempt }}
+      gate-override-reason: ${{ inputs.gate-override-reason }}
+      gate-override-confirmation: ${{ inputs.gate-override-confirmation }}
+      wave-index: '8'
+    secrets: inherit
+
+  cell_10:
+    if: ${{ needs.cell_9.result == 'success' && fromJSON(needs.gate.outputs.cells)[9] != null }}
+    needs: [gate, cell_9]
+    uses: ./.github/workflows/cloud-deploy-relay-production-same-cap-job.yml
+    with:
+      mode: ${{ needs.gate.outputs.job-mode }}
+      target-cell-id: ${{ fromJSON(needs.gate.outputs.cells)[9] }}
+      target-image-digest: ${{ inputs.target-image-digest }}
+      rollback-image-digest: ${{ inputs.rollback-image-digest }}
+      target-rehome-protocol: ${{ inputs.target-rehome-protocol }}
+      rollback-rehome-protocol: ${{ inputs.rollback-rehome-protocol }}
+      expected-selector-generation: ${{ inputs.expected-selector-generation }}
+      expected-existing-only-cells: ${{ inputs.expected-existing-only-cells }}
+      expected-migration-only-cells: ${{ inputs.expected-migration-only-cells }}
+      expected-general-cells: ${{ inputs.expected-general-cells }}
+      expected-rehome-generation: ${{ inputs.expected-rehome-generation }}
+      monitor-run-id: ${{ inputs.monitor-run-id }}
+      monitor-run-attempt: ${{ inputs.monitor-run-attempt }}
+      gate-override-reason: ${{ inputs.gate-override-reason }}
+      gate-override-confirmation: ${{ inputs.gate-override-confirmation }}
+      wave-index: '9'
+    secrets: inherit
+
   seal_canary:
     if: ${{ inputs.mode == 'canary-apply' }}
     needs: [gate, cell_1]
@@ -360,6 +528,12 @@ jobs:
       - cell_2
       - cell_3
       - cell_4
+      - cell_5
+      - cell_6
+      - cell_7
+      - cell_8
+      - cell_9
+      - cell_10
       - seal_canary
     runs-on: blacksmith-2vcpu-ubuntu-2204
     timeout-minutes: 10

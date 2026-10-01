@@ -126,10 +126,12 @@ function wrapCommandProcess(proc: SpawnedProcess): SystemSshCommandChannel {
 
   channel._process = proc
   Object.defineProperties(channel, {
-    stdin: { value: proc.stdin!, configurable: true },
-    stderr: { value: proc.stderr!, configurable: true },
+    stdin: { value: proc.stdin!, configurable: true, enumerable: true, writable: true },
+    stderr: { value: proc.stderr!, configurable: true, enumerable: true, writable: true },
     close: {
       configurable: true,
+      enumerable: true,
+      writable: true,
       value: () => {
         channel._closeRequested = true
         try {

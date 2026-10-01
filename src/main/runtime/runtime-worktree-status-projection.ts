@@ -48,7 +48,8 @@ type PtyAgentPresenceRecord = {
 
 export function getLeafWorktreeStatus(
   leaf: LeafStatusRecord,
-  tabTitle: string | null
+  tabTitle: string | null,
+  titleIsRestored = false
 ): RuntimeWorktreeStatus {
   // Why: recompute from the live title each call (no sticky state) so worktree.ps mirrors the desktop sidebar's getWorktreeStatus.
   const titleCandidates = [
@@ -58,7 +59,10 @@ export function getLeafWorktreeStatus(
   ]
   const latestTitle = getLatestAgentCandidateTitle(...titleCandidates)
   const detected = latestTitle ? detectAgentStatusFromTitle(latestTitle) : leaf.lastAgentStatus
-  return getDetectedWorktreeStatus(detected, leaf.ptyId !== null)
+  return getDetectedWorktreeStatus(
+    titleIsRestored && detected === 'permission' ? null : detected,
+    leaf.ptyId !== null
+  )
 }
 
 export function classifyLatestAgentTitle(

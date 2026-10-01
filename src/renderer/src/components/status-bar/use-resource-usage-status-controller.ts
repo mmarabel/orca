@@ -6,7 +6,7 @@ import type { UnifiedSessionRow } from './resource-usage-merge-types'
 import type { ResourceSessionBindingInputs } from './resource-session-bindings'
 import type { SortOption } from './resource-usage-resource-tree'
 import { folderWorkspaceToWorktree } from '../../../../shared/folder-workspace-worktree'
-import { LOCAL_EXECUTION_HOST_ID } from '../../../../shared/execution-host'
+import { LOCAL_EXECUTION_HOST_ID, parseExecutionHostId } from '../../../../shared/execution-host'
 import {
   getResourceUsageAllWorktrees,
   getResourceUsageBrowserTabsByWorktree,
@@ -197,6 +197,7 @@ export function useResourceUsageStatusController() {
 
   const derived = useResourceUsageDerivedModel({
     open,
+    activeHostId: parseExecutionHostId(activeHostId)?.id ?? LOCAL_EXECUTION_HOST_ID,
     viewingRemoteHost,
     resourceSnapshot,
     sessions,

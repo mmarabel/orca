@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { translate } from '@/i18n/i18n'
+import { useAppStore } from '../../store'
 import { useWorktreeMap } from '../../store/selectors'
+import { parseExecutionHostId } from '../../../../shared/execution-host'
 import type {
   Metric,
   UnifiedProjectGroup,
@@ -57,6 +59,7 @@ function sortProjectGroups(groups: UnifiedProjectGroup[], sort: SortOption): Uni
 
 export function ResourceTree({
   repos,
+  activeHostId,
   sortOption,
   collapsedRepos,
   toggleRepo,
@@ -70,6 +73,7 @@ export function ResourceTree({
   readOnly
 }: {
   repos: UnifiedProjectGroup[]
+  activeHostId: string
   sortOption: SortOption
   collapsedRepos: Set<string>
   toggleRepo: (repoId: string) => void
@@ -83,6 +87,8 @@ export function ResourceTree({
   readOnly: boolean
 }): React.JSX.Element {
   const worktreeById = useWorktreeMap()
+  const getKnownWorktreeById = useAppStore((state) => state.getKnownWorktreeById)
+  const executionHostId = parseExecutionHostId(activeHostId)?.id
 
   const sortedRepos = useMemo(() => {
     const grouped = sortProjectGroups(repos, sortOption)
@@ -93,7 +99,12 @@ export function ResourceTree({
   }, [repos, sortOption])
 
   const renderWorktree = (wt: UnifiedWorktreeRow): React.JSX.Element => {
-    const storeRecord = worktreeById.get(wt.worktreeId) ?? null
+    // Why: the id-keyed map cannot distinguish twins; resolve display/action
+    // metadata through the same host-qualified catalog boundary as navigation.
+    const storeRecord =
+      executionHostId && worktreeById.has(wt.worktreeId)
+        ? (getKnownWorktreeById(wt.worktreeId, executionHostId) ?? null)
+        : null
     return (
       <WorktreeRow
         key={wt.worktreeId}

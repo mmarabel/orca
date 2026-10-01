@@ -148,6 +148,7 @@ export function ResourceUsageStatusSegment({
           })}
           {renderResourceUsagePopoverBody({
             setPopoverBodyNode,
+            activeHostId,
             unifiedRepos,
             resourceSnapshot,
             sortOption,

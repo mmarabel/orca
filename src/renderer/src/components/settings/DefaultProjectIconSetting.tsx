@@ -74,7 +74,7 @@ export function DefaultProjectIconSetting({
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <Label className="text-sm font-semibold">{title}</Label>
+          <Label>{title}</Label>
           <div className="mt-1 truncate text-xs text-muted-foreground">
             {translate(
               'auto.components.settings.DefaultProjectIconSetting.description',

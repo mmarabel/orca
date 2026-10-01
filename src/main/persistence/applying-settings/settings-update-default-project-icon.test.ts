@@ -5,6 +5,7 @@ import { updateSettings, type SettingsMutationOperations } from './settings-upda
 
 function makeOperations(): SettingsMutationOperations {
   return {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: updateSettings reads only settings and repos from this focused fixture.
     state: { settings: {}, repos: [] } as unknown as PersistedState,
     bumpLocalWorktreeScanGeneration: vi.fn(),
     removeRetainedBlob: vi.fn(),
@@ -46,6 +47,7 @@ describe('updateSettings defaultProjectIcon', () => {
     ).toBeNull()
     expect(
       updateSettings(operations, {
+        // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: malformed input verifies the persistence boundary rejects an invalid icon name.
         defaultProjectIcon: { type: 'lucide', name: '../../etc' } as RepoIcon
       }).defaultProjectIcon
     ).toBeNull()

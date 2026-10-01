@@ -13,6 +13,7 @@ import type { PersistedState } from '../../../shared/persisted-state-types'
 function loadProfile(overrides: Record<string, unknown>): PersistedState['settings'] {
   const defaults = getDefaultPersistedState(homedir())
   const settings: Partial<GlobalSettings> = { ...defaults.settings, ...overrides }
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: overrides intentionally model untrusted persisted settings before normalization.
   const parsed: PersistedState = { ...defaults, settings: settings as GlobalSettings }
   const noop = (): void => {}
   return normalizeLoadedGlobalSettings(

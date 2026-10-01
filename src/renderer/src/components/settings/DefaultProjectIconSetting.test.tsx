@@ -2,6 +2,7 @@
 
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { getDefaultSettings } from '../../../../shared/constants'
 import type { GlobalSettings } from '../../../../shared/global-settings-types'
 import { DefaultProjectIconSetting } from './DefaultProjectIconSetting'
 
@@ -24,7 +25,7 @@ function renderSetting(settings: Partial<GlobalSettings>): {
   const updateSettings = vi.fn()
   render(
     <DefaultProjectIconSetting
-      settings={settings as GlobalSettings}
+      settings={{ ...getDefaultSettings('/tmp'), ...settings }}
       updateSettings={updateSettings}
     />
   )

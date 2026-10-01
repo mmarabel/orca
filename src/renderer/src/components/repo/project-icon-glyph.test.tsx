@@ -2,6 +2,7 @@
 
 import { cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
+import { getDefaultSettings } from '../../../../shared/constants'
 import type { GlobalSettings } from '../../../../shared/global-settings-types'
 import type { RepoIcon } from '../../../../shared/repo-icon'
 import { useAppStore } from '@/store'
@@ -15,7 +16,7 @@ const githubAvatar: RepoIcon = {
 }
 
 function setDefaultProjectIcon(defaults: Partial<GlobalSettings>): void {
-  useAppStore.setState({ settings: defaults as GlobalSettings })
+  useAppStore.setState({ settings: { ...getDefaultSettings('/tmp'), ...defaults } })
 }
 
 afterEach(() => {

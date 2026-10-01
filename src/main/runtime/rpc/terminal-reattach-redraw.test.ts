@@ -3,10 +3,10 @@ import { OrcaRuntimeService } from '../orca-runtime'
 import { RpcDispatcher } from './dispatcher'
 import { TERMINAL_METHODS } from './methods/terminal'
 
-function createRedrawRuntime() {
+function createRedrawRuntime(initialSize = { cols: 80, rows: 24 }) {
   const runtime = new OrcaRuntimeService()
   const requestRedraw = vi.fn(async () => true)
-  let size = { cols: 80, rows: 24 }
+  let size = initialSize
   runtime.setPtyController({
     write: () => true,
     kill: () => true,
@@ -30,7 +30,7 @@ function createRedrawRuntime() {
       params: {
         terminal: 'terminal-1',
         client: { id: 'client-1', type: 'desktop' },
-        viewport: { cols: 80, rows: 24 },
+        viewport: initialSize,
         ...extra
       }
     })
@@ -52,6 +52,15 @@ describe('remote reattach redraw through the existing viewport RPC', () => {
     expect((await update()).ok).toBe(true)
     expect(requestRedraw).toHaveBeenCalledExactlyOnceWith('pty-1')
     expect(refresh).toHaveBeenCalledWith('pty-1', 'client-1', 80, 24, false)
+  })
+
+  it.each([
+    { cols: 20, rows: 8 },
+    { cols: 240, rows: 120 }
+  ])('kicks an unchanged host-clamped $cols×$rows grid', async (viewport) => {
+    const { update, requestRedraw } = createRedrawRuntime(viewport)
+    expect((await update()).ok).toBe(true)
+    expect(requestRedraw).toHaveBeenCalledExactlyOnceWith('pty-1')
   })
 
   it('leaves ordinary viewport updates unchanged', async () => {

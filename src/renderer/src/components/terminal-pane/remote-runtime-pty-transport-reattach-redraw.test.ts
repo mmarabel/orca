@@ -95,16 +95,29 @@ describe('remote reattach viewport redraw', () => {
     }
   })
 
-  it('preserves the stream path for grids outside the legacy viewport RPC bounds', async () => {
-    const transport = await attachTransport()
-    try {
-      transport.resize(10, 4, { redraw: true })
-      await vi.waitFor(() => expect(mocks.subscriptionSendBinary).toHaveBeenCalled())
-      expect(mocks.runtimeCall).not.toHaveBeenCalled()
-    } finally {
-      transport.destroy?.()
+  it.each([
+    { cols: 10, rows: 4, viewport: { cols: 20, rows: 8 } },
+    { cols: 500, rows: 300, viewport: { cols: 240, rows: 120 } }
+  ])(
+    'requests redraw at the host-clamped grid for $cols×$rows panes',
+    async ({ cols, rows, viewport }) => {
+      const transport = await attachTransport()
+      try {
+        transport.resize(cols, rows, { redraw: true })
+        await vi.waitFor(() =>
+          expect(mocks.runtimeCall).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({
+              method: 'terminal.updateViewport',
+              params: expect.objectContaining({ viewport, redraw: true })
+            })
+          )
+        )
+        expect(mocks.subscriptionSendBinary).not.toHaveBeenCalled()
+      } finally {
+        transport.destroy?.()
+      }
     }
-  })
+  )
 
   it('does not send redraw after detaching', async () => {
     const transport = await attachTransport()

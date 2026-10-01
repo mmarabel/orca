@@ -2,6 +2,7 @@ import { createAgentSessionKeyboardOptions } from '@/runtime/agent-session-keybo
 import { withRemoteReattachInputBuffer } from './remote-reattach-input-buffer'
 /* eslint-disable max-lines -- Why: remote PTY transport keeps lifecycle, JSON fallback, and binary stream wiring together so reconnect/destroy ordering stays testable as one behavior surface. */
 import type { RuntimeRpcResponse } from '../../../../shared/runtime-rpc-envelope'
+import { clampTerminalViewport } from '../../../../shared/terminal-viewport'
 import {
   isRecoverableRemoteRuntimeConnectionError,
   isRuntimeRpcQueueOverloadError,
@@ -211,6 +212,7 @@ export function createRemoteRuntimePtyTransport(
   let sameHandleEndReuseAttachedAt: number | null = null
   let attachGeneration = 0
   let subscriptionGeneration = 0
+  let publishedHandleUpdateSequence = 0
 
   function setAttachmentReady(ready: boolean): void {
     attachmentReady = ready
@@ -1583,6 +1585,7 @@ export function createRemoteRuntimePtyTransport(
   }
 
   function clearPublishedHandleWait(): void {
+    publishedHandleUpdateSequence += 1
     stopWaitingForPublishedHandle?.()
     stopWaitingForPublishedHandle = null
     publishedHandleWaitEpoch = null
@@ -1664,6 +1667,7 @@ export function createRemoteRuntimePtyTransport(
         leafId
       },
       async (update) => {
+        const updateSequence = ++publishedHandleUpdateSequence
         if (destroyed || !connected || handle !== previousHandle) {
           clearPublishedHandleWait()
           return
@@ -1709,7 +1713,8 @@ export function createRemoteRuntimePtyTransport(
           destroyed ||
           !connected ||
           handle !== previousHandle ||
-          subscriptionGeneration !== expectedSubscriptionGeneration
+          subscriptionGeneration !== expectedSubscriptionGeneration ||
+          publishedHandleUpdateSequence !== updateSequence
         ) {
           return
         }
@@ -2742,9 +2747,10 @@ export function createRemoteRuntimePtyTransport(
         sendViewportUpdate(cols, rows, true)
         return true
       }
-      if (meta?.redraw && cols >= 20 && cols <= 240 && rows >= 8 && rows <= 120) {
+      if (meta?.redraw) {
         viewportBatcher.clear()
-        sendViewportUpdate(cols, rows, false, true)
+        const viewport = clampTerminalViewport(cols, rows)
+        sendViewportUpdate(viewport.cols, viewport.rows, false, true)
         return true
       }
       // Why: xterm fit emits resize bursts on drag/layout-restore; remote runtimes only need the last viewport per frame.

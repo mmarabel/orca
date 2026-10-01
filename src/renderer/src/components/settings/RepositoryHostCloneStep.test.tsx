@@ -30,6 +30,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount())
   container.remove()
+  Reflect.deleteProperty(globalThis, '__ORCA_WEB_CLIENT__')
 })
 
 function renderStep(
@@ -87,6 +88,13 @@ describe('RepositoryHostCloneStep', () => {
     expect(onCloneDestinationChange).toHaveBeenCalledWith('/Users/alice/projects')
   })
 
+  it('hides the unavailable native directory picker in paired web clients', () => {
+    Reflect.set(globalThis, '__ORCA_WEB_CLIENT__', true)
+    renderStep()
+
+    expect(container.querySelector('button[aria-label="Choose folder"]')).toBeNull()
+  })
+
   it('loads and selects repositories from the authenticated GitHub account', async () => {
     const onCloneUrlChange = vi.fn()
     listRepositories.mockResolvedValue([
@@ -120,6 +128,28 @@ describe('RepositoryHostCloneStep', () => {
 
     expect(listRepositories).toHaveBeenCalledOnce()
     expect(onCloneUrlChange).toHaveBeenCalledWith('https://github.com/acme/orca.git')
+  })
+
+  it('refreshes the repository catalog when the picker reopens', async () => {
+    listRepositories.mockResolvedValue([])
+    renderStep()
+
+    const trigger = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Choose from GitHub')
+    )
+    await act(async () => {
+      trigger?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    act(() => trigger?.click())
+    await act(async () => {
+      trigger?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(listRepositories).toHaveBeenCalledTimes(2)
   })
 
   it('preserves the current SSH clone protocol when selecting a repository', async () => {

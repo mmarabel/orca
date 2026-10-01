@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ArrowLeft, FolderOpen } from 'lucide-react'
 import { translate } from '@/i18n/i18n'
+import { isWebClientLocation } from '@/lib/web-client-location'
 import { parseExecutionHostId, type ExecutionHostId } from '../../../../shared/execution-host'
 import { RemoteFileBrowser } from '../sidebar/RemoteFileBrowser'
 import { Button } from '../ui/button'
@@ -39,6 +40,7 @@ export function RepositoryHostCloneStep({
   const [browsingDestination, setBrowsingDestination] = useState(false)
   const parsedHost = parseExecutionHostId(hostId)
   const canBrowseRemoteHost = parsedHost?.kind === 'ssh' || parsedHost?.kind === 'runtime'
+  const canBrowseDestination = canBrowseRemoteHost || !isWebClientLocation()
   const clonePathPreview = getClonePathPreview(
     cloneDestination,
     getCloneFolderNamePreview(cloneUrl)
@@ -147,24 +149,26 @@ export function RepositoryHostCloneStep({
             disabled={isCloning}
             spellCheck={false}
           />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-sm"
-                className="size-9 shrink-0"
-                disabled={disabled || isCloning}
-                onClick={() => void browseDestination()}
-                aria-label={browseLabel}
-              >
-                <FolderOpen className="size-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={4}>
-              {browseLabel}
-            </TooltipContent>
-          </Tooltip>
+          {canBrowseDestination ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-sm"
+                  className="size-9 shrink-0"
+                  disabled={disabled || isCloning}
+                  onClick={() => void browseDestination()}
+                  aria-label={browseLabel}
+                >
+                  <FolderOpen className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={4}>
+                {browseLabel}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
         </div>
         <p className="text-[11px] text-muted-foreground">
           {clonePathPreview

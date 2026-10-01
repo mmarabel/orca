@@ -39,7 +39,7 @@ export function GitHubRepositoryPicker({
       open={open}
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen)
-        if (nextOpen && repositories === null && !loading) {
+        if (nextOpen && !loading) {
           void loadRepositories()
         }
       }}

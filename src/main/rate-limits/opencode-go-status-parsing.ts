@@ -144,7 +144,9 @@ export function isOpenCodeGoExplicitNoAccessPayload(text: string): boolean {
   }
   try {
     const payload: unknown = JSON.parse(text)
-    return isRecord(payload) && payload.access === null
+    return (
+      payload === null || (isRecord(payload) && payload.access === null && !('error' in payload))
+    )
   } catch {
     return false
   }

@@ -424,19 +424,56 @@ describe('fetchOpenCodeGoRateLimits', () => {
     )
   })
 
-  it('does not turn generic malformed usage into a balance-only success', async () => {
-    netFetchMock.mockResolvedValueOnce(makeJsonResponse({ access: {} })).mockResolvedValueOnce(
+  it('returns a verified balance-only snapshot for an explicit JSON null status', async () => {
+    netFetchMock.mockResolvedValueOnce(makeJsonResponse(null)).mockResolvedValueOnce(
       makeJsonResponse({
         billingMode: 'prepaid',
         mode: 'pay-as-you-go',
-        balanceMicroCents: '100000000'
+        balanceMicroCents: '-125000000'
       })
     )
 
     const result = await fetchOpenCodeGoRateLimits('auth=mytoken', 'wrk_OVERRIDE123')
 
+    expect(result.status).toBe('ok')
+    expect(result.session).toBeNull()
+    expect(result.extraUsage).toEqual(expect.objectContaining({ balance: -1.25 }))
+  })
+
+  it('aborts billing before returning a generic malformed-usage error', async () => {
+    let billingSignal: AbortSignal | undefined
+    netFetchMock
+      .mockResolvedValueOnce(makeJsonResponse({ access: {} }))
+      .mockImplementationOnce((_url, init: RequestInit) => {
+        billingSignal = init.signal ?? undefined
+        return new Promise<Response>((resolve, reject) => {
+          billingSignal?.addEventListener('abort', () => reject(new Error('aborted')), {
+            once: true
+          })
+          setTimeout(
+            () =>
+              resolve(
+                makeJsonResponse({
+                  billingMode: 'prepaid',
+                  mode: 'pay-as-you-go',
+                  balanceMicroCents: '100000000'
+                })
+              ),
+            100
+          )
+        })
+      })
+
+    const resultPromise = fetchOpenCodeGoRateLimits('auth=mytoken', 'wrk_OVERRIDE123')
+    await vi.advanceTimersByTimeAsync(0)
+    const abortedBeforeBillingResponse = billingSignal?.aborted
+    await vi.advanceTimersByTimeAsync(100)
+    const result = await resultPromise
+
+    expect(abortedBeforeBillingResponse).toBe(true)
     expect(result.status).toBe('error')
     expect(result.error).toBe('Could not parse usage data')
+    expect(clearStorageDataMock).toHaveBeenCalledTimes(2)
   })
 
   it('prefers a later valid Go workspace over an earlier balance-only candidate', async () => {

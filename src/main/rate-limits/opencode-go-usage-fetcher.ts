@@ -133,15 +133,7 @@ export async function fetchOpenCodeGoRateLimits(
   }
 }
 
-type OptionalBillingTask = {
-  promise: Promise<number | null>
-  abort: () => void
-}
-
-function startOptionalBillingFetch(
-  openCodeSession: Session,
-  workspaceId: string
-): OptionalBillingTask {
+function startOptionalBillingFetch(openCodeSession: Session, workspaceId: string) {
   const abortController = new AbortController()
   const promise = (async (): Promise<number | null> => {
     const timeout = setTimeout(() => abortController.abort(), OPTIONAL_BILLING_TIMEOUT_MS)
@@ -266,7 +258,7 @@ async function fetchOpenCodeGoRateLimitsWithSession(
   let lastError = ''
   let balanceOnlyResult: ProviderRateLimits | null = null
   for (const candidateId of ids) {
-    let billingTask: OptionalBillingTask | null = null
+    let billingTask: ReturnType<typeof startOptionalBillingFetch> | null = null
     try {
       const statusPromise = openCodeSession.fetch(OPENCODE_GO_STATUS_URL, {
         method: 'GET',
@@ -292,6 +284,14 @@ async function fetchOpenCodeGoRateLimitsWithSession(
 
       const statusText = await statusRes.text()
       const parsed = parseOpenCodeGoStatusPayload(statusText)
+      const explicitNoAccess = isOpenCodeGoExplicitNoAccessPayload(statusText)
+      if (!parsed && !explicitNoAccess) {
+        billingTask.abort()
+        await billingTask.promise
+        lastError = 'Could not parse usage data'
+        continue
+      }
+
       const balance = await billingTask.promise
       if (parsed) {
         return {
@@ -305,7 +305,7 @@ async function fetchOpenCodeGoRateLimitsWithSession(
           status: 'ok'
         }
       }
-      if (isOpenCodeGoExplicitNoAccessPayload(statusText) && balance !== null) {
+      if (balance !== null) {
         balanceOnlyResult ??= {
           provider: 'opencode-go',
           session: null,

@@ -179,9 +179,14 @@ describe('parseOpenCodeGoBillingStatusPayload', () => {
 })
 
 describe('isOpenCodeGoExplicitNoAccessPayload', () => {
-  it('accepts only an explicit JSON access:null payload', () => {
+  it('accepts only explicit JSON null or access:null without an error verdict', () => {
+    expect(isOpenCodeGoExplicitNoAccessPayload('null')).toBe(true)
     expect(isOpenCodeGoExplicitNoAccessPayload('{"access":null}')).toBe(true)
+    expect(
+      isOpenCodeGoExplicitNoAccessPayload('{"access":null,"error":{"type":"AuthError"}}')
+    ).toBe(false)
     expect(isOpenCodeGoExplicitNoAccessPayload('{"access":{}}')).toBe(false)
+    expect(isOpenCodeGoExplicitNoAccessPayload('{}')).toBe(false)
     expect(isOpenCodeGoExplicitNoAccessPayload('<html></html>')).toBe(false)
     expect(isOpenCodeGoExplicitNoAccessPayload('{not json')).toBe(false)
   })

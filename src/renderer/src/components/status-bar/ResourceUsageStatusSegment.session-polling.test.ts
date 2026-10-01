@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 const SOURCE_PATH = resolve(__dirname, 'use-resource-usage-status-controller.ts')
 const INVENTORY_HOOK_PATH = resolve(__dirname, 'use-resource-session-inventory.ts')
+const SEGMENT_PATH = resolve(__dirname, 'ResourceUsageStatusSegment.tsx')
 
 describe('ResourceUsageStatusSegment session inventory', () => {
   it('does not poll global terminal sessions while the popover is closed', () => {
@@ -48,5 +49,26 @@ describe('ResourceUsageStatusSegment session inventory', () => {
     const readySeedBlock = source.slice(source.indexOf('// Why: seed RAM after session restore'))
     expect(readySeedBlock).toContain('void fetchSnapshot()')
     expect(readySeedBlock).toContain('workspaceSessionReady')
+  })
+
+  it('hides local daemon recovery from a remote host view', () => {
+    const source = readFileSync(SEGMENT_PATH, 'utf8')
+
+    expect(source).toMatch(/!viewingRemoteHost\s*&&\s*daemonUnreachable/)
+    expect(source).toMatch(/!viewingRemoteHost\s*&&\s*!daemonUnreachable\s*&&\s*sessionsOnlyError/)
+  })
+
+  it('continues polling the local badge while a remote host is selected', () => {
+    const source = readFileSync(SOURCE_PATH, 'utf8')
+    const pollBlock = source.slice(
+      source.indexOf('// Poll memory only while the popover is open.'),
+      source.indexOf(
+        '  useEffect(() => {\n    if (!open) {\n      clearSessionsError()',
+        source.indexOf('// Poll memory only while the popover is open.')
+      )
+    )
+
+    expect(pollBlock).toContain('void fetchSnapshot(activeHostId)')
+    expect(pollBlock).toContain('void fetchSnapshot(LOCAL_EXECUTION_HOST_ID)')
   })
 })

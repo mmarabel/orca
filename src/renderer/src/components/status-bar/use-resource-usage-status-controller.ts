@@ -6,6 +6,7 @@ import type { UnifiedSessionRow } from './resource-usage-merge-types'
 import type { ResourceSessionBindingInputs } from './resource-session-bindings'
 import type { SortOption } from './resource-usage-resource-tree'
 import { folderWorkspaceToWorktree } from '../../../../shared/folder-workspace-worktree'
+import { LOCAL_EXECUTION_HOST_ID } from '../../../../shared/execution-host'
 import {
   getResourceUsageAllWorktrees,
   getResourceUsageBrowserTabsByWorktree,
@@ -171,14 +172,18 @@ export function useResourceUsageStatusController() {
     if (!open) {
       return
     }
-    // Why: poll only the host on screen. Fanning out to every connected server on
-    // a 2s interval would cost an RPC round trip per host for data nobody is reading.
-    void fetchSnapshot(activeHostId)
+    // Why: the status-bar badge remains local while the panel may show a remote;
+    // poll those two views only, rather than fanning out to every connected server.
+    const pollVisibleSnapshots = (): void => {
+      void fetchSnapshot(activeHostId)
+      if (activeHostId !== LOCAL_EXECUTION_HOST_ID) {
+        void fetchSnapshot(LOCAL_EXECUTION_HOST_ID)
+      }
+    }
+    pollVisibleSnapshots()
     void refreshSessions()
     // Why: only memory polls on an interval; session inventory is explicit on open/action since it's expensive with many terminals.
-    const memTimer = window.setInterval(() => {
-      void fetchSnapshot(activeHostId)
-    }, POLL_MS)
+    const memTimer = window.setInterval(pollVisibleSnapshots, POLL_MS)
     return () => {
       window.clearInterval(memTimer)
     }
@@ -215,6 +220,7 @@ export function useResourceUsageStatusController() {
     open && !resourceSnapshot && !derived.daemonUnreachable && !remoteHostUnreachable
   const showLoadingSkeleton = useDeferredLoadingState(awaitingFirstSnapshot)
   const actions = useResourceUsageActions({
+    activeHostId,
     setCollapsedRepos,
     setCollapsedWorktrees,
     tabsByWorktree,

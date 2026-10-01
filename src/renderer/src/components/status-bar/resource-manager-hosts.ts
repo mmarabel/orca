@@ -31,6 +31,8 @@ export type ResourceManagerHost = {
   id: string
   label: string
   kind: 'local' | 'runtime'
+  /** False only for a selected runtime retained after its connection drops. */
+  connected?: boolean
 }
 
 export type ResourceManagerHostInputs = {
@@ -45,7 +47,12 @@ export type ResourceManagerHostInputs = {
 
 export function listResourceManagerHosts(inputs: ResourceManagerHostInputs): ResourceManagerHost[] {
   const hosts: ResourceManagerHost[] = [
-    { id: LOCAL_EXECUTION_HOST_ID, label: getLocalExecutionHostLabel(), kind: 'local' }
+    {
+      id: LOCAL_EXECUTION_HOST_ID,
+      label: getLocalExecutionHostLabel(),
+      kind: 'local',
+      connected: true
+    }
   ]
   if (inputs.isPairedWebClient) {
     return hosts
@@ -59,18 +66,20 @@ export function listResourceManagerHosts(inputs: ResourceManagerHostInputs): Res
       hasStatusEntry: Boolean(statusEntry),
       status: statusEntry?.status ?? null
     })
+    const connected = isConnectedRuntimeHostState(state)
     const id = toRuntimeExecutionHostId(environment.id)
     // Why: a disconnected host has no snapshot to serve, so it is not worth
     // offering — unless it is the one already on screen. Dropping that one would
     // silently swap the panel to local numbers under no label at all, which reads
     // as "the remote host went quiet" instead of "we lost contact with it".
-    if (!isConnectedRuntimeHostState(state) && id !== inputs.selectedHostId) {
+    if (!connected && id !== inputs.selectedHostId) {
       continue
     }
     hosts.push({
       id,
       label: inputs.hostLabelOverrides.get(id) || environment.name || environment.id,
-      kind: 'runtime'
+      kind: 'runtime',
+      connected
     })
   }
   return hosts

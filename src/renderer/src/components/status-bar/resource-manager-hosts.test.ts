@@ -87,10 +87,9 @@ describe('listResourceManagerHosts', () => {
       ...hostInputs([environment('env-1', { name: 'Hetzner VPS' })], [['env-1', { status: null }]]),
       selectedHostId: 'runtime:env-1'
     }
-    expect(listResourceManagerHosts(inputs).map((host) => host.id)).toEqual([
-      'local',
-      'runtime:env-1'
-    ])
+    const hosts = listResourceManagerHosts(inputs)
+    expect(hosts.map((host) => host.id)).toEqual(['local', 'runtime:env-1'])
+    expect(hosts[1]).toMatchObject({ connected: false })
   })
 
   it('still omits other disconnected hosts', () => {

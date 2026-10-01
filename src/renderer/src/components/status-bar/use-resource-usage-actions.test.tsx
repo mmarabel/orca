@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ExecutionHostId } from '../../../../shared/execution-host'
 import type { ResourceManagerWorktreeTarget } from './resource-manager-worktree-target'
 
 const mocks = vi.hoisted(() => ({
@@ -20,9 +21,10 @@ vi.mock('../sidebar/delete-worktree-flow', () => ({ runWorktreeDelete: vi.fn() }
 
 import { useResourceUsageActions } from './use-resource-usage-actions'
 
-function renderActions() {
+function renderActions(activeHostId: ExecutionHostId = 'local') {
   return renderHook(() =>
     useResourceUsageActions({
+      activeHostId,
       setCollapsedRepos: vi.fn(),
       setCollapsedWorktrees: vi.fn(),
       tabsByWorktree: {},
@@ -62,16 +64,31 @@ describe('Resource Manager row navigation', () => {
   it('activates a folder workspace row through the workspace dispatcher', () => {
     renderActions().navigateToWorktree('folder:notes')
 
-    expect(mocks.activateAndRevealWorkspace).toHaveBeenCalledWith('folder:notes')
+    expect(mocks.activateAndRevealWorkspace).toHaveBeenCalledWith('folder:notes', {
+      executionHostId: 'local'
+    })
     expect(mocks.activateAndRevealWorktree).not.toHaveBeenCalled()
   })
 
   it('still routes worktree rows through the host-resolved activator', () => {
-    renderActions().navigateToWorktree('repo::/notes')
+    renderActions('ssh:box').navigateToWorktree('repo::/notes')
 
     expect(mocks.activateAndRevealWorktree).toHaveBeenCalledWith('repo::/notes', {
       executionHostId: 'ssh:box'
     })
     expect(mocks.activateAndRevealWorkspace).not.toHaveBeenCalled()
+  })
+
+  it('routes a duplicate worktree id to the host selected in Resource Manager', () => {
+    mocks.worktrees = [
+      { id: 'same-id', hostId: 'local' },
+      { id: 'same-id', hostId: 'runtime:env-1' }
+    ]
+
+    renderActions('runtime:env-1').navigateToWorktree('same-id')
+
+    expect(mocks.activateAndRevealWorktree).toHaveBeenCalledWith('same-id', {
+      executionHostId: 'runtime:env-1'
+    })
   })
 })

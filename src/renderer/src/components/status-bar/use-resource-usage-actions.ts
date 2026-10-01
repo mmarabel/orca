@@ -6,7 +6,6 @@ import type { AppState } from '../../store/types'
 import { getAllWorktreesFromState } from '../../store/selectors'
 import { runWorktreeDelete } from '../sidebar/delete-worktree-flow'
 import { ORPHAN_WORKTREE_ID } from '../../../../shared/constants'
-import { parseExecutionHostId } from '../../../../shared/execution-host'
 import { parseWorkspaceKey } from '../../../../shared/workspace-scope'
 import { UNATTRIBUTED_REPO_ID } from './mergeSnapshotAndSessions'
 import type { DaemonSession, UnifiedSessionRow } from './resource-usage-merge-types'
@@ -15,6 +14,7 @@ import { selectUnboundDaemonSessions } from './resource-session-bindings'
 import { navigateResourceSessionToTab } from './resource-session-navigation'
 import { requiresKillConfirmation } from './resource-session-kill-confirmation'
 import { resolveResourceManagerWorktreeTarget } from './resource-manager-worktree-target'
+import { resolveResourceManagerWorkspaceExecutionHostId } from './resource-manager-workspace-owner'
 
 export function useResourceUsageActions({
   activeHostId,
@@ -97,7 +97,12 @@ export function useResourceUsageActions({
       if (worktreeId === ORPHAN_WORKTREE_ID || worktreeId.startsWith(`${UNATTRIBUTED_REPO_ID}::`)) {
         return
       }
-      const executionHostId = parseExecutionHostId(activeHostId)?.id
+      const state = useAppStore.getState()
+      const executionHostId = resolveResourceManagerWorkspaceExecutionHostId(
+        state,
+        worktreeId,
+        activeHostId
+      )
       if (!executionHostId) {
         return
       }
@@ -106,7 +111,7 @@ export function useResourceUsageActions({
         activateAndRevealWorkspace(worktreeId, { executionHostId })
         return
       }
-      const target = useAppStore.getState().getKnownWorktreeById(worktreeId, executionHostId)
+      const target = state.getKnownWorktreeById(worktreeId, executionHostId)
       if (!target) {
         return
       }

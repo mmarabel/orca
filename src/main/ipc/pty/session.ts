@@ -1,4 +1,4 @@
-import type { BrowserWindow } from 'electron'
+import type { BrowserWindow, WebContents } from 'electron'
 import type { OrcaRuntimeService } from '../../runtime/orca-runtime'
 import type { Store } from '../../persistence'
 import type { GlobalSettings } from '../../../shared/global-settings-types'
@@ -55,10 +55,19 @@ export type PtyIpcSessionOptions = {
   isRecoveryReloadInFlight?: (webContentsId: number) => boolean
   onCodexHomePtySpawned?: (args: CodexHomePtySpawnedLifecycleArgs) => void
   onPtyExit?: (id: string, exitSequence: number) => void
+  /** The OS appearance, for a 'system' theme; absent on a host with no display. */
+  systemPrefersDark?: () => boolean
+}
+
+export type PtyRendererDelivery = Pick<
+  BrowserWindow,
+  'isDestroyed' | 'isFocused' | 'isVisible' | 'isMinimized'
+> & {
+  webContents: Pick<WebContents, 'id' | 'isDestroyed' | 'send' | 'on' | 'removeListener'>
 }
 
 export type PtyIpcSession = {
-  mainWindow: BrowserWindow
+  mainWindow?: PtyRendererDelivery
   runtime?: OrcaRuntimeService
   store?: Store
   getSettings?: () => GlobalSettings
@@ -100,7 +109,6 @@ export type PtyIpcSession = {
     string,
     { cleanupTimer: NodeJS.Timeout; incarnationId: string | undefined }
   >
-  reversibleStopOwnersByPtyId: Map<string, number>
   retiredRejectedPtyIds: Map<string, NodeJS.Timeout>
   pendingSerializeRequests: Map<
     string,
@@ -180,7 +188,7 @@ const unsetSessionFn = (): never => {
 }
 
 export function createPtyIpcSession(args: {
-  mainWindow: BrowserWindow
+  mainWindow?: PtyRendererDelivery
   runtime?: OrcaRuntimeService
   store?: Store
   getSettings?: () => GlobalSettings
@@ -229,7 +237,6 @@ export function createPtyIpcSession(args: {
     sourceCreditPendingPtys: new Set(),
     backgroundedDeliverySyncByPty: new Map(),
     syntheticKillExitPtyIds: new Map(),
-    reversibleStopOwnersByPtyId: new Map(),
     retiredRejectedPtyIds: new Map(),
     pendingSerializeRequests: new Map(),
     canSendPtyDataToRenderer: unsetSessionFn,

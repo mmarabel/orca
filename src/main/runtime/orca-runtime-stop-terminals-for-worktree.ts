@@ -9,7 +9,12 @@ import type {
   RuntimeWorktreeTerminalCloseResult,
   RuntimeWorktreeTerminalSleepResult
 } from '../../shared/runtime-types'
+import { WORKTREE_TERMINAL_SLEEP_BLOCKED_ERROR } from './worktree-terminal-mutation-lock'
 import type { WorktreeTerminalMutationKind } from './worktree-terminal-mutation-lock'
+import {
+  isAutomaticTabActivation,
+  type TabActivationIntent
+} from '../../shared/tab-activation-intent'
 import type { WorkspaceSessionState } from '../../shared/workspace-session-state-types'
 import { cloneWorkspaceSessionState } from '../persistence/restoring-sessions/session-owner-fields'
 import { rollbackWorkspaceSessionAfterFailedAsyncWrite } from '../persistence/restoring-sessions/workspace-session-write-rollback'
@@ -262,13 +267,21 @@ export class OrcaRuntimeWithStopTerminalsForWorktree extends OrcaRuntimeWithReso
     }
   }
 
-  async acquireWorktreeTerminalSpawn(worktreeId?: string): Promise<() => void> {
+  async acquireWorktreeTerminalSpawn(
+    worktreeId?: string,
+    activationIntent?: TabActivationIntent
+  ): Promise<() => void> {
     if (!worktreeId) {
       return () => {}
     }
     const release = await this.acquireWorktreeTerminalMutation(worktreeId, 'shared')
     const key = runtimeWorktreeIdentityKey(worktreeId)
     const sleepState = this.terminalSleepStateByWorktreeId.get(key)
+    // Recovery queued during teardown must not turn the committed sleep into a wake.
+    if (isAutomaticTabActivation(activationIntent) && sleepState) {
+      release()
+      throw new Error(WORKTREE_TERMINAL_SLEEP_BLOCKED_ERROR)
+    }
     if (sleepState?.phase === 'sleeping' || sleepState?.phase === 'partial') {
       this.terminalSleepStateByWorktreeId.delete(key)
       this.emitClientEvent({

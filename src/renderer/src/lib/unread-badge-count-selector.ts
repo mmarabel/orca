@@ -47,7 +47,8 @@ function sameBadgeOwnedTab(previous: UnreadBadgeOwnedTab, next: UnreadBadgeOwned
 export function createUnreadBadgeCountSelector(): (state: UnreadBadgeSelectorState) => number {
   let previousWorktreesByRepo: UnreadBadgeCountSources['worktreesByRepo'] = EMPTY_BUCKETS
   let previousTabsByWorktree: UnreadBadgeCountSources['tabsByWorktree'] = EMPTY_BUCKETS
-  let previousUnifiedTabs: NonNullable<UnreadBadgeCountSources['unifiedTabs']> = EMPTY_BUCKETS
+  let previousUnifiedTabs: NonNullable<UnreadBadgeCountSources['unifiedTabsByWorktree']> =
+    EMPTY_BUCKETS
   let previousUnreadTerminalTabs: UnreadBadgeCountSources['unreadTerminalTabs'] | undefined
   let previousHiddenChildUnreadIdentities: ReadonlySet<string> | undefined
   let unreadCount = 0
@@ -55,7 +56,7 @@ export function createUnreadBadgeCountSelector(): (state: UnreadBadgeSelectorSta
 
   return (state) => {
     const hiddenChildUnreadIdentities = selectHiddenChildUnreadIdentities(state)
-    const unifiedTabs = state.unifiedTabs ?? EMPTY_BUCKETS
+    const unifiedTabs = state.unifiedTabsByWorktree ?? EMPTY_BUCKETS
     const unchanged =
       counted &&
       previousHiddenChildUnreadIdentities === hiddenChildUnreadIdentities &&
@@ -69,7 +70,7 @@ export function createUnreadBadgeCountSelector(): (state: UnreadBadgeSelectorSta
         tabsByWorktree: state.tabsByWorktree,
         unreadTerminalTabs: state.unreadTerminalTabs,
         hiddenChildUnreadIdentities,
-        unifiedTabs
+        unifiedTabsByWorktree: unifiedTabs
       })
       previousHiddenChildUnreadIdentities = hiddenChildUnreadIdentities
       previousUnreadTerminalTabs = state.unreadTerminalTabs

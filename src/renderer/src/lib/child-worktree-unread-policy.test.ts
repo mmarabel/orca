@@ -51,7 +51,7 @@ function makeState(showChildWorktreeUnread = false) {
     workspaceLineageByChildKey: {},
     folderWorkspaces: [],
     tabsByWorktree: { child: [{ id: 'child-tab' }], grandchild: [{ id: 'grandchild-tab' }] },
-    unifiedTabs: {
+    unifiedTabsByWorktree: {
       child: [ownedTab('child-tab', 'child')],
       grandchild: [ownedTab('grandchild-tab', 'grandchild')]
     },
@@ -144,7 +144,7 @@ describe('child worktree unread presentation', () => {
         ...worktree,
         hostId
       }))
-      state.unifiedTabs = {
+      state.unifiedTabsByWorktree = {
         child: [ownedTab('child-tab', 'child', hostId)],
         grandchild: [ownedTab('grandchild-tab', 'grandchild', hostId)]
       }
@@ -158,7 +158,10 @@ describe('child worktree unread presentation', () => {
     expect(select(state)).toBe(1)
     const otherHost = {
       ...state,
-      unifiedTabs: { ...state.unifiedTabs, child: [ownedTab('child-tab', 'child', 'ssh:remote')] }
+      unifiedTabsByWorktree: {
+        ...state.unifiedTabsByWorktree,
+        child: [ownedTab('child-tab', 'child', 'ssh:remote')]
+      }
     }
     expect(select(otherHost)).toBe(2)
     expect(
@@ -181,7 +184,7 @@ describe('child worktree unread presentation', () => {
 
   it('recounts unread when a worktree runtime alias changes', () => {
     const state = makeState()
-    state.unifiedTabs.child = [ownedTab('child-tab', 'child', 'runtime:remote')]
+    state.unifiedTabsByWorktree.child = [ownedTab('child-tab', 'child', 'runtime:remote')]
     const select = createUnreadBadgeCountSelector()
     expect(select(state)).toBe(2)
     const aliased = {

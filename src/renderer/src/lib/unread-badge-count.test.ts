@@ -31,14 +31,16 @@ describe('getUnreadBadgeCount', () => {
     'counts %s tab unread before its same-id worktree row hydrates',
     (executionHostId) => {
       const sources = hiddenChildSources()
-      sources.unifiedTabs = { 'same-id': [{ id: 'tab-1', worktreeId: 'same-id', executionHostId }] }
+      sources.unifiedTabsByWorktree = {
+        'same-id': [{ id: 'tab-1', worktreeId: 'same-id', executionHostId }]
+      }
       expect(getUnreadBadgeCount(sources)).toBe(1)
     }
   )
 
   it('suppresses tab unread only with explicit hidden-child ownership', () => {
     const sources = hiddenChildSources()
-    sources.unifiedTabs = {
+    sources.unifiedTabsByWorktree = {
       'same-id': [{ id: 'tab-1', worktreeId: 'same-id', executionHostId: 'local' }]
     }
     expect(getUnreadBadgeCount(sources)).toBe(0)
@@ -61,7 +63,9 @@ describe('getUnreadBadgeCount', () => {
         { id: 'tab-1', worktreeId: 'same-id', executionHostId: 'ssh:remote' } as const
       ]
     ]) {
-      expect(getUnreadBadgeCount({ ...sources, unifiedTabs: { 'same-id': owners } })).toBe(1)
+      expect(
+        getUnreadBadgeCount({ ...sources, unifiedTabsByWorktree: { 'same-id': owners } })
+      ).toBe(1)
     }
   })
 
@@ -69,7 +73,7 @@ describe('getUnreadBadgeCount', () => {
     'keeps a shared unread tab ID visible regardless of child-first order (%s)',
     (childFirst) => {
       const sources = hiddenChildSources()
-      sources.unifiedTabs = {
+      sources.unifiedTabsByWorktree = {
         'same-id': [{ id: 'tab-1', worktreeId: 'same-id', executionHostId: 'local' }],
         visible: [{ id: 'tab-1', worktreeId: 'visible', executionHostId: 'ssh:remote' }]
       }

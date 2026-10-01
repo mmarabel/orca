@@ -3,6 +3,7 @@ import type { TerminalTab } from '../../../shared/terminal-tab-types'
 import type { Worktree } from '../../../shared/worktree/types'
 import { getWorktreeHostIdentity } from '../../../shared/worktree/host-qualified-identity'
 import type { Tab } from '../../../shared/tab-types'
+import type { AppState } from '@/store/types'
 import { isExecutionHostAliasForWorktree } from './worktree-execution-host-alias'
 
 /** The only fields the count reads, so a projection over them is a sound cache key. */
@@ -18,7 +19,10 @@ export type UnreadBadgeCountSources = {
   tabsByWorktree: Readonly<Record<string, readonly UnreadBadgeTab[]>>
   unreadTerminalTabs: Readonly<Record<string, StoredAgentAttentionUnread>>
   hiddenChildUnreadIdentities?: ReadonlySet<string>
-  unifiedTabs?: Readonly<Record<string, readonly UnreadBadgeOwnedTab[]>>
+} & {
+  [Field in keyof Pick<AppState, 'unifiedTabsByWorktree'>]?: Readonly<
+    Record<string, readonly UnreadBadgeOwnedTab[]>
+  >
 }
 
 export function getUnreadBadgeCount({
@@ -26,7 +30,7 @@ export function getUnreadBadgeCount({
   tabsByWorktree,
   unreadTerminalTabs,
   hiddenChildUnreadIdentities,
-  unifiedTabs
+  unifiedTabsByWorktree
 }: UnreadBadgeCountSources): number {
   const unreadWorktreeIds = new Set<string>()
   const hiddenWorktreesById = new Map<string, UnreadBadgeWorktree[]>()
@@ -50,7 +54,7 @@ export function getUnreadBadgeCount({
 
   for (const [worktreeId, tabs] of Object.entries(tabsByWorktree)) {
     const owners = new Map<string, UnreadBadgeOwnedTab | null>()
-    for (const owner of unifiedTabs?.[worktreeId] ?? []) {
+    for (const owner of unifiedTabsByWorktree?.[worktreeId] ?? []) {
       if (owner.worktreeId === worktreeId) {
         owners.set(owner.id, owners.has(owner.id) ? null : owner)
       }

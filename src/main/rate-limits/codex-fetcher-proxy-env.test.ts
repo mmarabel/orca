@@ -1,23 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
-  childSpawnMock,
+  spawnProcessMock,
   readFileMock,
   resolveCodexCommandMock,
-  ptySpawnMock,
   isBackfillPendingMock,
   startBackfillRecoveryMock
 } = vi.hoisted(() => ({
-  childSpawnMock: vi.fn(),
+  spawnProcessMock: vi.fn(),
   readFileMock: vi.fn(),
   resolveCodexCommandMock: vi.fn(),
-  ptySpawnMock: vi.fn(),
   isBackfillPendingMock: vi.fn(() => false),
   startBackfillRecoveryMock: vi.fn(() => Promise.resolve(null))
 }))
 
-vi.mock('node:child_process', () => ({
-  spawn: childSpawnMock
+vi.mock('../../shared/child-process/run-process', () => ({
+  spawnProcess: spawnProcessMock
 }))
 
 vi.mock('node:fs/promises', () => ({
@@ -28,10 +26,6 @@ vi.mock('../codex-cli/command', () => ({
   resolveCodexCommand: resolveCodexCommandMock
 }))
 
-vi.mock('node-pty', () => ({
-  spawn: ptySpawnMock
-}))
-
 vi.mock('../codex/codex-state-db', () => ({
   isCodexStateDbBackfillPending: isBackfillPendingMock
 }))
@@ -40,16 +34,13 @@ vi.mock('../codex/codex-state-db-backfill-recovery', () => ({
   startCodexStateDbBackfillRecoveryInBackground: startBackfillRecoveryMock
 }))
 
-// Default to signed-in so the probe paths under test still run.
 vi.mock('./codex-auth-presence', () => ({
   probeCodexAuthPresence: vi.fn(() => 'present')
 }))
 
 import { fetchCodexRateLimits } from './codex-fetcher'
-import { makePtyTerm, makeRpcChild } from './codex-fetcher.test-fixtures'
+import { makeRpcChild } from './codex-fetcher.test-fixtures'
 
-// Why its own file: `codex-fetcher.test.ts` is at the max-lines ceiling, so this suite imports the
-// shared probe doubles rather than growing it.
 describe('Codex probe proxy environment', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -64,21 +55,18 @@ describe('Codex probe proxy environment', () => {
     vi.unstubAllGlobals()
   })
 
-  // Why: the probe is spawned with the app process env, and on macOS a Dock-launched app has no
-  // shell proxy vars, so a configured Orca proxy never reached it (mirrors claude-pty.ts). #19755.
+  // Why: a Dock-launched app has no shell proxy vars, so the configured proxy must be added to
+  // the short-lived Codex process explicitly (#19755).
   it('injects the configured proxy into the codex RPC probe env', async () => {
     const rpcChild = makeRpcChild()
-    childSpawnMock.mockReturnValue(rpcChild)
+    spawnProcessMock.mockReturnValue(rpcChild)
 
     const resultPromise = fetchCodexRateLimits({
-      allowPtyFallback: false,
       networkProxySettings: { httpProxyUrl: 'http://127.0.0.1:7890' }
     })
     await vi.advanceTimersByTimeAsync(0)
 
-    // Why: capture, then settle before asserting. The probe holds the codex-home process lock
-    // until it resolves, so asserting first would leave the lock held and hang later tests.
-    const spawnEnv: Record<string, string> = childSpawnMock.mock.calls[0]?.[2]?.env
+    const spawnEnv: Record<string, string> = spawnProcessMock.mock.calls[0]?.[0]?.env
 
     rpcChild.emit('close')
     await resultPromise
@@ -87,47 +75,23 @@ describe('Codex probe proxy environment', () => {
     expect(spawnEnv.HTTP_PROXY).toBe('http://127.0.0.1:7890')
   })
 
-  it('injects the configured proxy into the codex PTY fallback env', async () => {
-    const term = makePtyTerm()
-    childSpawnMock.mockImplementation(() => {
-      throw new Error('rpc unavailable')
-    })
-    ptySpawnMock.mockReturnValue(term)
-
-    const resultPromise = fetchCodexRateLimits({
-      networkProxySettings: { httpProxyUrl: 'http://127.0.0.1:7890' }
-    })
-    await vi.advanceTimersByTimeAsync(0)
-
-    const spawnEnv: Record<string, string> = ptySpawnMock.mock.calls[0]?.[2]?.env
-
-    term.emitExit()
-    await resultPromise
-
-    expect(spawnEnv.HTTPS_PROXY).toBe('http://127.0.0.1:7890')
-    expect(spawnEnv.HTTP_PROXY).toBe('http://127.0.0.1:7890')
-  })
-
-  // Why: a proxy URL may embed credentials (it is a protected secret at rest), and wsl.exe
-  // command lines are visible to local processes — so the values must cross via WSLENV names,
-  // never serialized into the command (CodeRabbit CWE-200 on #19931).
+  // Why: proxy credentials are protected at rest but command lines are visible to local processes.
   it('keeps proxy credentials out of the WSL command line and crosses them via WSLENV', async () => {
     const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')
     Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
     try {
       const rpcChild = makeRpcChild()
-      childSpawnMock.mockReturnValue(rpcChild)
+      spawnProcessMock.mockReturnValue(rpcChild)
 
       const resultPromise = fetchCodexRateLimits({
-        allowPtyFallback: false,
         codexHomePath: String.raw`\\wsl.localhost\Ubuntu\home\alice`,
         networkProxySettings: { httpProxyUrl: 'http://user:pass@127.0.0.1:7890' }
       })
       await vi.advanceTimersByTimeAsync(0)
 
-      const [spawnCmd, spawnArgs, spawnOptions] = childSpawnMock.mock.calls[0] ?? []
-      expect(spawnCmd).toBe('wsl.exe')
-      const commandText = Array.isArray(spawnArgs) ? spawnArgs.join(' ') : ''
+      const spawnOptions = spawnProcessMock.mock.calls[0]?.[0]
+      expect(spawnOptions?.program).toBe('wsl.exe')
+      const commandText = Array.isArray(spawnOptions?.args) ? spawnOptions.args.join(' ') : ''
       expect(commandText).not.toContain('user:pass@127.0.0.1:7890')
       const spawnEnv: Record<string, string> = spawnOptions?.env ?? {}
       expect(spawnEnv.HTTPS_PROXY).toBe('http://user:pass@127.0.0.1:7890')

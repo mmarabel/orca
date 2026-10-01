@@ -8,7 +8,16 @@ const mocks = vi.hoisted(() => ({
   activateAndRevealWorkspace: vi.fn(),
   activateAndRevealWorktree: vi.fn(),
   getKnownWorktreeById: vi.fn(),
-  worktrees: Array<ResourceManagerWorktreeTarget & { runtimeOwnerEnvironmentId?: string }>()
+  folderWorkspaces: Array<{
+    id: string
+    projectGroupId: string
+    connectionId: string | null
+    executionHostId: ExecutionHostId
+    diffComments: []
+  }>(),
+  worktrees: Array<
+    ResourceManagerWorktreeTarget & { repoId: string; runtimeOwnerEnvironmentId?: string }
+  >()
 }))
 
 vi.mock('@/lib/worktree-activation', () => ({
@@ -17,7 +26,18 @@ vi.mock('@/lib/worktree-activation', () => ({
 }))
 vi.mock('@/lib/activate-tab-and-focus-pane', () => ({ activateTabAndFocusPane: vi.fn() }))
 vi.mock('../../store', () => ({
-  useAppStore: { getState: () => ({ getKnownWorktreeById: mocks.getKnownWorktreeById }) }
+  useAppStore: {
+    getState: () => ({
+      getKnownWorktreeById: mocks.getKnownWorktreeById,
+      worktreesByRepo: { repo: mocks.worktrees },
+      detectedWorktreesByRepo: {},
+      folderWorkspaces: mocks.folderWorkspaces,
+      projectGroups: [],
+      repos: [],
+      runtimeEnvironments: [],
+      runtimeEnvironmentCatalogHydrated: true
+    })
+  }
 }))
 vi.mock('../../store/selectors', () => ({ getAllWorktreesFromState: () => mocks.worktrees }))
 vi.mock('../sidebar/delete-worktree-flow', () => ({ runWorktreeDelete: vi.fn() }))
@@ -60,7 +80,16 @@ beforeEach(() => {
   mocks.activateAndRevealWorkspace.mockReset()
   mocks.activateAndRevealWorktree.mockReset()
   mocks.getKnownWorktreeById.mockReset()
-  mocks.worktrees = [{ id: 'repo::/notes', hostId: 'ssh:box' }]
+  mocks.folderWorkspaces = [
+    {
+      id: 'notes',
+      projectGroupId: 'folders',
+      connectionId: null,
+      executionHostId: 'local',
+      diffComments: []
+    }
+  ]
+  mocks.worktrees = [{ id: 'repo::/notes', repoId: 'repo', hostId: 'ssh:box' }]
   mocks.getKnownWorktreeById.mockImplementation(
     (worktreeId: string, executionHostId: ExecutionHostId) =>
       mocks.worktrees.find(
@@ -84,6 +113,43 @@ describe('Resource Manager row navigation', () => {
     expect(mocks.activateAndRevealWorktree).not.toHaveBeenCalled()
   })
 
+  it('routes an SSH worktree reported by the local collector through its execution owner', () => {
+    renderActions('local').navigateToWorktree('repo::/notes')
+
+    expect(mocks.activateAndRevealWorktree).toHaveBeenCalledWith('repo::/notes', {
+      executionHostId: 'ssh:box'
+    })
+  })
+
+  it('routes an SSH folder reported by the local collector through its execution owner', () => {
+    mocks.folderWorkspaces = [
+      {
+        id: 'notes',
+        projectGroupId: 'folders',
+        connectionId: 'box',
+        executionHostId: 'ssh:box',
+        diffComments: []
+      }
+    ]
+
+    renderActions('local').navigateToWorktree('folder:notes')
+
+    expect(mocks.activateAndRevealWorkspace).toHaveBeenCalledWith('folder:notes', {
+      executionHostId: 'ssh:box'
+    })
+  })
+
+  it('fails closed when the local collector reports an id owned by several hosts', () => {
+    mocks.worktrees = [
+      { id: 'repo::/same', repoId: 'repo', hostId: 'local' },
+      { id: 'repo::/same', repoId: 'repo', hostId: 'ssh:box' }
+    ]
+
+    renderActions('local').navigateToWorktree('repo::/same')
+
+    expect(mocks.activateAndRevealWorktree).not.toHaveBeenCalled()
+  })
+
   it('still routes worktree rows through the host-resolved activator', () => {
     renderActions('ssh:box').navigateToWorktree('repo::/notes')
 
@@ -97,6 +163,7 @@ describe('Resource Manager row navigation', () => {
     mocks.worktrees = [
       {
         id: 'runtime-alias',
+        repoId: 'repo',
         hostId: 'ssh:runtime-owned',
         runtimeOwnerEnvironmentId: 'paired'
       }
@@ -111,8 +178,8 @@ describe('Resource Manager row navigation', () => {
 
   it('routes a duplicate worktree id to the host selected in Resource Manager', () => {
     mocks.worktrees = [
-      { id: 'same-id', hostId: 'local' },
-      { id: 'same-id', hostId: 'runtime:env-1' }
+      { id: 'same-id', repoId: 'repo', hostId: 'local' },
+      { id: 'same-id', repoId: 'repo', hostId: 'runtime:env-1' }
     ]
 
     renderActions('runtime:env-1').navigateToWorktree('same-id')

@@ -3,7 +3,6 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import { translate } from '@/i18n/i18n'
 import { useAppStore } from '../../store'
 import { findKnownWorktreeById } from '../../store/slices/worktrees/listing/detected-worktree-meta'
-import { parseExecutionHostId } from '../../../../shared/execution-host'
 import type { Worktree } from '../../../../shared/worktree/types'
 import type {
   Metric,
@@ -13,6 +12,7 @@ import type {
 } from './resource-usage-merge-types'
 import { MetricPair, ROW_TRAILING_GUTTER_CLS } from './resource-usage-metrics'
 import { WorktreeRow } from './resource-usage-session-rows'
+import { resolveResourceManagerWorkspaceExecutionHostId } from './resource-manager-workspace-owner'
 
 export type SortOption = 'memory' | 'cpu' | 'name'
 
@@ -90,14 +90,46 @@ export function ResourceTree({
   const worktreesByRepo = useAppStore((state) => state.worktreesByRepo)
   const detectedWorktreesByRepo = useAppStore((state) => state.detectedWorktreesByRepo)
   const folderWorkspaces = useAppStore((state) => state.folderWorkspaces)
-  const executionHostId = parseExecutionHostId(activeHostId)?.id
+  const projectGroups = useAppStore((state) => state.projectGroups)
+  const catalogRepos = useAppStore((state) => state.repos)
+  const settings = useAppStore((state) => state.settings)
+  const runtimeEnvironments = useAppStore((state) => state.runtimeEnvironments)
+  const runtimeEnvironmentCatalogHydrated = useAppStore(
+    (state) => state.runtimeEnvironmentCatalogHydrated
+  )
+  const removedRuntimeEnvironmentIds = useAppStore((state) => state.removedRuntimeEnvironmentIds)
+  const restoredRuntimeHostIdByWorkspaceSessionKey = useAppStore(
+    (state) => state.restoredRuntimeHostIdByWorkspaceSessionKey
+  )
+  const activeWorkspaceExecutionHostId = useAppStore(
+    (state) => state.activeWorkspaceExecutionHostId
+  )
   const storeRecordById = useMemo(() => {
     const map = new Map<string, Worktree>()
-    if (!executionHostId) {
-      return map
+    const ownerState = {
+      worktreesByRepo,
+      detectedWorktreesByRepo,
+      folderWorkspaces,
+      projectGroups,
+      repos: catalogRepos,
+      settings,
+      runtimeEnvironments,
+      runtimeEnvironmentCatalogHydrated,
+      removedRuntimeEnvironmentIds,
+      restoredRuntimeHostIdByWorkspaceSessionKey,
+      activeWorktreeId,
+      activeWorkspaceExecutionHostId
     }
     for (const repo of repos) {
       for (const worktree of repo.worktrees) {
+        const executionHostId = resolveResourceManagerWorkspaceExecutionHostId(
+          ownerState,
+          worktree.worktreeId,
+          activeHostId
+        )
+        if (!executionHostId) {
+          continue
+        }
         const record = findKnownWorktreeById(
           { worktreesByRepo, detectedWorktreesByRepo, folderWorkspaces },
           worktree.worktreeId,
@@ -109,7 +141,22 @@ export function ResourceTree({
       }
     }
     return map
-  }, [repos, executionHostId, worktreesByRepo, detectedWorktreesByRepo, folderWorkspaces])
+  }, [
+    repos,
+    activeHostId,
+    worktreesByRepo,
+    detectedWorktreesByRepo,
+    folderWorkspaces,
+    projectGroups,
+    catalogRepos,
+    settings,
+    runtimeEnvironments,
+    runtimeEnvironmentCatalogHydrated,
+    removedRuntimeEnvironmentIds,
+    restoredRuntimeHostIdByWorkspaceSessionKey,
+    activeWorktreeId,
+    activeWorkspaceExecutionHostId
+  ])
 
   const sortedRepos = useMemo(() => {
     const grouped = sortProjectGroups(repos, sortOption)

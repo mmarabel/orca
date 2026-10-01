@@ -148,13 +148,16 @@ describe('hard-wrapped terminal HTTP candidate bounds', () => {
     const rows = [
       `      |${inner}|`,
       `todo  |${'b'.repeat(inner.length)}|`,
-      `  in   |${'c'.repeat(inner.length)}|`,
-      `Final  |${'dddd'.padEnd(inner.length, ' ')}|`
+      `  in  |${'c'.repeat(inner.length)}|`,
+      `Final  |${'dddd'.padEnd(inner.length - 1, ' ')}|`
     ].map(bufferLineWithCellColumns)
 
-    const candidates = buildHardWrappedHttpLogicalLineCandidates({ getLine: (y) => rows[y] }, 1)
+    const candidates = buildHardWrappedHttpLogicalLineCandidates(
+      { getLine: (y) => rows[y] },
+      rows.length
+    )
 
-    expect(candidates[0]?.text).toBe(inner)
+    expect(candidates).toEqual([])
   })
 
   it('reconstructs a maximum-length wide-character URL beyond the ASCII row bound', () => {

@@ -100,7 +100,10 @@ export function useWorktreeJumpPaletteWorktrees({
         if (filterPredicate && !filterPredicate.matchesWorktree(worktree)) {
           return false
         }
-        if (hideDefaultBranchWorkspace && isDefaultBranchWorkspace(worktree)) {
+        if (
+          hideDefaultBranchWorkspace &&
+          isDefaultBranchWorkspace(worktree, repoMap.get(worktree.repoId))
+        ) {
           return false
         }
         if (hideAutomationGeneratedWorkspaces && isAutomationGeneratedWorkspace(worktree)) {
@@ -148,6 +151,7 @@ export function useWorktreeJumpPaletteWorktrees({
       hideWorkspacesFromOtherDevices,
       pairedDeviceIdsByEnvironment,
       ptyIdsByTabId,
+      repoMap,
       showSleepingWorkspaces,
       tabsByWorktree,
       worktreeIdsWithLiveAgent,

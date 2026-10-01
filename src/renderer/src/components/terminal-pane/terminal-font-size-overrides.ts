@@ -1,4 +1,5 @@
-import type { TerminalLeafId } from '../../../../shared/stable-pane-id'
+import { isTerminalLeafId, type TerminalLeafId } from '../../../../shared/stable-pane-id'
+import { collectLeafIdsInOrder } from './terminal-layout-leaf-ids'
 import {
   getTerminalPtyOwnershipIdentity,
   hasTerminalPtyOwnerOutsidePane,
@@ -27,6 +28,19 @@ export function setTerminalFontSizeOverride(leafId: TerminalLeafId, fontSize: nu
 
 export function clearTerminalFontSizeOverride(leafId: TerminalLeafId): void {
   fontSizeByLeafId.delete(leafId)
+}
+
+export function clearRetiringTabFontSizeOverrides(
+  state: TerminalTabRetirementState,
+  tab: { tabId: string; worktreeId: string }
+): void {
+  const layout = state.terminalLayoutsByTabId[tab.tabId]
+  const ptyIdsByLeafId = layout?.ptyIdsByLeafId ?? {}
+  const leafIds = new Set([...collectLeafIdsInOrder(layout?.root), ...Object.keys(ptyIdsByLeafId)])
+  const panes = [...leafIds].flatMap((leafId) =>
+    isTerminalLeafId(leafId) ? [{ leafId, ptyId: ptyIdsByLeafId[leafId] ?? null }] : []
+  )
+  clearRemovedTabFontSizeOverrides(state, tab, panes)
 }
 
 export function clearRemovedTabFontSizeOverrides(

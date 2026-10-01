@@ -31,7 +31,11 @@ export function installReattachGridPush(session: ConnectPanePtySession): void {
         const reattachCols = session.pane.terminal.cols
         const reattachRows = session.pane.terminal.rows
         if (reattachCols > 0 && reattachRows > 0) {
-          session.transport.resize(reattachCols, reattachRows)
+          if (isRemoteRuntimePtyId(reattachPtyId)) {
+            session.transport.resize(reattachCols, reattachRows, { redraw: true })
+          } else {
+            session.transport.resize(reattachCols, reattachRows)
+          }
         }
         if (!isRemoteRuntimePtyId(reattachPtyId)) {
           window.api.pty.signal(reattachPtyId, 'SIGWINCH')

@@ -341,7 +341,7 @@ describe('pushed remote snapshot replay grid', () => {
     expect(frameWriteIndex).toBeGreaterThan(sourceResizeIndex)
     // Why the PTY push matters: the pane must not be left driving the host at
     // the replay geometry once the destination fit has run.
-    expect(session.transport.resize).toHaveBeenCalledWith(PANE_COLS, PANE_ROWS)
+    expect(session.transport.resize).toHaveBeenCalledWith(PANE_COLS, PANE_ROWS, { redraw: true })
     expect(session.transport.resize).not.toHaveBeenCalledWith(HOST_COLS, HOST_ROWS)
     session.dispose()
   })
@@ -359,6 +359,7 @@ describe('pushed remote snapshot replay grid', () => {
       expect(session.pane.terminal.cols).toBe(PANE_COLS)
       expect(session.pane.terminal.rows).toBe(PANE_ROWS)
       expect(session.transport.resize).not.toHaveBeenCalled()
+      expect(window.api.pty.signal).not.toHaveBeenCalledWith(id, 'SIGWINCH')
       expect(getFitOverrideForPty(id)).toEqual({ mode: 'remote-desktop-fit', cols: 0, rows: 0 })
     } finally {
       setFitOverride(id, 'desktop-fit', 0, 0)

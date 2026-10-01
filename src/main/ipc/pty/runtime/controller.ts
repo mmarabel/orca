@@ -4,13 +4,13 @@ import type { PtyRuntimeControllerDeps } from './controller-deps'
 import { spawnPtyFromRuntimeController } from './spawn'
 import {
   killPtyFromRuntimeController,
-  markReversibleStopsFromRuntimeController,
   retireRejectedPtyFromRuntimeController,
   stopAndWaitPtyFromRuntimeController
 } from './kill'
 import {
   attachPtyFromRuntimeController,
   clearBufferFromRuntimeController,
+  resetInputModesFromRuntimeController,
   confirmForegroundProcessFromRuntimeController,
   confirmShellForegroundFromRuntimeController,
   getCwdFromRuntimeController,
@@ -25,9 +25,10 @@ import {
   resizePtyFromRuntimeController,
   serializeProviderBufferFromRuntimeController,
   waitForRendererSerializerFromRuntimeController,
-  writePtyAgentSessionProofFromRuntimeController,
   writePtyFromRuntimeController
 } from './operations'
+import { recordUnconfirmedExplicitSshStop } from './undelivered-ssh-kill'
+import { requestPtyRedrawFromRuntimeController } from './pty-redraw'
 import { supportsForegroundProcessEvidenceFromRuntimeController } from './foreground-process-evidence-capability'
 import {
   listProcessesFromRuntimeController,
@@ -45,11 +46,9 @@ export function installPtyRuntimeController(deps: PtyRuntimeControllerDeps): voi
     },
     adoptStablePane,
     spawn: async (args) => spawnPtyFromRuntimeController(deps, args),
-    write: (ptyId, data) => writePtyFromRuntimeController(deps, ptyId, data),
-    writeWithSettlement: (ptyId, data) =>
-      writePtyFromRuntimeController(deps, ptyId, data, { waitForSettlement: true }),
-    writeAgentSessionProof: (ptyId, data, authority) =>
-      writePtyAgentSessionProofFromRuntimeController(ptyId, data, authority),
+    write: (ptyId, data, inputKind) => writePtyFromRuntimeController(deps, ptyId, data, inputKind),
+    writeWithSettlement: (ptyId, data, inputKind) =>
+      writePtyFromRuntimeController(deps, ptyId, data, inputKind, { waitForSettlement: true }),
     probePtyLiveness: (ptyId) => probePtyLivenessFromRuntimeController(deps, ptyId),
     // Why: subscriber-driven ingestion for daemon sessions no renderer pane
     // ever attached. Local daemon sessions only — SSH panes have their own
@@ -59,8 +58,13 @@ export function installPtyRuntimeController(deps: PtyRuntimeControllerDeps): voi
     kill: (ptyId) => killPtyFromRuntimeController(deps, ptyId),
     retireRejectedPty: (ptyId, stopConfirmed) =>
       retireRejectedPtyFromRuntimeController(deps, ptyId, stopConfirmed),
-    markReversibleStops: (ptyIds) => markReversibleStopsFromRuntimeController(deps, ptyIds),
     stopAndWait: (ptyId, opts) => stopAndWaitPtyFromRuntimeController(deps, ptyId, opts),
+    recordUnconfirmedStop: (ptyId) =>
+      recordUnconfirmedExplicitSshStop({
+        store: deps.store,
+        ptyId,
+        reversible: runtime?.intentionalPtyStops?.isReversibleStopInFlight(ptyId) ?? false
+      }),
     getForegroundProcess: (ptyId) => getForegroundProcessFromRuntimeController(ptyId),
     inspectProcess: (ptyId, options) => inspectProcessFromRuntimeController(ptyId, options),
     confirmForegroundProcess: (ptyId) => confirmForegroundProcessFromRuntimeController(ptyId),
@@ -68,6 +72,7 @@ export function installPtyRuntimeController(deps: PtyRuntimeControllerDeps): voi
     getCwd: (ptyId) => getCwdFromRuntimeController(ptyId),
     hasChildProcesses: (ptyId) => hasChildProcessesFromRuntimeController(ptyId),
     clearBuffer: (ptyId) => clearBufferFromRuntimeController(deps, ptyId),
+    resetInputModes: (ptyId) => resetInputModesFromRuntimeController(deps, ptyId),
     hasPty: (ptyId) => hasPtyFromRuntimeController(deps, ptyId),
     listProcesses: (connectionId, opts) =>
       listProcessesFromRuntimeController(deps, connectionId, opts),
@@ -87,6 +92,7 @@ export function installPtyRuntimeController(deps: PtyRuntimeControllerDeps): voi
     waitForRendererSerializer: (ptyId, afterGeneration, timeoutMs, signal) =>
       waitForRendererSerializerFromRuntimeController(ptyId, afterGeneration, timeoutMs, signal),
     getSize: (ptyId) => getSizeFromRuntimeController(ptyId),
-    resize: (ptyId, cols, rows) => resizePtyFromRuntimeController(ptyId, cols, rows)
+    resize: (ptyId, cols, rows) => resizePtyFromRuntimeController(ptyId, cols, rows),
+    requestRedraw: requestPtyRedrawFromRuntimeController
   })
 }

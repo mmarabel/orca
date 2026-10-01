@@ -1,4 +1,5 @@
 import { createAgentSessionKeyboardOptions } from '@/runtime/agent-session-keyboard-capability'
+import { withRemoteReattachInputBuffer } from './remote-reattach-input-buffer'
 /* eslint-disable max-lines -- Why: remote PTY transport keeps lifecycle, JSON fallback, and binary stream wiring together so reconnect/destroy ordering stays testable as one behavior surface. */
 import type { RuntimeRpcResponse } from '../../../../shared/runtime-rpc-envelope'
 import {
@@ -896,7 +897,7 @@ export function createRemoteRuntimePtyTransport(
       return true
     }
     if (lastConnectOptions) {
-      void transport.connect(lastConnectOptions)
+      void connectForRecovery(lastConnectOptions)
       return true
     }
     return false
@@ -1534,13 +1535,14 @@ export function createRemoteRuntimePtyTransport(
     sendUnacknowledgedInput
   )
 
-  function sendViewportUpdate(cols: number, rows: number, claim = false): void {
+  function sendViewportUpdate(cols: number, rows: number, claim = false, redraw = false): void {
     const targetHandle = handle
     if (!connected || !targetHandle || recoveryBlocksIo()) {
       return
     }
     const stream = getCurrentMultiplexedStream(targetHandle)
-    if (claim ? stream?.claimViewport(cols, rows) : stream?.resize(cols, rows)) {
+    // Redraw rides an optional RPC field, not a new opcode that older hosts silently drop.
+    if (!redraw && (claim ? stream?.claimViewport(cols, rows) : stream?.resize(cols, rows))) {
       if (claim && stream) {
         flushPendingClaimInput(stream)
       }
@@ -1553,7 +1555,8 @@ export function createRemoteRuntimePtyTransport(
       terminal: targetHandle,
       client: { id: clientId, type: 'desktop' },
       viewport: { cols, rows },
-      ...(claim ? { claim: true } : {})
+      ...(claim ? { claim: true } : {}),
+      ...(redraw ? { redraw: true } : {})
     }).catch(() => {})
   }
 
@@ -2241,6 +2244,7 @@ export function createRemoteRuntimePtyTransport(
     flushPendingClaimInput(nextStream)
   }
 
+  let connectForRecovery: PtyTransport['connect'] = (options) => transport.connect(options)
   const transport: PtyTransport = {
     async connect(options) {
       cancelTerminalCreateRetryWait()
@@ -2651,6 +2655,8 @@ export function createRemoteRuntimePtyTransport(
       storedCallbacks = {}
     },
 
+    // Why no kind: terminal.send has no launch kind, and its query-reply kind is for mobile
+    // clients, so the host classifies a desktop's bytes itself.
     sendInput(data: string): boolean {
       if (!connected || !handle || recoveryBlocksIo()) {
         return false
@@ -2736,6 +2742,11 @@ export function createRemoteRuntimePtyTransport(
         sendViewportUpdate(cols, rows, true)
         return true
       }
+      if (meta?.redraw && cols >= 20 && cols <= 240 && rows >= 8 && rows <= 120) {
+        viewportBatcher.clear()
+        sendViewportUpdate(cols, rows, false, true)
+        return true
+      }
       // Why: xterm fit emits resize bursts on drag/layout-restore; remote runtimes only need the last viewport per frame.
       viewportBatcher.queue(cols, rows)
       return true
@@ -2781,7 +2792,7 @@ export function createRemoteRuntimePtyTransport(
         recovery.currentPhase === 'disconnected'
       ) {
         recovery.begin()
-        void transport.connect(lastConnectOptions)
+        void connectForRecovery(lastConnectOptions)
         return true
       }
       // Why: online/resume fires a parked retry; the button must not be weaker than an event (#12684).
@@ -2851,6 +2862,9 @@ export function createRemoteRuntimePtyTransport(
       return stream.serializeBufferOutcome(opts)
     },
 
+    setConnectForRecovery(connect) {
+      connectForRecovery = connect
+    },
     destroy() {
       destroyed = true
       setAttachmentUnavailable()
@@ -2866,5 +2880,5 @@ export function createRemoteRuntimePtyTransport(
       viewportBatcher.clear()
     }
   }
-  return transport
+  return withRemoteReattachInputBuffer(transport)
 }

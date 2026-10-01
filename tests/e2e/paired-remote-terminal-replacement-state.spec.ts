@@ -176,6 +176,8 @@ test('retained remote pane reconciles replacement shell and preserves a survivin
       'for (let i = 0; i < 80; i++) process.stdout.write(`OLD_AGENT_ROW_${i}\\r\\n`)',
       "process.stdout.write('AGENT_READY\\r\\n\\x1b[?1003h\\x1b[?1006h')",
       'process.stdin.on(\'data\', data => { appendFileSync(sink, `INPUT:${JSON.stringify(data.toString())}\\n`); if (data.toString().includes(\'WARM_PROBE\')) process.stdout.write(\'WARM_PROBE_ACK\\r\\n\'); if (data.toString().includes(\'ARM_STATUS\')) process.stdout.write(\'\\x1b]9999;{"state":"working","prompt":"fixture","agentType":"pi"}\\x07\') })',
+      'let repaints = 0',
+      "process.on('SIGWINCH', () => { const marker = `WINCH_REPAINT_${++repaints}`; appendFileSync(sink, `${marker}\\n`); process.stdout.write(`${marker}\\r\\n`) })",
       'process.stdin.resume()'
     ].join('\n')
   )
@@ -257,6 +259,7 @@ test('retained remote pane reconciles replacement shell and preserves a survivin
     expect(mouseBefore.reports.length).toBeGreaterThan(0)
     await captureHiddenRenderer(page, testInfo, 'before-restart')
 
+    const repaintsBeforeRestart = (readSink(sinkPath).match(/WINCH_REPAINT_/g) ?? []).length
     // A process-only serve restart must not be confused with replacing its daemon-backed PTY.
     await host.restartServeProcess()
     evidence.warmHostBuild = await verifyReleaseBuild(host.app)
@@ -279,6 +282,13 @@ test('retained remote pane reconciles replacement shell and preserves a survivin
     if (!warm) {
       throw new Error('Host did not re-publish the surviving terminal')
     }
+    // An idle foreground process must repaint before any user input wakes it.
+    await expect
+      .poll(() => (readSink(sinkPath).match(/WINCH_REPAINT_/g) ?? []).length, { timeout: 30_000 })
+      .toBeGreaterThan(repaintsBeforeRestart)
+    await expect
+      .poll(async () => (await inspectPane(page, webTabId))?.text, { timeout: 30_000 })
+      .toContain(`WINCH_REPAINT_${repaintsBeforeRestart + 1}`)
     await hostCall('terminal.send', { terminal: warm.handle, text: 'WARM_PROBE' })
     await expect
       .poll(async () => (await inspectPane(page, webTabId))?.text, {

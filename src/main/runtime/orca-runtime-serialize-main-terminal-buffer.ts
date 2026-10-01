@@ -80,6 +80,32 @@ export class OrcaRuntimeWithSerializeMainTerminalBuffer extends OrcaRuntimeWithA
     return { handle, cleared: true }
   }
 
+  async resetTerminalInputModes(handle: string): Promise<{ handle: string; reset: boolean }> {
+    const leaf = this.resolveLeafForHandle(handle)
+    if (!leaf?.ptyId) {
+      throw new Error('terminal_not_found')
+    }
+    await this.ptyController?.resetInputModes?.(leaf.ptyId)
+    await this.resetHeadlessTerminalInputModes(leaf.ptyId)
+    return { handle, reset: true }
+  }
+
+  async requestTerminalRedraw(
+    handle: string,
+    viewport: { cols: number; rows: number }
+  ): Promise<boolean> {
+    // Re-resolve after the viewport await: a replacement or mobile takeover invalidates the kick.
+    const leaf = this.resolveLiveLeafForHandle(handle)
+    if (!leaf?.ptyId || this.getDriver(leaf.ptyId).kind === 'mobile') {
+      return false
+    }
+    const size = this.getTerminalSize(leaf.ptyId)
+    if (size?.cols !== viewport.cols || size.rows !== viewport.rows) {
+      return false
+    }
+    return (await this.ptyController?.requestRedraw?.(leaf.ptyId)) ?? false
+  }
+
   getTerminalSize(ptyId: string): { cols: number; rows: number } | null {
     return this.ptyController?.getSize?.(ptyId) ?? null
   }

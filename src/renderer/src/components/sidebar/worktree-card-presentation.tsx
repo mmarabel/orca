@@ -78,7 +78,7 @@ export function buildWorktreeCardPresentation(card: WorktreeCardController) {
     showRepoIdentityInTitle && !!repo && !hideRepoBadge && !isFolder && !showPinnedRepoIcon
   const showRepoBadgeInMetaRow =
     !showRepoIdentityInTitle && !!repo && !hideRepoBadge && !showPinnedRepoIcon
-  const showHostContextBadge = !compactCards && !!hostContextLabel
+  const showHostContextBadge = !compactCards && !!hostContextLabel && cardProps.includes('host')
   // Why: legacy detailed cards already show a textual repo badge; the icon-only style
   // needs explicit project context when the board mixes workspaces from multiple repos.
   const showBoardProjectLabel =

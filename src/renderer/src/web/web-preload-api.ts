@@ -99,8 +99,8 @@ function createWebPreloadApi(): Partial<PreloadApi> {
         }))
     },
     memory: {
-      // Why: the web client has no host switcher — it is already scoped to one
-      // runtime — so the host argument is accepted and ignored for API parity.
+      // Why: the Resource Manager offers only the local host in the web client
+      // (see listResourceManagerHosts), so the host argument is ignored.
       getSnapshot: (_request?: { executionHostId?: string | null }) =>
         Promise.resolve(createEmptyMemorySnapshot())
     },

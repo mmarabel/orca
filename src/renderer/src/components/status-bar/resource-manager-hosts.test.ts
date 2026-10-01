@@ -70,6 +70,16 @@ describe('listResourceManagerHosts', () => {
     expect(hosts.map((host) => host.id)).toEqual(['local'])
   })
 
+  // Why: the web client's memory API cannot proxy to a runtime and only returns zeros.
+  it('offers only the local host in the paired web client', () => {
+    const hosts = listResourceManagerHosts({
+      ...hostInputs([environment('env-1')], [['env-1', connected]]),
+      selectedHostId: 'runtime:env-1',
+      isPairedWebClient: true
+    })
+    expect(hosts.map((host) => host.id)).toEqual(['local'])
+  })
+
   // Why: dropping the host already on screen would silently swap the panel to
   // local numbers under no label at all.
   it('keeps a disconnected host listed while it is the selected one', () => {
@@ -236,6 +246,34 @@ describe('resolveDefaultResourceManagerHostIdFromState', () => {
     expect(
       resolveDefaultResourceManagerHostIdFromState(
         { activeWorktreeId: null, repos: [], worktreesByRepo: { 'repo-1': [worktree] } },
+        hosts
+      )
+    ).toBe('local')
+  })
+
+  // Why: an id-only lookup kept whichever duplicate row was listed last.
+  it('resolves a worktree id listed on several hosts by the focused host', () => {
+    const localTwin = makeWorktree({ id: 'wt-1', repoId: 'repo-2', hostId: 'local' })
+    const worktreesByRepo = { 'repo-1': [worktree], 'repo-2': [localTwin] }
+    expect(
+      resolveDefaultResourceManagerHostIdFromState(
+        {
+          activeWorktreeId: 'wt-1',
+          activeWorkspaceExecutionHostId: 'runtime:env-1',
+          repos: [],
+          worktreesByRepo
+        },
+        hosts
+      )
+    ).toBe('runtime:env-1')
+    expect(
+      resolveDefaultResourceManagerHostIdFromState(
+        {
+          activeWorktreeId: 'wt-1',
+          activeWorkspaceExecutionHostId: 'local',
+          repos: [],
+          worktreesByRepo: { 'repo-2': [localTwin], 'repo-1': [worktree] }
+        },
         hosts
       )
     ).toBe('local')

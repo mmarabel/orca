@@ -17,13 +17,14 @@ import {
   getWorktreeExecutionHostId,
   LOCAL_EXECUTION_HOST_ID,
   parseExecutionHostId,
-  toRuntimeExecutionHostId
+  toRuntimeExecutionHostId,
+  type ExecutionHostId
 } from '../../../../shared/execution-host'
 import {
   isConnectedRuntimeHostState,
   runtimeHostConnectionState
 } from '@/runtime/runtime-host-connection-state'
-import { getAllWorktreesFromState } from '../../store/selectors'
+import { getWorktreeOnHostFromState } from '../../store/selectors'
 
 export type ResourceManagerHost = {
   /** Execution host id — `local`, or `runtime:<encoded environment id>`. */
@@ -38,12 +39,17 @@ export type ResourceManagerHostInputs = {
   hostLabelOverrides: ReadonlyMap<string, string>
   /** Kept listed even if it drops, so a live selection is never silently swapped out. */
   selectedHostId?: string
+  /** The paired web client has no memory proxy, so a runtime host there would read as all-zero. */
+  isPairedWebClient?: boolean
 }
 
 export function listResourceManagerHosts(inputs: ResourceManagerHostInputs): ResourceManagerHost[] {
   const hosts: ResourceManagerHost[] = [
     { id: LOCAL_EXECUTION_HOST_ID, label: getLocalExecutionHostLabel(), kind: 'local' }
   ]
+  if (inputs.isPairedWebClient) {
+    return hosts
+  }
   for (const environment of inputs.runtimeEnvironments) {
     if (!isUserManagedRuntimeEnvironment(environment)) {
       continue
@@ -98,8 +104,9 @@ export function resolveDefaultResourceManagerHostId(args: {
 /** State the default-host decision reads, independent of the panel's open-gated slices. */
 export type ResourceManagerHostState = {
   activeWorktreeId: string | null
+  activeWorkspaceExecutionHostId?: ExecutionHostId | null
   repos: readonly Repo[]
-  worktreesByRepo: Parameters<typeof getAllWorktreesFromState>[0]['worktreesByRepo']
+  worktreesByRepo: Parameters<typeof getWorktreeOnHostFromState>[0]['worktreesByRepo']
 }
 
 /**
@@ -111,15 +118,19 @@ export function resolveDefaultResourceManagerHostIdFromState(
   state: ResourceManagerHostState,
   hosts: readonly ResourceManagerHost[]
 ): string {
+  // Why: the same worktree id can be listed on several hosts; only the focused
+  // workspace's host identifies the row the user is actually looking at.
+  const worktree = state.activeWorktreeId
+    ? getWorktreeOnHostFromState(
+        state,
+        state.activeWorktreeId,
+        state.activeWorkspaceExecutionHostId ?? undefined
+      )
+    : undefined
   return resolveDefaultResourceManagerHostId({
     hosts,
     activeWorktreeId: state.activeWorktreeId,
-    worktreeById: new Map(
-      getAllWorktreesFromState({ worktreesByRepo: state.worktreesByRepo }).map((worktree) => [
-        worktree.id,
-        worktree
-      ])
-    ),
+    worktreeById: new Map(worktree ? [[worktree.id, worktree]] : []),
     repoById: new Map(state.repos.map((repo) => [repo.id, repo]))
   })
 }

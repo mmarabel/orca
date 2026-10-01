@@ -112,6 +112,18 @@ describe('hard-wrapped terminal HTTP candidate bounds', () => {
     )
   })
 
+  it('does not join adjacent cells from a shared framed table', () => {
+    const rows = [
+      '│ Label  │ https://example.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa │',
+      '│ Other  │ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb │',
+      '│ Third  │ cccccccccccccccccccccccccccccccccccccccccccccccccc │'
+    ].map(bufferLineWithCellColumns)
+
+    expect(
+      buildHardWrappedHttpLogicalLineCandidates({ getLine: (y) => rows[y] }, rows.length)
+    ).toEqual([])
+  })
+
   it('aligns continuation rows by the frame cell column when a gutter holds wide characters', () => {
     const inner = 'http://example.com/aaaa'
     const rows = [

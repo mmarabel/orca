@@ -25,6 +25,11 @@ function findFrameIndexBefore(text: string, beforeIndex: number): number {
   return -1
 }
 
+function hasFrameAtColumn(translated: TranslatedLine, frameColumn: number): boolean {
+  const frameIndex = translated.columns.indexOf(frameColumn)
+  return frameIndex !== -1 && VERTICAL_LAYOUT_FRAME_PATTERN.test(translated.text[frameIndex] ?? '')
+}
+
 // Why: a TUI overlay paints its frame over whatever it covers, so rows share
 // only the run from the frame to the URL; further left is the screen underneath
 // and differs per row. Anchor on the frame's cell column, not the row prefix.
@@ -67,6 +72,9 @@ function buildCandidateFromStart(
   if (frameColumn === undefined) {
     return null
   }
+  const outerFrameIndex = findFrameIndexBefore(translatedStart.text, frameIndex)
+  const outerFrameColumn =
+    outerFrameIndex === -1 ? null : (translatedStart.columns[outerFrameIndex] ?? null)
   const framedPrefix = translatedStart.text.slice(frameIndex, schemeIndex)
   let text = ''
   let rightFrameColumn: number | null = null
@@ -87,6 +95,14 @@ function buildCandidateFromStart(
         ? translatedStart
         : (translatedLines.get(rowY) ?? translateLineWithColumns(line))
     translatedLines.set(rowY, translated)
+    // A second stable left frame denotes adjacent table cells, not overlay bleed.
+    if (
+      rowY > startY &&
+      outerFrameColumn !== null &&
+      hasFrameAtColumn(translated, outerFrameColumn)
+    ) {
+      break
+    }
     const fragmentStart =
       rowY === startY ? schemeIndex : findFramedFragmentStart(translated, frameColumn, framedPrefix)
     if (fragmentStart === -1) {

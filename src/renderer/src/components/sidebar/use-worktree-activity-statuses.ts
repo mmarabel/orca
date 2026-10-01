@@ -16,7 +16,14 @@ type WorktreeActivityStatusState = Pick<
   | 'tabsByWorktree'
   | 'activeRepoId'
   | 'activeWorktreeId'
+  | 'agentHookInstallStateByTarget'
   | 'browserTabsByWorktree'
+  | 'folderWorkspaces'
+  | 'projectGroups'
+  | 'projects'
+  | 'repos'
+  | 'settings'
+  | 'worktreesByRepo'
   | 'runtimePaneTitlesByTabId'
   | 'ptyIdsByTabId'
   | 'terminalLayoutsByTabId'
@@ -25,13 +32,6 @@ type WorktreeActivityStatusState = Pick<
   | 'migrationUnsupportedByPtyId'
   | 'retainedAgentsByPaneKey'
   | 'runtimeAgentOrchestrationByPaneKey'
-  | 'agentHookInstallStateByTarget'
-  | 'folderWorkspaces'
-  | 'projectGroups'
-  | 'projects'
-  | 'repos'
-  | 'settings'
-  | 'worktreesByRepo'
 >
 
 export function selectWorktreeActivityStatuses(
@@ -44,9 +44,12 @@ export function selectWorktreeActivityStatuses(
       hasPermission,
       hasLiveWorking,
       hasLiveMonitoring,
+      hasFailed,
       hasInterrupted,
+      hasUnconfirmed,
       hasLiveDone,
       hasRetainedDone,
+      hasRetainedFailed,
       agentStatusPaneIdsByTabId,
       stalePaneIdsByTabId
     } = selectWorktreeAgentActivitySummary(statusInputs, worktreeId)
@@ -63,9 +66,12 @@ export function selectWorktreeActivityStatuses(
         hasPermission,
         hasLiveWorking,
         hasLiveMonitoring,
+        hasFailed,
         hasInterrupted,
+        hasUnconfirmed,
         hasLiveDone,
         hasRetainedDone,
+        hasRetainedFailed,
         hooksUnverifiable: selectWorktreeHooksUnverifiable(statusInputs, worktreeId, {
           hasPermission,
           hasLiveWorking

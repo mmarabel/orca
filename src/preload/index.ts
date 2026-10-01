@@ -41,7 +41,6 @@ import { claudeAccountsApi } from './api/claude-accounts-bridge'
 import { cliApi } from './api/cli-bridge'
 import { codexConfigSyncApi } from './api/codex-config-sync-bridge'
 import { agentHooksApi } from './api/agent-hooks-bridge'
-import { agentTrustApi } from './api/agent-trust-bridge'
 import { preflightApi } from './api/preflight-bridge'
 import { notificationsApi } from './api/notifications-bridge'
 import { onboardingApi } from './api/onboarding-bridge'
@@ -79,6 +78,7 @@ import { runtimeEnvironmentsApi } from './api/runtime-environments-bridge'
 import { rateLimitsApi } from './api/rate-limits-bridge'
 import { minimaxCredentialsApi } from './api/minimax-credentials-bridge'
 import { grokAccountsApi } from './api/grok-accounts-bridge'
+import { cursorAccountsApi } from './api/cursor-accounts-bridge'
 import { sshApi } from './api/ssh-bridge'
 import { automationsApi } from './api/automations-bridge'
 import { e2eApi } from './api/e2e-bridge'
@@ -141,7 +141,6 @@ const api = {
   cli: cliApi,
   codexConfigSync: codexConfigSyncApi,
   agentHooks: agentHooksApi,
-  agentTrust: agentTrustApi,
   preflight: preflightApi,
   notifications: notificationsApi,
   onboarding: onboardingApi,
@@ -179,6 +178,7 @@ const api = {
   rateLimits: rateLimitsApi,
   minimaxCredentials: minimaxCredentialsApi,
   grokAccounts: grokAccountsApi,
+  cursorAccounts: cursorAccountsApi,
   ssh: sshApi,
   automations: automationsApi,
   e2e: e2eApi,

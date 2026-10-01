@@ -40,6 +40,7 @@ export function registerAgentHookHandlers(
   ipcMain.removeHandler('agentStatus:getSnapshot')
   ipcMain.removeHandler('agentStatus:inferInterrupt')
   ipcMain.removeHandler('agentStatus:inferQuestionAnswered')
+  ipcMain.removeHandler('agentStatus:hasVerifiableAgentProcess')
   ipcMain.removeHandler('agentStatus:getMigrationUnsupportedSnapshot')
   registerAgentStatusRowTeardownIpcHandlers()
   registerAgentPaneAuthorityIpcHandlers({
@@ -73,6 +74,9 @@ export function registerAgentHookHandlers(
     }
     return agentHookServer.inferQuestionAnswered(request as AgentQuestionAnsweredInferenceRequest)
   })
+  ipcMain.handle('agentStatus:hasVerifiableAgentProcess', (_event, paneKey: unknown): boolean =>
+    typeof paneKey === 'string' ? agentHookServer.hasVerifiableAgentProcess(paneKey) : false
+  )
   ipcMain.handle(
     'agentStatus:getMigrationUnsupportedSnapshot',
     (): MigrationUnsupportedPtyEntry[] => getMigrationUnsupportedPtySnapshot()

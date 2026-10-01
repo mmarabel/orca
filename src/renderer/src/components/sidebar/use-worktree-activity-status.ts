@@ -27,15 +27,16 @@ export function useWorktreeActivityStatus(worktreeId: string): WorktreeStatus {
     hasPermission,
     hasLiveWorking,
     hasLiveMonitoring,
+    hasFailed,
     hasInterrupted,
+    hasUnconfirmed,
     hasLiveDone,
     hasRetainedDone,
+    hasRetainedFailed,
     agentStatusPaneIdsByTabId,
     stalePaneIdsByTabId,
     hooksUnverifiable
   } = useAppStore(
-    // Why: one pass — the observability check consumes the same summary, and
-    // selecting it separately would run the summary twice per worktree per render.
     useShallow((s) => {
       const summary = selectWorktreeAgentActivitySummary(s, worktreeId)
       return {
@@ -61,9 +62,12 @@ export function useWorktreeActivityStatus(worktreeId: string): WorktreeStatus {
         hasPermission,
         hasLiveWorking,
         hasLiveMonitoring,
+        hasFailed,
         hasInterrupted,
+        hasUnconfirmed,
         hasLiveDone,
         hasRetainedDone,
+        hasRetainedFailed,
         hooksUnverifiable
       }),
     [
@@ -77,9 +81,12 @@ export function useWorktreeActivityStatus(worktreeId: string): WorktreeStatus {
       hasPermission,
       hasLiveWorking,
       hasLiveMonitoring,
+      hasFailed,
       hasInterrupted,
+      hasUnconfirmed,
       hasLiveDone,
       hasRetainedDone,
+      hasRetainedFailed,
       hooksUnverifiable
     ]
   )

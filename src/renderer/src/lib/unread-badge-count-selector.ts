@@ -1,5 +1,9 @@
 import { sameBucketRecords } from './bucket-record-equality'
 import {
+  selectHiddenChildUnreadIdentities,
+  type ChildWorktreeUnreadState
+} from './child-worktree-unread-policy'
+import {
   type UnreadBadgeCountSources,
   type UnreadBadgeTab,
   type UnreadBadgeWorktree,
@@ -7,9 +11,14 @@ import {
 } from './unread-badge-count'
 
 const EMPTY_BUCKETS = Object.freeze({})
+type UnreadBadgeSelectorState = UnreadBadgeCountSources & ChildWorktreeUnreadState
 
 function sameBadgeWorktree(previous: UnreadBadgeWorktree, next: UnreadBadgeWorktree): boolean {
-  return previous.id === next.id && previous.isUnread === next.isUnread
+  return (
+    previous.id === next.id &&
+    previous.isUnread === next.isUnread &&
+    previous.hostId === next.hostId
+  )
 }
 
 function sameBadgeTab(previous: UnreadBadgeTab, next: UnreadBadgeTab): boolean {
@@ -22,24 +31,33 @@ function sameBadgeTab(previous: UnreadBadgeTab, next: UnreadBadgeTab): boolean {
  * only notifies when the badge value can actually have moved.
  *
  * Why chaining against the immediately preceding state is enough: equality over the count's read set
- * — worktree `id`/`isUnread`, tab `id`, and the unread map identity — is transitive, so a run of
+ * — worktree `id`/`hostId`/`isUnread`, tab `id`, unread map and hidden-child set — is transitive, so a run of
  * unchanged states is equivalent to comparing against the state that produced the cached count.
  */
-export function createUnreadBadgeCountSelector(): (state: UnreadBadgeCountSources) => number {
+export function createUnreadBadgeCountSelector(): (state: UnreadBadgeSelectorState) => number {
   let previousWorktreesByRepo: UnreadBadgeCountSources['worktreesByRepo'] = EMPTY_BUCKETS
   let previousTabsByWorktree: UnreadBadgeCountSources['tabsByWorktree'] = EMPTY_BUCKETS
   let previousUnreadTerminalTabs: UnreadBadgeCountSources['unreadTerminalTabs'] | undefined
+  let previousHiddenChildUnreadIdentities: ReadonlySet<string> | undefined
   let unreadCount = 0
   let counted = false
 
   return (state) => {
+    const hiddenChildUnreadIdentities = selectHiddenChildUnreadIdentities(state)
     const unchanged =
       counted &&
+      previousHiddenChildUnreadIdentities === hiddenChildUnreadIdentities &&
       previousUnreadTerminalTabs === state.unreadTerminalTabs &&
       sameBucketRecords(previousWorktreesByRepo, state.worktreesByRepo, sameBadgeWorktree) &&
       sameBucketRecords(previousTabsByWorktree, state.tabsByWorktree, sameBadgeTab)
     if (!unchanged) {
-      unreadCount = getUnreadBadgeCount(state)
+      unreadCount = getUnreadBadgeCount({
+        worktreesByRepo: state.worktreesByRepo,
+        tabsByWorktree: state.tabsByWorktree,
+        unreadTerminalTabs: state.unreadTerminalTabs,
+        hiddenChildUnreadIdentities
+      })
+      previousHiddenChildUnreadIdentities = hiddenChildUnreadIdentities
       previousUnreadTerminalTabs = state.unreadTerminalTabs
       counted = true
     }

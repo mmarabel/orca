@@ -110,6 +110,11 @@
     "retrying": "Nouvelle tentative…"
   },
   "settings": {
+    "notifications": {
+      "childUnreadKeywords": "enfant enfants espaces de travail non lu indicateur dock barre latérale",
+      "showChildWorktreeUnread": "Afficher les indicateurs non lus des espaces de travail enfants",
+      "showChildWorktreeUnreadDescription": "Inclure les espaces enfants dans le compteur du Dock et les indicateurs non lus de la barre latérale. Désactivez cette option si vous suivez leur progression depuis le parent. Les états d’activité et les notifications système restent inchangés."
+    },
     "appearance": {
       "language": {
         "title": "Langue",

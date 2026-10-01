@@ -11,6 +11,11 @@
     "retrying": "再試行中…"
   },
   "settings": {
+    "notifications": {
+      "childUnreadKeywords": "子 子ワークスペース ワークスペース 未読 バッジ Dock サイドバー",
+      "showChildWorktreeUnread": "子ワークスペースの未読バッジを表示",
+      "showChildWorktreeUnreadDescription": "子ワークスペースをDockの未読数とサイドバーの未読表示に含めます。親ワークスペースで進捗を確認する場合はオフにしてください。アクティビティの状態とシステム通知は変更されません。"
+    },
     "appearance": {
       "language": {
         "title": "言語",

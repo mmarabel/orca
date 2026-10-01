@@ -11,6 +11,11 @@
     "retrying": "재시도 중…"
   },
   "settings": {
+    "notifications": {
+      "childUnreadKeywords": "하위 자식 워크스페이스 읽지 않음 배지 Dock 사이드바",
+      "showChildWorktreeUnread": "하위 워크스페이스의 읽지 않음 배지 표시",
+      "showChildWorktreeUnreadDescription": "하위 워크스페이스를 Dock의 읽지 않음 수와 사이드바 표시기에 포함합니다. 상위 워크스페이스에서 진행 상황을 확인한다면 끄세요. 활동 상태와 시스템 알림은 변경되지 않습니다."
+    },
     "appearance": {
       "language": {
         "title": "언어",

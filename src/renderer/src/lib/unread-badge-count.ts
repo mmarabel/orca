@@ -1,28 +1,38 @@
 import type { StoredAgentAttentionUnread } from '@/attention/agent-attention-contract'
 import type { TerminalTab } from '../../../shared/terminal-tab-types'
 import type { Worktree } from '../../../shared/worktree/types'
+import { getWorktreeHostIdentity } from '../../../shared/worktree/host-qualified-identity'
 
 /** The only fields the count reads, so a projection over them is a sound cache key. */
-export type UnreadBadgeWorktree = Pick<Worktree, 'id' | 'isUnread'>
+export type UnreadBadgeWorktree = Pick<Worktree, 'id' | 'isUnread' | 'hostId'>
 export type UnreadBadgeTab = Pick<TerminalTab, 'id'>
 
 export type UnreadBadgeCountSources = {
   worktreesByRepo: Readonly<Record<string, readonly UnreadBadgeWorktree[]>>
   tabsByWorktree: Readonly<Record<string, readonly UnreadBadgeTab[]>>
   unreadTerminalTabs: Readonly<Record<string, StoredAgentAttentionUnread>>
+  hiddenChildUnreadIdentities?: ReadonlySet<string>
 }
 
 export function getUnreadBadgeCount({
   worktreesByRepo,
   tabsByWorktree,
-  unreadTerminalTabs
+  unreadTerminalTabs,
+  hiddenChildUnreadIdentities
 }: UnreadBadgeCountSources): number {
   const unreadWorktreeIds = new Set<string>()
+  const hiddenWorktreeIds = new Set<string>()
+  const visibleWorktreeIds = new Set<string>()
 
   for (const worktrees of Object.values(worktreesByRepo)) {
     for (const worktree of worktrees) {
-      if (worktree.isUnread) {
-        unreadWorktreeIds.add(worktree.id)
+      if (hiddenChildUnreadIdentities?.has(getWorktreeHostIdentity(worktree))) {
+        hiddenWorktreeIds.add(worktree.id)
+      } else {
+        visibleWorktreeIds.add(worktree.id)
+        if (worktree.isUnread) {
+          unreadWorktreeIds.add(worktree.id)
+        }
       }
     }
   }
@@ -37,7 +47,10 @@ export function getUnreadBadgeCount({
       if (!unreadTabIds.delete(tab.id)) {
         continue
       }
-      unreadWorktreeIds.add(worktreeId)
+      // Ambiguous tab ownership must not mute another host's top-level workspace.
+      if (!hiddenWorktreeIds.has(worktreeId) || visibleWorktreeIds.has(worktreeId)) {
+        unreadWorktreeIds.add(worktreeId)
+      }
     }
   }
 

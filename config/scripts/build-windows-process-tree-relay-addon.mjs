@@ -28,6 +28,7 @@ import {
   inspectWindowsProcessTreeAddon,
   nodeGypRebuildInvocation,
   stageWindowsProcessTreeNodeAddonApiHeaders,
+  windowsProcessTreeAddonHasRelayLauncher,
   WINDOWS_PROCESS_TREE_PACKAGE_DIR as PACKAGE_DIR
 } from './windows-process-tree-gyp-rebuild.mjs'
 
@@ -100,17 +101,21 @@ function assertPatchApplied() {
     ['src/process.cc', 'GetProcessTimes(hProcess, &creationTime'],
     ['src/process_worker.cc', 'object.Set("creationTimeMs"'],
     ['src/addon.cc', 'exports.Set("supportedProcessDataFlags"'],
+    ['src/addon.cc', 'exports.Set("getProcessCreationTime"'],
     ['lib/index.js', '["CreationTime"] = 4'],
     ['lib/index.js', 'exports.supportedProcessDataFlags'],
+    ['lib/index.js', 'exports.getProcessCreationTime'],
     ['lib/index.js', 'creationTimeMs,'],
     ['lib/index.ts', 'CreationTime = 4'],
     ['lib/index.ts', 'export const supportedProcessDataFlags'],
+    ['lib/index.ts', 'export const getProcessCreationTime'],
     ['lib/index.ts', 'creationTimeMs,'],
     ['typings/windows-process-tree.d.ts', 'creationTimeMs?: number'],
     // A regex because IProcessInfo declares the same field: only the tree node
     // is followed by `children`, and that is the one buildNode fills.
     ['typings/windows-process-tree.d.ts', /creationTimeMs\?: number;\r?\n\s*children:/],
-    ['typings/windows-process-tree.d.ts', 'export const supportedProcessDataFlags']
+    ['typings/windows-process-tree.d.ts', 'export const supportedProcessDataFlags'],
+    ['typings/windows-process-tree.d.ts', 'export const getProcessCreationTime']
   ]
   for (const [relativePath, expected] of requiredCreationTimeSources) {
     const source = readFileSync(join(PACKAGE_DIR, relativePath), 'utf8')
@@ -118,6 +123,21 @@ function assertPatchApplied() {
     if (!present) {
       throw new Error(
         `${relativePath} does not contain the process creation-time patch (${expected}). ` +
+          'Run pnpm install before building the relay addon.'
+      )
+    }
+  }
+  // Without the launcher a standard-user SSH host cannot start a relay that outlives the session.
+  const requiredLauncherSources = [
+    ['binding.gyp', '"src/process_launch.cc"'],
+    ['src/addon.cc', 'exports.Set("spawnOutsideJob"'],
+    ['src/process_launch.cc', 'CREATE_BREAKAWAY_FROM_JOB']
+  ]
+  for (const [relativePath, expected] of requiredLauncherSources) {
+    const filePath = join(PACKAGE_DIR, relativePath)
+    if (!existsSync(filePath) || !readFileSync(filePath, 'utf8').includes(expected)) {
+      throw new Error(
+        `${relativePath} does not contain the relay launcher patch (${expected}). ` +
           'Run pnpm install before building the relay addon.'
       )
     }
@@ -220,10 +240,41 @@ function repairCreationTimeSources() {
   })
 
   rewrite('src/addon.cc', (source, eol) => {
-    if (source.includes('exports.Set("supportedProcessDataFlags"')) {
-      return source
+    let next = source
+    if (!next.includes('Napi::Value ReadProcessCreationTime(')) {
+      const getter = [
+        'Napi::Value ReadProcessCreationTime(const Napi::CallbackInfo& args) {',
+        '  Napi::Env env(args.Env());',
+        '  if (args.Length() != 1 || !args[0].IsNumber()) {',
+        '    return env.Undefined();',
+        '  }',
+        '  const double pid = args[0].As<Napi::Number>().DoubleValue();',
+        '  if (!(pid >= 1 && pid <= MAXDWORD) || pid != static_cast<DWORD>(pid)) {',
+        '    return env.Undefined();',
+        '  }',
+        '  ProcessInfo pinfo{};',
+        '  pinfo.pid = static_cast<DWORD>(pid);',
+        '  GetProcessCreationTime(pinfo);',
+        '  if (pinfo.creationTimeMs == 0) {',
+        '    return env.Undefined();',
+        '  }',
+        '  return Napi::Number::New(env, static_cast<double>(pinfo.creationTimeMs));',
+        '}',
+        ''
+      ].join(eol)
+      next = next.replace('Napi::Object Init(', `${getter}${eol}Napi::Object Init(`)
     }
-    return source.replace(
+    if (!next.includes('exports.Set("getProcessCreationTime"')) {
+      next = next.replace(
+        '  exports.Set("getProcessList",',
+        `  exports.Set("getProcessCreationTime", Napi::Function::New(env, ReadProcessCreationTime));${eol}` +
+          '  exports.Set("getProcessList",'
+      )
+    }
+    if (next.includes('exports.Set("supportedProcessDataFlags"')) {
+      return next
+    }
+    return next.replace(
       /(  exports\.Set\("getProcessCpuUsage", Napi::Function::New\(env, GetProcessCpuUsage\)\);\r?\n)/,
       `$1  exports.Set("supportedProcessDataFlags",${eol}` +
         `              Napi::Number::New(env, MEMORY | COMMANDLINE | CREATIONTIME));${eol}`
@@ -254,6 +305,12 @@ function repairCreationTimeSources() {
           : 'exports.supportedProcessDataFlags = native === undefined ? undefined : native.supportedProcessDataFlags;'
         next = next.replace(NATIVE_CONST, `${NATIVE_CONST}${eol}${reExport}`)
       }
+      if (!next.includes('getProcessCreationTime')) {
+        const reExport = isTs
+          ? 'export const getProcessCreationTime: ((pid: number) => number | undefined) | undefined = native?.getProcessCreationTime;'
+          : 'exports.getProcessCreationTime = native === undefined ? undefined : native.getProcessCreationTime;'
+        next = next.replace(NATIVE_CONST, `${NATIVE_CONST}${eol}${reExport}`)
+      }
       // buildNode drops any field it does not name, so the destructure and the
       // splat have to move together.
       next = next.replace(/(memory, commandLine)( \}, children \})/, '$1, creationTimeMs$2')
@@ -277,6 +334,13 @@ function repairCreationTimeSources() {
         /(    CreationTime = 4\r?\n  \}\r?\n)/,
         `$1${eol}  /** The flag bits the compiled addon reports; undefined off win32. */${eol}` +
           `  export const supportedProcessDataFlags: number | undefined;${eol}`
+      )
+    }
+    if (!next.includes('export const getProcessCreationTime')) {
+      next = next.replace(
+        '  export const supportedProcessDataFlags: number | undefined;',
+        '  export const supportedProcessDataFlags: number | undefined;' +
+          `${eol}  export const getProcessCreationTime: ((pid: number) => number | undefined) | undefined;`
       )
     }
     if (!next.includes('creationTimeMs?: number')) {
@@ -394,6 +458,12 @@ function main() {
         : 'node-gyp ignored --arch; a relay would get a binary its host cannot load.'
     throw new Error(
       `Built binary is ${describePeMachine(machine)}, expected 0x${PE_MACHINE[arch].toString(16)} for ${arch}. ${cause}`
+    )
+  }
+  if (!windowsProcessTreeAddonHasRelayLauncher(built)) {
+    throw new Error(
+      'The built addon does not export spawnOutsideJob. A relay would fall back to WMI, ' +
+        'which refuses to launch it for a standard user.'
     )
   }
 

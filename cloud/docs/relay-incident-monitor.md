@@ -139,7 +139,7 @@ freezes as before.
 A production candidate or multi-target mutation must download the exact
 dry-run artifact by workflow run ID and attempt. It verifies the artifact
 hashes and provenance, requires a green completed 15-minute state no older
-than ten minutes (plus 75 minutes per predecessor same-cap wave), then
+than five minutes, then
 rechecks the live selector and one complete fresh sample of every safety
 signal immediately before running the mutation command.
 The signed state binds `strict` evidence to ordinary mutations and
@@ -147,6 +147,9 @@ The signed state binds `strict` evidence to ordinary mutations and
 authorize the other.
 The monitor and mutation jobs share one production lock. A passing dry-run is
 durably marked consumed before mutation and cannot authorize another run.
+A same-cap roll applies that five-minute bound once, in its gate job, and records
+the instant; each cell job must start within five minutes of it, plus 75
+minutes per predecessor wave.
 
 ## Freeze thresholds
 
@@ -269,6 +272,31 @@ name segments out as literal maps rather than deriving them, so the same test
 compares the two declarations directly. Adding a region to the contract
 without its segment is a compile error in relay-contract, not a silent gap.
 
+## Relay lock contention alert policies
+
+Two paging policies in `cloud/infra/terraform/relay-observability.tf` alert the
+relay channel when one transaction holds the relay cell table long enough to
+stall the fleet. `Orca Relay: cell table lock held over 1 second` fires on any
+30-second runtime sample from a cell whose `cellInventoryHoldMsMax` is at least
+1,000 ms, labelled with the cell's `cell_id`. `Orca Relay: lock timeout burst`
+fires when Postgres cancels at least 20 relay statements in one minute for
+waiting out their lock timeout. Auth traffic on the shared instance and
+fail-fast refusals from background sweeps are excluded. Replayed over
+2026-09-20 14:00 to 2026-09-22 15:00 UTC, the cell hold policy matched all 93
+holds from asia-east2 rehome commits, about 3.6 s each, and every one of the 88
+burst minutes overlapped one of them. First response to either alert: if a
+cell hold names an asia-east2 cell, pause regional rehoming through
+`Operate Relay Production Rehome` with action `pause`.
+
+Director holds of 1-2.5 s recur a few times a day even with rehoming paused.
+They go to `Orca Relay: director cell table lock held over 1 second`, which has
+no notification channel. If the burst alert fires with no cell hold in the same
+minute, look at that director policy rather than pausing rehome; on 2026-09-23
+at 04:23 UTC a 2,457 ms director hold produced 25 cancels while rehoming was
+paused. Do not drain or restart cells for a director hold. A cell that has
+stopped reporting emits no hold sample, so these policies catch lock convoys,
+not outages.
+
 ## Implementation log
 
 - Gave `collector_failed` the same two-consecutive-sample tolerance as an unread
@@ -330,7 +358,8 @@ without its segment is a compile error in relay-contract, not a silent gap.
   latest-sum over 24 healthy hours: mean ~100, 1-minute spikes to 216, with
   10 minutes over the old bar of 160 — enough to freeze roughly one in ten
   15-minute pre-drain gates on baseline noise. 250 cleared the healthy peaks
-  measured then and still fired well before the verified 400-connection ceiling;
+  measured then and still fired well before the 400-connection ceiling assumed at
+  the time (the live instance measured 500 on 2026-09-16);
   pool waiters and pool wait latency keep their strict thresholds. Superseded by
   the 2026-09-17 entry above, which re-measured a grown baseline against the
   490-connection budget.

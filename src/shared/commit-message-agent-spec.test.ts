@@ -2,10 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   COMMIT_MESSAGE_AGENT_SPECS,
   CUSTOM_AGENT_ID,
-  DEFAULT_COMMIT_MESSAGE_AGENT_ID,
   getCommitMessageAgentCapability,
   getCommitMessageAgentSpec,
-  getCommitMessageModelCapability,
   getCommitMessageModel,
   isCustomAgentId,
   listCommitMessageAgentCapabilities,
@@ -36,7 +34,9 @@ describe('COMMIT_MESSAGE_AGENT_SPECS', () => {
       'codex',
       'copilot',
       'cursor',
+      'dsh',
       'kimi',
+      'muse',
       'omp',
       'opencode',
       'opencode2',
@@ -69,6 +69,26 @@ describe('COMMIT_MESSAGE_AGENT_SPECS', () => {
     expect(args).toContain('--quiet')
     expect(args).toContain('--thinking')
     expect(args).toEqual(expect.arrayContaining(['--model', 'kimi-code/kimi-for-coding']))
+  })
+
+  it('uses Muse exec for non-interactive Source Control AI generation', () => {
+    const spec = COMMIT_MESSAGE_AGENT_SPECS.muse
+    expect(spec).toBeDefined()
+    expect(spec?.promptDelivery).toBe('argv')
+    expect(spec?.buildArgs({ prompt: 'Write a concise commit message', model: 'default' })).toEqual(
+      [
+        'exec',
+        '--no-session-log',
+        '--approval-mode',
+        'never',
+        '--disable-sandbox',
+        '--disable-shell',
+        '--disable-write',
+        '--disable-web-tools',
+        '--',
+        'Write a concise commit message'
+      ]
+    )
   })
 
   it('uses the provider-qualified Kimi model id accepted by the CLI', () => {
@@ -117,10 +137,6 @@ describe('COMMIT_MESSAGE_AGENT_SPECS', () => {
       'gpt-5.4-mini',
       'gpt-5.5'
     ])
-  })
-
-  it('defaults the agent picker to Claude', () => {
-    expect(DEFAULT_COMMIT_MESSAGE_AGENT_ID).toBe('claude')
   })
 
   it('treats disabled default agents as unavailable for implicit Source Control AI choices', () => {
@@ -193,7 +209,6 @@ describe('COMMIT_MESSAGE_AGENT_SPECS', () => {
     })
     expect(codex).not.toHaveProperty('binary')
     expect(codex).not.toHaveProperty('buildArgs')
-    expect(getCommitMessageModelCapability('codex', 'gpt-5.4-mini')?.thinkingLevels).toBeDefined()
   })
 })
 
@@ -653,11 +668,43 @@ describe('buildArgs (Antigravity)', () => {
     expect(spec.modelDiscovery?.args).toEqual(['models'])
   })
 
-  it('uses Gemini 3.5 Flash (Medium) as default model', () => {
-    expect(COMMIT_MESSAGE_AGENT_SPECS.antigravity?.defaultModelId).toBe('Gemini 3.5 Flash (Medium)')
+  it('uses the configured CLI model instead of a bundled model that can retire', () => {
+    expect(spec.defaultModelId).toBe('default')
+    expect(
+      spec.buildArgs({ prompt: 'Generate a commit message', model: spec.defaultModelId })
+    ).toEqual(['--print=Generate a commit message', '--sandbox'])
+  })
+
+  it('passes only a nonempty requested effort', () => {
+    expect(spec.buildArgs({ prompt: 'P', model: 'default', thinkingLevel: '' })).not.toContain(
+      '--effort'
+    )
+    expect(spec.buildArgs({ prompt: 'P', model: 'default', thinkingLevel: 'high' })).toEqual([
+      '--print=P',
+      '--sandbox',
+      '--effort',
+      'high'
+    ])
+  })
+
+  it('parses current tab-separated IDs without treating progress text as a model', () => {
+    expect(
+      parseAntigravityModels(
+        [
+          'Fetching available models...',
+          'id\tLabel',
+          'gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)',
+          'claude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)',
+          'gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)',
+          ''
+        ].join('\r\n')
+      )
+    ).toEqual([
+      { id: 'gemini-3.8-flash-medium', label: 'Gemini 3.8 Flash (Medium)' },
+      { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Thinking)' }
+    ])
   })
 })
-
 
 describe('Pi Source Control AI model selection', () => {
   it('leaves provider selection to Pi for the config default', () => {

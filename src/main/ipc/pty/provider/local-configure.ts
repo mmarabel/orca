@@ -14,13 +14,13 @@ import { markClaudePtyExited } from '../../../claude-accounts/live-pty-gate'
 import { buildPtyHostEnv } from '../host-env/assembly'
 import {
   getCompatibleSelectedCodexHomePath,
-  isCodexStatusHooksEnabled,
   shouldStripInheritedOrcaCodexHome
 } from '../host-env/codex-home'
 import type { GetSelectedCodexHomePath } from '../host-env/types'
 import { isCurrentPtyExit, ptyOwnership } from './ownership-state'
 import { localProvider } from './registry'
 import { clearProviderPtyState } from './state-cleanup'
+import { awaitExplicitPiOmpGuestReadiness } from '../../../agent-hooks/wsl-pi-omp-guest-readiness'
 
 export function configureLocalPtyProvider(args: {
   runtime?: OrcaRuntimeService
@@ -49,10 +49,7 @@ export function configureLocalPtyProvider(args: {
         codexSelectionTarget,
         ctx?.codexHomePathOverride
           ? ctx.codexHomePathOverride.value
-          : ((await getSelectedCodexHomePath?.(codexSelectionTarget, baseEnv, {
-              workspacePath: ctx?.cwd,
-              launchAgent: ctx?.launchAgent
-            })) ?? null)
+          : ((await getSelectedCodexHomePath?.(codexSelectionTarget, baseEnv)) ?? null)
       )
       const skipCodexHomeEnv = ctx?.isWsl === true && !selectedCodexHomePath
       const ptySettings = getSettings?.()
@@ -60,6 +57,13 @@ export function configureLocalPtyProvider(args: {
         shellPath: ctx?.shellPath,
         explicitEnv: ctx?.explicitEnv,
         isWsl: ctx?.isWsl,
+        launchAgent: ctx?.launchAgent,
+        launchCommand: ctx?.command
+      })
+      await awaitExplicitPiOmpGuestReadiness({
+        isWsl: ctx?.isWsl === true,
+        distro: ctx?.wslDistro,
+        codexHomePath: selectedCodexHomePath,
         launchAgent: ctx?.launchAgent,
         launchCommand: ctx?.command
       })
@@ -81,7 +85,6 @@ export function configureLocalPtyProvider(args: {
         wslDistro: ctx?.wslDistro ?? null,
         agentStatusHooksEnabled: isAgentStatusHooksEnabled(ptySettings),
         disabledTuiAgents: ptySettings?.disabledTuiAgents,
-        codexStatusHooksEnabled: isCodexStatusHooksEnabled(ptySettings),
         networkProxySettings: ptySettings,
         routeBrowserOpensToClient: runtime?.shouldRelayTerminalBrowserOpens?.()
       })

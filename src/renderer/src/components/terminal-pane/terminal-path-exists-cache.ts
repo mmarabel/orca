@@ -58,7 +58,7 @@ export function readTerminalPathExistsCache(
   // Why: an expired "missing" entry is treated as a cache miss so the caller
   // re-probes the filesystem (the file may have since been created).
   if (!entry.exists && now - entry.checkedAt >= NEGATIVE_PATH_EXISTS_TTL_MS) {
-    cache.delete(key)
+    // Keep the ordering tombstone so an older in-flight positive cannot replace it.
     return undefined
   }
   cache.delete(key)

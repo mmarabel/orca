@@ -28,7 +28,22 @@ describe('terminal path-exists cache', () => {
     // Past the negative TTL: treated as a miss so the caller re-checks the
     // filesystem (the file may have since been created).
     expect(readTerminalPathExistsCache(cache, 'k', 1000 + 10_000)).toBeUndefined()
-    expect(cache.has('k')).toBe(false)
+    expect(cache.has('k')).toBe(true)
+  })
+
+  it('keeps expired negatives as ordering guards for older in-flight probes', () => {
+    const cache: TerminalPathExistsCache = new Map()
+    const older = startTerminalPathExistsProbe(1000)
+    const newer = startTerminalPathExistsProbe(2000)
+    writeTerminalPathExistsCache(cache, 'k', false, newer)
+
+    expect(readTerminalPathExistsCache(cache, 'k', 12_000)).toBeUndefined()
+    writeTerminalPathExistsCache(cache, 'k', true, older)
+    expect(cache.get('k')).toEqual({ exists: false, ...newer })
+
+    const latest = startTerminalPathExistsProbe(12_000)
+    writeTerminalPathExistsCache(cache, 'k', true, latest)
+    expect(readTerminalPathExistsCache(cache, 'k', 12_000)).toBe(true)
   })
 
   it('ignores an older probe result that lands after a newer one', () => {

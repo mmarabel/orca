@@ -4,7 +4,6 @@ import { getDefaultPersistedState } from '../../../shared/constants'
 import { normalizeLoadedGlobalSettings } from './normalize-loaded-global-settings'
 import { prepareLoadedTerminalSettings } from './prepare-loaded-terminal-settings'
 import { prepareLoadedProfileSettings } from './prepare-loaded-profile-settings'
-import type { GlobalSettings } from '../../../shared/global-settings-types'
 import type { PersistedState } from '../../../shared/persisted-state-types'
 
 // orca-data.json can be hand-edited or written by an older build, and this icon reaches an <img src>
@@ -12,9 +11,8 @@ import type { PersistedState } from '../../../shared/persisted-state-types'
 // project's own icon.
 function loadProfile(overrides: Record<string, unknown>): PersistedState['settings'] {
   const defaults = getDefaultPersistedState(homedir())
-  const settings: Partial<GlobalSettings> = { ...defaults.settings, ...overrides }
-  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: overrides intentionally model untrusted persisted settings before normalization.
-  const parsed: PersistedState = { ...defaults, settings: settings as GlobalSettings }
+  const parsed: PersistedState = { ...defaults, settings: { ...defaults.settings } }
+  Object.assign(parsed.settings, overrides)
   const noop = (): void => {}
   return normalizeLoadedGlobalSettings(
     parsed,

@@ -7,6 +7,7 @@ import type { GlobalSettings } from '../../../../shared/global-settings-types'
 import { DefaultProjectIconSetting } from './DefaultProjectIconSetting'
 
 const tabsProps = vi.fn()
+const colorProps = vi.fn()
 
 vi.mock('./RepositoryIconTabs', () => ({
   RepositoryIconTabs: (props: Record<string, unknown>) => {
@@ -16,7 +17,10 @@ vi.mock('./RepositoryIconTabs', () => ({
 }))
 
 vi.mock('./RepositoryIconColorSection', () => ({
-  RepositoryIconColorSection: () => <div data-testid="color-section" />
+  RepositoryIconColorSection: (props: Record<string, unknown>) => {
+    colorProps(props)
+    return <div data-testid="color-section" />
+  }
 }))
 
 function renderSetting(settings: Partial<GlobalSettings>): {
@@ -35,6 +39,7 @@ function renderSetting(settings: Partial<GlobalSettings>): {
 afterEach(() => {
   cleanup()
   tabsProps.mockReset()
+  colorProps.mockReset()
 })
 
 describe('DefaultProjectIconSetting', () => {
@@ -75,5 +80,17 @@ describe('DefaultProjectIconSetting', () => {
     cleanup()
     renderSetting({ defaultProjectIcon: { type: 'emoji', emoji: '🐳' } })
     expect(screen.queryByTestId('color-section')).toBeNull()
+  })
+
+  it('can restore each project badge color after choosing a global color', () => {
+    const { updateSettings } = renderSetting({
+      defaultProjectIcon: { type: 'lucide', name: 'Folder' },
+      defaultProjectIconColor: '#e11d48'
+    })
+
+    const { onBadgeColorReset } = colorProps.mock.calls[0][0]
+    onBadgeColorReset()
+
+    expect(updateSettings).toHaveBeenCalledWith({ defaultProjectIconColor: undefined })
   })
 })

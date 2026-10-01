@@ -12220,7 +12220,8 @@
           "githubAvatar": "GitHub owner avatar",
           "customImage": "Custom image",
           "iconSelection": "{{value0}} icon",
-          "emojiSelection": "{{value0}} emoji"
+          "emojiSelection": "{{value0}} emoji",
+          "useProjectColor": "Use project color"
         },
         "CursorAccountsSection": {
           "source": {

@@ -138,10 +138,12 @@ export function RepositoryIconPicker({
   }
 
   const handleResetToDefault = async () => {
-    // Why: with a global default set, "default" is that icon, so clearing this project's own icon is
-    // the whole reset — and it avoids a live GitHub probe for an avatar nothing would draw.
+    // Why: reset removes only project-specific choices; a detected avatar already uses the global
+    // fallback and must remain stored so disabling that fallback restores it.
     if (defaultProjectIcon) {
-      updateRepo(repo.id, { repoIcon: null })
+      if (!usesDefaultProjectIcon(repo.repoIcon)) {
+        updateRepo(repo.id, { repoIcon: null })
+      }
       return
     }
     setResetting(true)

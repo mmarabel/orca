@@ -53,6 +53,15 @@ describe('updateSettings defaultProjectIcon', () => {
     ).toBeNull()
   })
 
+  it('clears a stored global color so project badge colors can be used again', () => {
+    const operations = makeOperations()
+    operations.state.settings.defaultProjectIconColor = '#e11d48'
+
+    expect(
+      updateSettings(operations, { defaultProjectIconColor: undefined }).defaultProjectIconColor
+    ).toBeUndefined()
+  })
+
   it('ignores a color that is not a hex value', () => {
     const operations = makeOperations()
 

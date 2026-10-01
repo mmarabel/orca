@@ -119,7 +119,7 @@ describe('RepositoryIconPicker with a global default project icon', () => {
     expect(apiMocks.repoSlug).toHaveBeenCalled()
   })
 
-  it('resets to the global default instead of re-fetching the avatar', async () => {
+  it('keeps the auto-detected avatar when resetting to the global default', async () => {
     const updateRepo = vi.fn()
 
     act(() => {
@@ -141,7 +141,32 @@ describe('RepositoryIconPicker with a global default project icon', () => {
     })
     await flushEffects()
 
-    expect(updateRepo).toHaveBeenCalledWith('repo-1', { repoIcon: null })
+    expect(updateRepo).not.toHaveBeenCalled()
     expect(apiMocks.repoSlug).not.toHaveBeenCalled()
+  })
+
+  it('clears a project-specific icon when resetting to the global default', async () => {
+    const updateRepo = vi.fn()
+
+    act(() => {
+      root.render(
+        <RepositoryIconPicker
+          repo={{ ...makeRepo(), repoIcon: { type: 'emoji', emoji: '🐳' } }}
+          updateRepo={updateRepo}
+          defaultProjectIcon={{ type: 'lucide', name: 'Folder' }}
+        />
+      )
+    })
+    await flushEffects()
+
+    const resetButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Reset')
+    )
+    act(() => {
+      resetButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushEffects()
+
+    expect(updateRepo).toHaveBeenCalledWith('repo-1', { repoIcon: null })
   })
 })

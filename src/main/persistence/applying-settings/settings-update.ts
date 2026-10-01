@@ -99,6 +99,8 @@ export function updateSettings(
     const defaultProjectIconColor = normalizeRepoBadgeColor(updates.defaultProjectIconColor)
     if (defaultProjectIconColor) {
       sanitizedUpdates.defaultProjectIconColor = defaultProjectIconColor
+    } else if (updates.defaultProjectIconColor === undefined) {
+      sanitizedUpdates.defaultProjectIconColor = undefined
     } else {
       delete sanitizedUpdates.defaultProjectIconColor
     }

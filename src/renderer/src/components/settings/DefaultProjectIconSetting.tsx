@@ -93,6 +93,11 @@ export function DefaultProjectIconSetting({
           onBadgeColorChange={(defaultProjectIconColor) =>
             updateSettings({ defaultProjectIconColor })
           }
+          onBadgeColorReset={() => updateSettings({ defaultProjectIconColor: undefined })}
+          badgeColorResetLabel={translate(
+            'auto.components.settings.DefaultProjectIconSetting.useProjectColor',
+            'Use project color'
+          )}
         />
       ) : null}
 

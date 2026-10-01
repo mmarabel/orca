@@ -64,7 +64,10 @@ export function useContinuationTargetSelection(args: {
   const worktreesByRepo = useAppStore((state) => state.worktreesByRepo)
   const runtimeEnvironments = useAppStore((state) => state.runtimeEnvironments)
   const sshTargetLabels = useAppStore((state) => state.sshTargetLabels)
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
+  const [selectionOverride, setSelectionOverride] = useState<{
+    request: AgentSessionContinuationRequest | null
+    workspaceId: string
+  } | null>(null)
   const [sourceByteLength, setSourceByteLength] = useState<number | null>(null)
 
   const hostNames = useMemo(
@@ -93,11 +96,10 @@ export function useContinuationTargetSelection(args: {
     })
   }, [args.request, hostNames, origin, targetState, worktrees])
 
-  useEffect(() => {
-    if (args.open && args.request) {
-      setSelectedWorkspaceId(args.request.worktreeId)
-    }
-  }, [args.open, args.request])
+  const selectedWorkspaceId =
+    selectionOverride?.request === args.request
+      ? selectionOverride.workspaceId
+      : (args.request?.worktreeId ?? null)
 
   // Why: transcript size decides whether a cross-host handoff can carry the
   // whole file, and the dialog must say so before the user commits.
@@ -135,7 +137,8 @@ export function useContinuationTargetSelection(args: {
     groups,
     selectedWorkspaceId,
     selectedOption,
-    setSelectedWorkspaceId,
+    setSelectedWorkspaceId: (workspaceId) =>
+      setSelectionOverride({ request: args.request, workspaceId }),
     hostNames,
     sourceHostLabel: getExecutionHostDisplayLabel(origin?.executionHostId ?? 'local', hostNames),
     fullTranscriptBlockedReason: resolveFullTranscriptBlockedReason(

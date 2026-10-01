@@ -14,13 +14,13 @@ export async function resolveRemoteHomeDirectory(connectionId: string): Promise<
   if (!mux || mux.isDisposed?.()) {
     return null
   }
-  const result = (await mux.request('session.resolveHome', { path: '~' })) as {
-    resolvedPath?: unknown
-  }
+  const result: unknown = await mux.request('session.resolveHome', { path: '~' })
+  const resolvedPath =
+    typeof result === 'object' && result !== null && 'resolvedPath' in result
+      ? result.resolvedPath
+      : undefined
   const home =
-    typeof result.resolvedPath === 'string'
-      ? normalizeRuntimePathSeparators(result.resolvedPath.trim())
-      : ''
+    typeof resolvedPath === 'string' ? normalizeRuntimePathSeparators(resolvedPath.trim()) : ''
   return home &&
     (home.startsWith('/') || isWindowsAbsolutePathLike(home)) &&
     !hasRemotePathControlCharacter(home)

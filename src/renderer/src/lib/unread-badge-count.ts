@@ -2,37 +2,43 @@ import type { StoredAgentAttentionUnread } from '@/attention/agent-attention-con
 import type { TerminalTab } from '../../../shared/terminal-tab-types'
 import type { Worktree } from '../../../shared/worktree/types'
 import { getWorktreeHostIdentity } from '../../../shared/worktree/host-qualified-identity'
+import type { Tab } from '../../../shared/tab-types'
+import { isExecutionHostAliasForWorktree } from './worktree-execution-host-alias'
 
 /** The only fields the count reads, so a projection over them is a sound cache key. */
-export type UnreadBadgeWorktree = Pick<Worktree, 'id' | 'isUnread' | 'hostId'>
+export type UnreadBadgeWorktree = Pick<
+  Worktree,
+  'id' | 'isUnread' | 'hostId' | 'runtimeOwnerEnvironmentId'
+>
 export type UnreadBadgeTab = Pick<TerminalTab, 'id'>
+export type UnreadBadgeOwnedTab = Pick<Tab, 'id' | 'worktreeId' | 'executionHostId'>
 
 export type UnreadBadgeCountSources = {
   worktreesByRepo: Readonly<Record<string, readonly UnreadBadgeWorktree[]>>
   tabsByWorktree: Readonly<Record<string, readonly UnreadBadgeTab[]>>
   unreadTerminalTabs: Readonly<Record<string, StoredAgentAttentionUnread>>
   hiddenChildUnreadIdentities?: ReadonlySet<string>
+  unifiedTabs?: Readonly<Record<string, readonly UnreadBadgeOwnedTab[]>>
 }
 
 export function getUnreadBadgeCount({
   worktreesByRepo,
   tabsByWorktree,
   unreadTerminalTabs,
-  hiddenChildUnreadIdentities
+  hiddenChildUnreadIdentities,
+  unifiedTabs
 }: UnreadBadgeCountSources): number {
   const unreadWorktreeIds = new Set<string>()
-  const hiddenWorktreeIds = new Set<string>()
-  const visibleWorktreeIds = new Set<string>()
+  const hiddenWorktreesById = new Map<string, UnreadBadgeWorktree[]>()
 
   for (const worktrees of Object.values(worktreesByRepo)) {
     for (const worktree of worktrees) {
       if (hiddenChildUnreadIdentities?.has(getWorktreeHostIdentity(worktree))) {
-        hiddenWorktreeIds.add(worktree.id)
-      } else {
-        visibleWorktreeIds.add(worktree.id)
-        if (worktree.isUnread) {
-          unreadWorktreeIds.add(worktree.id)
-        }
+        const hidden = hiddenWorktreesById.get(worktree.id) ?? []
+        hidden.push(worktree)
+        hiddenWorktreesById.set(worktree.id, hidden)
+      } else if (worktree.isUnread) {
+        unreadWorktreeIds.add(worktree.id)
       }
     }
   }
@@ -43,12 +49,25 @@ export function getUnreadBadgeCount({
   }
 
   for (const [worktreeId, tabs] of Object.entries(tabsByWorktree)) {
+    const owners = new Map<string, UnreadBadgeOwnedTab | null>()
+    for (const owner of unifiedTabs?.[worktreeId] ?? []) {
+      if (owner.worktreeId === worktreeId) {
+        owners.set(owner.id, owners.has(owner.id) ? null : owner)
+      }
+    }
     for (const tab of tabs) {
-      if (!unreadTabIds.delete(tab.id)) {
+      if (!Object.hasOwn(unreadTerminalTabs, tab.id)) {
         continue
       }
-      // Ambiguous tab ownership must not mute another host's top-level workspace.
-      if (!hiddenWorktreeIds.has(worktreeId) || visibleWorktreeIds.has(worktreeId)) {
+      unreadTabIds.delete(tab.id)
+      const host = owners.get(tab.id)?.executionHostId
+      // A loaded same-id row does not prove which host owns a terminal tab.
+      const hidden =
+        host &&
+        hiddenWorktreesById
+          .get(worktreeId)
+          ?.some((worktree) => isExecutionHostAliasForWorktree(host, worktree))
+      if (!hidden) {
         unreadWorktreeIds.add(worktreeId)
       }
     }

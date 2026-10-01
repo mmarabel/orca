@@ -9,6 +9,8 @@ import {
   type ChildWorktreeUnreadState
 } from './child-worktree-unread-policy'
 import { createUnreadBadgeCountSelector } from './unread-badge-count-selector'
+import type { UnreadBadgeOwnedTab } from './unread-badge-count'
+import type { ExecutionHostId } from '../../../shared/execution-host'
 
 function makeWorktree(id: string, overrides: Partial<Worktree> = {}): Worktree {
   return { ...baseWorktree, id, instanceId: id, hostId: 'local', isUnread: true, ...overrides }
@@ -26,6 +28,14 @@ function makeLineage(child: string, parent: string): WorktreeLineage {
   }
 }
 
+function ownedTab(
+  id: string,
+  worktreeId: string,
+  executionHostId: ExecutionHostId = 'local'
+): UnreadBadgeOwnedTab {
+  return { id, worktreeId, executionHostId }
+}
+
 function makeState(showChildWorktreeUnread = false) {
   return {
     settings: createGlobalSettingsFixture({
@@ -41,6 +51,10 @@ function makeState(showChildWorktreeUnread = false) {
     workspaceLineageByChildKey: {},
     folderWorkspaces: [],
     tabsByWorktree: { child: [{ id: 'child-tab' }], grandchild: [{ id: 'grandchild-tab' }] },
+    unifiedTabs: {
+      child: [ownedTab('child-tab', 'child')],
+      grandchild: [ownedTab('grandchild-tab', 'grandchild')]
+    },
     unreadTerminalTabs: { 'child-tab': true, 'grandchild-tab': true } as const
   }
 }
@@ -130,9 +144,57 @@ describe('child worktree unread presentation', () => {
         ...worktree,
         hostId
       }))
+      state.unifiedTabs = {
+        child: [ownedTab('child-tab', 'child', hostId)],
+        grandchild: [ownedTab('grandchild-tab', 'grandchild', hostId)]
+      }
       expect(createUnreadBadgeCountSelector()(state)).toBe(1)
     }
   )
+
+  it('recounts unread when tab host ownership hydrates without the other host row', () => {
+    const state = makeState()
+    const select = createUnreadBadgeCountSelector()
+    expect(select(state)).toBe(1)
+    const otherHost = {
+      ...state,
+      unifiedTabs: { ...state.unifiedTabs, child: [ownedTab('child-tab', 'child', 'ssh:remote')] }
+    }
+    expect(select(otherHost)).toBe(2)
+    expect(
+      select({
+        ...otherHost,
+        worktreesByRepo: {
+          repo: [
+            ...state.worktreesByRepo.repo,
+            makeWorktree('child', {
+              hostId: 'ssh:remote',
+              instanceId: 'remote-child',
+              isUnread: false
+            })
+          ]
+        }
+      })
+    ).toBe(2)
+    expect(select(state)).toBe(1)
+  })
+
+  it('recounts unread when a worktree runtime alias changes', () => {
+    const state = makeState()
+    state.unifiedTabs.child = [ownedTab('child-tab', 'child', 'runtime:remote')]
+    const select = createUnreadBadgeCountSelector()
+    expect(select(state)).toBe(2)
+    const aliased = {
+      ...state,
+      worktreesByRepo: {
+        repo: state.worktreesByRepo.repo.map((worktree) =>
+          worktree.id === 'child' ? { ...worktree, runtimeOwnerEnvironmentId: 'remote' } : worktree
+        )
+      }
+    }
+    expect(select(aliased)).toBe(1)
+    expect(select(state)).toBe(2)
+  })
 
   it('handles children of folder workspaces without assuming a git parent', () => {
     const state: ChildWorktreeUnreadState = {

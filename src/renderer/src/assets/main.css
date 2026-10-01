@@ -307,6 +307,7 @@
   --ai-action-accent: var(--color-violet-400);
   --agent-question: var(--color-orange-500);
   --agent-question-text: var(--color-orange-300);
+  --worktree-unread: var(--color-amber-500);
   --status-success: #86efac;
   --status-success-background: color-mix(in srgb, var(--status-success) 10%, transparent);
   --status-success-border: color-mix(in srgb, var(--status-success) 25%, transparent);

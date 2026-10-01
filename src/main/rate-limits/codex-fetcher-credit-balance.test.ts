@@ -66,7 +66,7 @@ async function fetchWithRateLimits(rateLimits: unknown) {
   const child = new FakeRpcChild()
   child.rateLimits = rateLimits
   childSpawnMock.mockReturnValue(child)
-  const resultPromise = fetchCodexRateLimits({ allowPtyFallback: false })
+  const resultPromise = fetchCodexRateLimits()
   await vi.advanceTimersByTimeAsync(1)
   await vi.advanceTimersByTimeAsync(1)
   return resultPromise

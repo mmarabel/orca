@@ -108,7 +108,10 @@ describe('runtime-controller spawn: hidden until a renderer view mounts', () => 
       controller.spawn({ cols: 80, rows: 24, worktreeId: 'wt-1', activationIntent: 'automatic' })
     ).rejects.toThrow(WORKTREE_TERMINAL_SLEEP_BLOCKED_ERROR)
 
-    expect(runtime.acquireWorktreeTerminalSpawn).toHaveBeenCalledWith('wt-1', 'automatic')
+    expect(runtime.acquireWorktreeTerminalSpawn).toHaveBeenCalledWith('wt-1', 'automatic', {
+      ptyId: expect.any(String),
+      paneKey: undefined
+    })
     expect(daemon.spawn).not.toHaveBeenCalled()
   })
 

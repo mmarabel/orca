@@ -1,74 +1,21 @@
 import { describe, expect, it, vi } from 'vitest'
-import { OrcaRuntimeService } from './orca-runtime-test-mocks.spec'
+import type { OrcaRuntimeService } from './orca-runtime-test-mocks.spec'
 import './orca-runtime-test-lifecycle.spec'
 import type { RuntimeClientEvent } from '../../shared/runtime-client-events'
 import type { PtyProcessInfo } from '../providers/types'
-import type { RuntimePtyController } from './runtime-pty-controller-contract'
+import { makePaneKey } from '../../shared/stable-pane-id'
+import { WORKTREE_TERMINAL_SLEEP_BLOCKED_ERROR } from './worktree-terminal-mutation-lock'
+import {
+  makeSleepActivationRuntime,
+  makePartialSleepActivationRuntime
+} from './remote-worktree-sleep-activation-test-fixture'
 import {
   HEADLESS_LEAF_ID,
+  HEADLESS_SECOND_LEAF_ID,
   TEST_WORKTREE_ID,
   TEST_WORKTREE_PATH,
-  deferred,
-  makeRuntimeStoreWithWorkspaceSession,
-  makeWorkspaceSessionWithHeadlessTerminal
+  deferred
 } from './orca-runtime-test-fixtures.spec'
-
-function makeSleepActivationRuntime(initiallyLive = true) {
-  const { runtimeStore, getSession } = makeRuntimeStoreWithWorkspaceSession(
-    makeWorkspaceSessionWithHeadlessTerminal()
-  )
-  const runtime = new OrcaRuntimeService(runtimeStore)
-  let live = initiallyLive
-  const events: RuntimeClientEvent[] = []
-  runtime.onClientEvent((event) => events.push(event))
-  const physicalSpawn = vi.fn().mockImplementation(async () => {
-    live = true
-    return { id: 'persisted-pty' }
-  })
-  const spawn = vi.fn<NonNullable<RuntimePtyController['spawn']>>(async (opts) => {
-    const release = await runtime.acquireWorktreeTerminalSpawn(
-      opts.worktreeId,
-      opts.activationIntent
-    )
-    try {
-      return await physicalSpawn()
-    } finally {
-      release()
-    }
-  })
-  const listProcesses = vi.fn<NonNullable<RuntimePtyController['listProcesses']>>(async () =>
-    live
-      ? [
-          {
-            id: 'persisted-pty',
-            cwd: TEST_WORKTREE_PATH,
-            worktreeId: TEST_WORKTREE_ID,
-            title: 'Shell'
-          }
-        ]
-      : []
-  )
-  const controller: RuntimePtyController = {
-    spawn,
-    write: () => true,
-    kill: () => false,
-    stopAndWait: async () => {
-      live = false
-      return true
-    },
-    getForegroundProcess: async () => null,
-    listProcesses
-  }
-  runtime.setPtyController(controller)
-  runtime.syncWindowGraph(0, { tabs: [], leaves: [] })
-  if (initiallyLive) {
-    runtime.registerPty('persisted-pty', TEST_WORKTREE_ID, null, {
-      tabId: 'host-tab',
-      leafId: HEADLESS_LEAF_ID
-    })
-  }
-  return { runtime, controller, spawn, physicalSpawn, listProcesses, events, getSession }
-}
 
 function activate(runtime: OrcaRuntimeService, intent: 'automatic' | 'user') {
   return runtime.activateMobileSessionTab(`id:${TEST_WORKTREE_ID}`, 'host-tab', HEADLESS_LEAF_ID, {
@@ -202,6 +149,80 @@ describe('remote workspace sleep activation', () => {
     expect(spawn).not.toHaveBeenCalled()
     expect(result.tabs[0]).toMatchObject({ status: 'pending-handle', terminal: null })
     expectNoWake(events)
+  })
+
+  it.each([false, true])(
+    'recovers an unstopped pane after partial Sleep (old capture: %s)',
+    async (oldCapture) => {
+      const { runtime, livePtys, physicalSpawn, events, getSession, setSession } =
+        makePartialSleepActivationRuntime()
+      if (oldCapture) {
+        const paneKey = makePaneKey('unstopped-tab', HEADLESS_SECOND_LEAF_ID)
+        setSession({
+          ...getSession(),
+          sleepingAgentSessionsByPaneKey: {
+            [paneKey]: {
+              paneKey,
+              tabId: 'unstopped-tab',
+              worktreeId: TEST_WORKTREE_ID,
+              agent: 'claude',
+              providerSession: { key: 'session_id', id: 'captured-session' },
+              prompt: '',
+              state: 'done',
+              capturedAt: 1,
+              updatedAt: 1,
+              origin: 'worktree-sleep'
+            }
+          }
+        })
+      }
+      await expect(runtime.sleepTerminalsForWorktree(`id:${TEST_WORKTREE_ID}`)).rejects.toThrow(
+        'terminal_worktree_sleep_failed'
+      )
+      livePtys.delete('unstopped-pty')
+
+      const result = await runtime.activateMobileSessionTab(
+        `id:${TEST_WORKTREE_ID}`,
+        'unstopped-tab',
+        HEADLESS_SECOND_LEAF_ID,
+        { notifyClients: false, navigation: 'caller', intent: 'automatic' }
+      )
+
+      expect(result.tabs).toContainEqual(
+        expect.objectContaining({ parentTabId: 'unstopped-tab', status: 'ready' })
+      )
+      expect(physicalSpawn).toHaveBeenCalledOnce()
+      expectNoWake(events)
+      expect(runtime.getTerminalSleepClientEventSnapshot()).toContainEqual(
+        expect.objectContaining({ phase: 'committed', ptyIds: ['persisted-pty'] })
+      )
+      await activate(runtime, 'automatic')
+      expect(physicalSpawn).toHaveBeenCalledOnce()
+      await activate(runtime, 'user')
+      expect(physicalSpawn).toHaveBeenCalledTimes(2)
+      expect(events).toContainEqual(expect.objectContaining({ phase: 'woken' }))
+    }
+  )
+
+  it('refuses a partial-sleep spawn by the committed pane even without its old PTY id', async () => {
+    const { runtime } = makePartialSleepActivationRuntime()
+    await expect(runtime.sleepTerminalsForWorktree(`id:${TEST_WORKTREE_ID}`)).rejects.toThrow(
+      'terminal_worktree_sleep_failed'
+    )
+
+    await expect(
+      runtime.acquireWorktreeTerminalSpawn(TEST_WORKTREE_ID, 'automatic', {
+        paneKey: makePaneKey('host-tab', HEADLESS_LEAF_ID)
+      })
+    ).rejects.toThrow(WORKTREE_TERMINAL_SLEEP_BLOCKED_ERROR)
+
+    const release = await runtime.acquireWorktreeTerminalSpawn(TEST_WORKTREE_ID, 'automatic', {
+      paneKey: makePaneKey('unstopped-tab', HEADLESS_SECOND_LEAF_ID)
+    })
+    release()
+    expect(runtime.getTerminalSleepClientEventSnapshot()).toContainEqual(
+      expect.objectContaining({ phase: 'committed', ptyIds: ['persisted-pty'] })
+    )
   })
 
   it('allows recovery after a failed sleep with no committed stops', async () => {

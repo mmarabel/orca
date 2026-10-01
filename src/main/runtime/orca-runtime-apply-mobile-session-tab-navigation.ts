@@ -13,6 +13,7 @@ import {
   projectClientSessionTabSelection
 } from './client-session-tab-selection'
 import { makePaneKey } from '../../shared/stable-pane-id'
+import { blocksAutomaticTerminalSpawnForSleep } from './worktree-terminal-spawn-sleep-guard'
 import {
   runtimeWorktreeIdentityKey,
   runtimeWorktreeIdsEqual
@@ -111,8 +112,14 @@ export class OrcaRuntimeWithApplyMobileSessionTabNavigation extends OrcaRuntimeW
     worktreeId: string,
     tab: RuntimeMobileSessionTerminalTab
   ): boolean {
-    if (this.terminalSleepStateByWorktreeId.has(runtimeWorktreeIdentityKey(worktreeId))) {
-      return true
+    const sleepState = this.terminalSleepStateByWorktreeId.get(
+      runtimeWorktreeIdentityKey(worktreeId)
+    )
+    if (sleepState) {
+      return blocksAutomaticTerminalSpawnForSleep(sleepState, {
+        ptyId: tab.ptyId ?? tab.parentLayout?.ptyIdsByLeafId?.[tab.leafId],
+        paneKey: makePaneKey(tab.parentTabId, tab.leafId)
+      })
     }
     const record =
       this.getWorkspaceSessionForWorktree(worktreeId)?.sleepingAgentSessionsByPaneKey?.[

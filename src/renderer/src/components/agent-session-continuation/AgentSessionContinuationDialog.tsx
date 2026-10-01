@@ -169,7 +169,6 @@ export function AgentSessionContinuationDialog({
       prompt,
       worktreeId: option?.workspaceId ?? request.worktreeId,
       ...(movesWorkspace ? {} : { groupId: request.groupId }),
-      workspacePath: option?.workspacePath ?? request.workspacePath,
       initialCwd: movesWorkspace ? option?.workspacePath : request.initialCwd,
       launchSource: request.launchSource
     })

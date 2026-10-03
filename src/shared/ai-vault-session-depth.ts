@@ -48,15 +48,17 @@ export function truncateAiVaultListResult(
   if (scopePaths.length > 0) {
     const scopeMatchers = scopePaths.map(createNormalizedPathInsideOrEqualMatcher)
     let scopedCount = 0
+    let scopeDepthReached = false
     for (const session of result.sessions) {
       const cwd = session.cwd
       const normalizedCwd = cwd ? normalizeRuntimePathForComparison(cwd) : null
       if (normalizedCwd !== null && scopeMatchers.some((matches) => matches(normalizedCwd))) {
-        selectedIds.add(session.id)
-        if (++scopedCount >= depth) {
+        if (scopeDepthReached) {
           scopePassStoppedEarly = true
           break
         }
+        selectedIds.add(session.id)
+        scopeDepthReached = ++scopedCount >= depth
       }
     }
   }

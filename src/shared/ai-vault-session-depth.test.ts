@@ -84,6 +84,26 @@ describe('Agent Session History depth', () => {
     expect(truncateAiVaultListResult(loaded, 'unlimited')).toBe(loaded)
   })
 
+  it.each([true, false, undefined])(
+    'preserves scope completeness %s when exactly depth scoped rows remain',
+    (scopeFullyScanned) => {
+      const loaded = {
+        ...result([
+          session('global-1', '/other', 6),
+          session('scoped-1', '/repo/app', 5),
+          session('global-2', '/other', 4),
+          session('scoped-2', '/repo/lib', 3),
+          session('global-3', '/other', 2)
+        ]),
+        scopeFullyScanned
+      }
+
+      const truncated = truncateAiVaultListResult(loaded, 2, ['/repo'])
+      expect(truncated.sessions.map(({ id }) => id)).toEqual(['global-1', 'scoped-1', 'scoped-2'])
+      expect(truncated.scopeFullyScanned).toBe(scopeFullyScanned)
+    }
+  )
+
   // Why: a cache hit serves a shallower request from a deeper scan. Carrying the
   // deeper scan's "every in-scope session is here" vouch past a cut that dropped
   // in-scope rows would hide the Show more row that gets them back.

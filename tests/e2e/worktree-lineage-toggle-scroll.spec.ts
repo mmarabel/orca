@@ -1,6 +1,7 @@
 import { test, expect } from './helpers/orca-app'
 import { waitForSessionReady, waitForActiveWorktree } from './helpers/store'
 import { seedLineageScenario } from './worktree-lineage-state'
+import { waitForLineageScrollFixtureReady } from './worktree-lineage-scroll-readiness'
 
 test('keyboard and chip preserve the scrolled parent, and unfolding opens the sidebar', async ({
   orcaPage,
@@ -72,6 +73,7 @@ test('keyboard and chip preserve the scrolled parent, and unfolding opens the si
       top: row.getBoundingClientRect().top,
       scrollTop: row.closest('[data-worktree-sidebar]')?.scrollTop ?? 0
     }))
+  await waitForLineageScrollFixtureReady(orcaPage, family.parentId)
   const before = await geometry()
   await orcaPage.mouse.move(1150, 400)
   await orcaPage.keyboard.press('ControlOrMeta+Alt+KeyH')

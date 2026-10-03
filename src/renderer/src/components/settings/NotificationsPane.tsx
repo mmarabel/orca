@@ -228,7 +228,8 @@ export function NotificationsPane({
         checked={notificationSettings.showChildWorktreeUnread !== false}
         onToggle={() =>
           void updateNotificationSettings({
-            showChildWorktreeUnread: notificationSettings.showChildWorktreeUnread === false
+            showChildWorktreeUnread:
+              notificationSettingsRef.current.showChildWorktreeUnread === false
           })
         }
       />

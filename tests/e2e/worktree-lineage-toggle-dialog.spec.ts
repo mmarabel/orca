@@ -2,6 +2,8 @@ import { test, expect } from './helpers/orca-app'
 import { waitForSessionReady, waitForActiveWorktree } from './helpers/store'
 import { seedLineageScenario } from './worktree-lineage-state'
 
+test.use({ launchEnv: { ORCA_BACKGROUND_LAUNCH: '1' } })
+
 test('locally controlled project-group modal keeps child-toggle input', async ({
   orcaPage,
   electronApp

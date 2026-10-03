@@ -6,6 +6,8 @@ import { waitForActiveWorktree, waitForSessionReady } from './helpers/store'
 import { attachRepoAndOpenTerminal, createRestartSession } from './helpers/orca-restart'
 import { seedLineageScenario, seedWorkspaceLiveTerminal } from './worktree-lineage-state'
 
+test.use({ launchEnv: { ORCA_BACKGROUND_LAUNCH: '1' } })
+
 const ACTION_ID = 'sidebar.childWorkspaces.toggle' as const
 const CHORD = 'ControlOrMeta+Alt+KeyH'
 

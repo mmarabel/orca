@@ -3,6 +3,8 @@ import { waitForSessionReady, waitForActiveWorktree } from './helpers/store'
 import { seedLineageScenario } from './worktree-lineage-state'
 import { waitForLineageScrollFixtureReady } from './worktree-lineage-scroll-readiness'
 
+test.use({ launchEnv: { ORCA_BACKGROUND_LAUNCH: '1' } })
+
 test('keyboard and chip preserve the scrolled parent, and unfolding opens the sidebar', async ({
   orcaPage,
   electronApp

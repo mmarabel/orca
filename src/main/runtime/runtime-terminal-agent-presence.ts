@@ -5,6 +5,7 @@ import {
 } from '../../shared/agent-process-recognition'
 import { isOpenCodeNativeTitle } from '../../shared/agent-detection'
 import { ptyForegroundIsShell } from './pty-shell-foreground-evidence'
+import { ptyTitleIsRestored } from './pty-restored-title'
 import { isKnownReadyPromptPreview } from './terminal-wait-detection'
 import { buildTerminalWaitText } from './terminal-wait-tail-state'
 import type { RuntimeLeafRecord, RuntimePtyWorktreeRecord } from './runtime-terminal-state-records'
@@ -14,8 +15,10 @@ import {
   classifyLatestAgentTitle,
   getLatestAgentCandidateTitle,
   getLatestLeafTitle,
-  ptyTitleIsRestored,
-  ptyTitleProvesAgentPresence
+  getLeafDisplayRecord,
+  getPtyDisplayRecord,
+  ptyTitleProvesAgentPresence,
+  type TitleDisplayClear
 } from './runtime-worktree-status-projection'
 
 const WRAPPER_RETRY_INTERVAL_MS = 150
@@ -31,6 +34,8 @@ type RuntimeTerminalAgentPresenceDependencies = {
   getTabTitle(tabId: string): string | null
   getForegroundProcess(ptyId: string): Promise<string | null> | null
   confirmForegroundProcess?(ptyId: string): Promise<string | null> | null
+  /** The stale-working timer's display-only clear of the PTY's own title, if one stands. */
+  getTitleDisplayClear(ptyId: string): TitleDisplayClear | null
 }
 
 export type RuntimeTerminalAgentPresenceOptions = {
@@ -54,11 +59,25 @@ export class RuntimeTerminalAgentPresence {
       return true
     }
     try {
+      // Why display records: presence reads what the pane shows, as before the stale-working
+      // clear stopped rewriting records. A cwd spinner clears to a neutral title, so the
+      // foreground process decides for an agent that exited behind it.
       const pty = this.deps.getLivePty(handle)
       if (pty) {
-        return await this.isPtyRunning(pty, this.deps.getPrimaryLeaf(pty.ptyId), options)
+        const clear = this.deps.getTitleDisplayClear(pty.ptyId)
+        const leaf = this.deps.getPrimaryLeaf(pty.ptyId)
+        return await this.isPtyRunning(
+          getPtyDisplayRecord(pty, clear),
+          leaf ? getLeafDisplayRecord(leaf, clear) : null,
+          options,
+          pty
+        )
       }
-      const leaf = this.deps.getLiveLeaf(handle)
+      const liveLeaf = this.deps.getLiveLeaf(handle)
+      const leaf = getLeafDisplayRecord(
+        liveLeaf,
+        liveLeaf.ptyId ? this.deps.getTitleDisplayClear(liveLeaf.ptyId) : null
+      )
       const trackedPty = leaf.ptyId ? this.deps.getTrackedPty(leaf.ptyId) : null
       const paneTitle = getLatestLeafTitle(leaf, null)
       const paneClassification = classifyAgentTitle(paneTitle)
@@ -116,7 +135,8 @@ export class RuntimeTerminalAgentPresence {
   private async isPtyRunning(
     pty: RuntimePtyWorktreeRecord,
     leaf: RuntimeLeafRecord | null,
-    options: RuntimeTerminalAgentPresenceOptions
+    options: RuntimeTerminalAgentPresenceOptions,
+    titleEvidence: RuntimePtyWorktreeRecord
   ): Promise<boolean> {
     const leafTitle = leaf
       ? getLatestAgentCandidateTitle(
@@ -127,7 +147,7 @@ export class RuntimeTerminalAgentPresence {
     const leafClassification = classifyAgentTitle(leafTitle)
     if (ptyTitleProvesAgentPresence(pty, leafTitle, leafClassification)) {
       // Why: a leaf bound to an adopted session inherits the restored PTY title.
-      return await this.titleStillProvesAgent(pty, leafTitle, options)
+      return await this.titleStillProvesAgent(titleEvidence, leafTitle, options)
     }
     const ptyTitle = getLatestAgentCandidateTitle(
       { title: pty.title, updatedAt: pty.titleUpdatedAt },
@@ -135,7 +155,7 @@ export class RuntimeTerminalAgentPresence {
     )
     const ptyClassification = classifyAgentTitle(ptyTitle)
     if (leafTitle === null && ptyTitleProvesAgentPresence(pty, ptyTitle, ptyClassification)) {
-      return await this.titleStillProvesAgent(pty, ptyTitle, options)
+      return await this.titleStillProvesAgent(titleEvidence, ptyTitle, options)
     }
     const managementClassification = classifyLatestAgentTitle({
       title: pty.managementTitle,

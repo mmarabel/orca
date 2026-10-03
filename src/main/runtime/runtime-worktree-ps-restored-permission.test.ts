@@ -51,66 +51,86 @@ describe('worktree ps restored permission titles', () => {
       tabs: new Map(),
       session: null,
       getPaneKey: () => '',
+      getTitleDisplayClear: () => null,
       getSummary: () => summary
     })
 
     expect(summary.status).toBe('active')
   })
 
-  it('does not trust a leaf echo of a restored permission title', () => {
-    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the projection touches only the initialized summary fields in this terminal-only test.
-    const summary = {
-      worktreeId: WORKTREE_ID,
-      status: 'inactive',
-      hasHostSidebarActivity: false,
-      liveTerminalCount: 0,
-      hasAttachedPty: false,
-      lastOutputAt: null,
-      preview: ''
-    } as unknown as RuntimeWorktreePsSummary
-    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the projection and restored-title predicate touch only these initialized PTY fields.
-    const pty = {
-      ptyId: PTY_ID,
-      worktreeId: WORKTREE_ID,
-      connected: true,
-      lastOscTitle: '✋ Gemini CLI',
-      lastOscTitleEpochMs: null,
-      replacedRestoredTitles: []
-    } as unknown as RuntimePtyWorktreeRecord
-    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the leaf projection touches only these initialized fields.
-    const leaf = {
-      ptyId: PTY_ID,
-      worktreeId: WORKTREE_ID,
-      connected: true,
-      tabId: 'tab-1',
-      paneTitle: '✋ Gemini CLI',
-      paneTitleUpdatedAt: 1,
-      lastOscTitle: '✋ Gemini CLI',
-      lastOscTitleAt: 1,
-      lastAgentStatus: null,
-      lastOutputAt: null,
-      preview: ''
-    } as unknown as RuntimeLeafRecord
-
-    applyRuntimeWorktreePsTerminalActivity({
-      summaries: new Map([[WORKTREE_ID, summary]]),
-      pathIndex: {
-        platformByRepoId: new Map(),
-        posixAbsolute: new Map(),
-        posixRelative: new Map(),
-        windows: new Map(),
-        windowsAbsolute: new Map()
+  it.each([
+    { clear: null, expected: 'active' },
+    {
+      clear: { title: 'Terminal', status: null, observedAt: 2, observedAtEpochMs: 100 },
+      expected: 'active'
+    },
+    {
+      clear: {
+        title: 'Codex working',
+        status: 'working' as const,
+        observedAt: 2,
+        observedAtEpochMs: 100
       },
-      missingIds: new Set(),
-      freshPtyLiveness: new Set([PTY_ID]),
-      leaves: [leaf],
-      ptysById: new Map([[PTY_ID, pty]]),
-      tabs: new Map(),
-      session: null,
-      getPaneKey: () => 'tab-1:leaf-1',
-      getSummary: () => summary
-    })
+      expected: 'working'
+    }
+  ])(
+    'projects a restored leaf permission title with display status $expected',
+    ({ clear, expected }) => {
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the projection touches only the initialized summary fields in this terminal-only test.
+      const summary = {
+        worktreeId: WORKTREE_ID,
+        status: 'inactive',
+        hasHostSidebarActivity: false,
+        liveTerminalCount: 0,
+        hasAttachedPty: false,
+        lastOutputAt: null,
+        preview: ''
+      } as unknown as RuntimeWorktreePsSummary
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the projection and restored-title predicate touch only these initialized PTY fields.
+      const pty = {
+        ptyId: PTY_ID,
+        worktreeId: WORKTREE_ID,
+        connected: true,
+        lastOscTitle: '✋ Gemini CLI',
+        lastOscTitleEpochMs: null,
+        replacedRestoredTitles: []
+      } as unknown as RuntimePtyWorktreeRecord
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the leaf projection touches only these initialized fields.
+      const leaf = {
+        ptyId: PTY_ID,
+        worktreeId: WORKTREE_ID,
+        connected: true,
+        tabId: 'tab-1',
+        paneTitle: '✋ Gemini CLI',
+        paneTitleUpdatedAt: 1,
+        lastOscTitle: '✋ Gemini CLI',
+        lastOscTitleAt: 1,
+        lastAgentStatus: null,
+        lastOutputAt: null,
+        preview: ''
+      } as unknown as RuntimeLeafRecord
 
-    expect(summary.status).toBe('active')
-  })
+      applyRuntimeWorktreePsTerminalActivity({
+        summaries: new Map([[WORKTREE_ID, summary]]),
+        pathIndex: {
+          platformByRepoId: new Map(),
+          posixAbsolute: new Map(),
+          posixRelative: new Map(),
+          windows: new Map(),
+          windowsAbsolute: new Map()
+        },
+        missingIds: new Set(),
+        freshPtyLiveness: new Set([PTY_ID]),
+        leaves: [leaf],
+        ptysById: new Map([[PTY_ID, pty]]),
+        tabs: new Map(),
+        session: null,
+        getPaneKey: () => 'tab-1:leaf-1',
+        getTitleDisplayClear: () => clear,
+        getSummary: () => summary
+      })
+
+      expect(summary.status).toBe(expected)
+    }
+  )
 })

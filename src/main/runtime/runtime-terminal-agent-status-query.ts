@@ -1,22 +1,26 @@
 import {
   detectAgentStatusFromTitle,
   isOpenCodeNativeTitle,
-  isShellProcess,
   isQuarterCircleSpinnerOnlyAgentTitle,
+  isShellProcess,
   type AgentStatus
 } from '../../shared/agent-detection'
 import { recognizeAgentProcess } from '../../shared/agent-process-recognition'
 import { shareCompatibleTitleIdentityGroup } from '../../shared/agent-title-owner'
 import { resolveExplicitTerminalTitleAgentType } from '../../shared/terminal-title-agent-type'
 import { ptyForegroundIsShell } from './pty-shell-foreground-evidence'
+import { ptyTitleIsRestored } from './pty-restored-title'
 import type { RuntimeTerminalAgentStatus } from '../../shared/runtime-types'
 import type { TuiAgent } from '../../shared/tui-agent'
 import type { RuntimePtyController } from './runtime-pty-controller-contract'
 import type { RuntimeLeafRecord, RuntimePtyWorktreeRecord } from './runtime-terminal-state-records'
 import {
   terminalTitleBlocksExplicitAgentStatus,
+  getDisplayPromptLifecycle,
   getLatestAgentCandidateTitleInfo,
-  ptyTitleIsRestored
+  getLeafDisplayRecord,
+  getPtyDisplayRecord,
+  type TitleDisplayClear
 } from './runtime-worktree-status-projection'
 import { detectTerminalWaitBlockedReason } from './terminal-wait-detection'
 import { getTerminalState } from './terminal-wait-results'
@@ -45,6 +49,7 @@ type Dependencies = {
     ptyId: string
   ): { status: AgentStatus | null; updatedAt: number } | null | undefined
   isRunning(handle: string): Promise<boolean>
+  getTitleDisplayClear(ptyId: string): TitleDisplayClear | null
 }
 
 export class RuntimeTerminalAgentStatusQuery {
@@ -70,9 +75,13 @@ export class RuntimeTerminalAgentStatusQuery {
 
   private async readStatus(handle: string, retriesLeft = 1): Promise<RuntimeTerminalAgentStatus> {
     const ptyId = this.getPtyId(handle)
-    const terminal = this.getSnapshot(handle, ptyId)
+    // Why display: whether an agent is here is read off what the pane shows, as before the
+    // stale-working clear stopped rewriting records; a cwd spinner clears to a neutral title,
+    // so the foreground process decides for an agent that exited behind it.
+    const clear = this.deps.getTitleDisplayClear(ptyId)
+    const terminal = this.getSnapshot(handle, ptyId, clear)
     const explicitStatus = this.deps.getExplicitStatus(handle)
-    const lifecycle = this.deps.getLifecycleStatus(ptyId)
+    const lifecycle = getDisplayPromptLifecycle(this.deps.getLifecycleStatus(ptyId), clear)
     const blockedByWaitText = detectTerminalWaitBlockedReason(terminal.waitText)
     const liveTitleClearsBlockedText =
       terminal.titleStatusIsLive &&
@@ -139,7 +148,13 @@ export class RuntimeTerminalAgentStatusQuery {
             )))
         this.assertTerminalAgentStatusPtyBinding(handle, ptyId)
         // Why: a live title can land during the awaits above and supersede the one read here.
-        if (retriesLeft > 0 && titleObservationChanged(terminal, this.getSnapshot(handle, ptyId))) {
+        if (
+          retriesLeft > 0 &&
+          titleObservationChanged(
+            terminal,
+            this.getSnapshot(handle, ptyId, this.deps.getTitleDisplayClear(ptyId))
+          )
+        ) {
           return this.readStatus(handle, retriesLeft - 1)
         }
         return {
@@ -183,13 +198,20 @@ export class RuntimeTerminalAgentStatusQuery {
     throw new Error('terminal_handle_stale')
   }
 
-  getSnapshot(handle: string, expectedPtyId: string): RuntimeTerminalAgentStatusSnapshot {
-    const pty = this.deps.getLivePty(handle)
-    if (pty) {
-      if (!pty.pty.connected || pty.pty.ptyId !== expectedPtyId) {
+  /** `displayClear` projects the snapshot as display shows it; evidence callers omit it. */
+  getSnapshot(
+    handle: string,
+    expectedPtyId: string,
+    displayClear: TitleDisplayClear | null = null
+  ): RuntimeTerminalAgentStatusSnapshot {
+    const live = this.deps.getLivePty(handle)
+    if (live) {
+      if (!live.pty.connected || live.pty.ptyId !== expectedPtyId) {
         throw new Error('terminal_not_writable')
       }
-      const leaf = this.deps.getPrimaryLeaf(pty.pty.ptyId)
+      const pty = { pty: getPtyDisplayRecord(live.pty, displayClear) }
+      const primaryLeaf = this.deps.getPrimaryLeaf(live.pty.ptyId)
+      const leaf = primaryLeaf ? getLeafDisplayRecord(primaryLeaf, displayClear) : null
       const leafTitle = leaf
         ? getLatestAgentCandidateTitleInfo(
             { title: leaf.paneTitle, updatedAt: leaf.paneTitleUpdatedAt },
@@ -217,11 +239,11 @@ export class RuntimeTerminalAgentStatusQuery {
         titleStatusIsLive: ptyTitle !== null,
         // Why the PTY record: only it knows whether a title was ever observed live, and a leaf
         // bound to an adopted session inherits the restored title without that knowledge.
-        titleIsRestored: ptyTitleIsRestored(pty.pty, ptyTitle?.title ?? null)
+        titleIsRestored: ptyTitleIsRestored(live.pty, ptyTitle?.title ?? null)
       }
     }
 
-    const { leaf } = this.deps.getLiveLeaf(handle)
+    const leaf = getLeafDisplayRecord(this.deps.getLiveLeaf(handle).leaf, displayClear)
     if (getTerminalState(leaf) !== 'running') {
       throw new Error('terminal_exited')
     }

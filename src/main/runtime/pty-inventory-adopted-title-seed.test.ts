@@ -320,54 +320,80 @@ describe('inventory-adopted daemon session title seed (#22809)', () => {
 
   // A PTY-bound handle (what `terminal create` returns) resolves through the PTY record and reads
   // its primary pane's title, so that path must verify the inherited title too.
-  it('verifies the inherited title on the PTY-record path when the session has a pane', async () => {
-    const { runtime } = createHeadlessRuntime({
-      serializeProviderBuffer: async () => providerSnapshot()
-    })
-    await runtime.listTerminals()
-    await vi.waitFor(() => expect(runtime.record()?.lastOscTitle).toBe(CLAUDE_IDLE_TITLE))
-    runtime.syncWindowGraph(1, PANE_GRAPH)
-    const pty = runtime.record()!
-    const leaf = runtime.primaryLeaf()!
-    expect(leaf.lastOscTitle).toBe(CLAUDE_IDLE_TITLE)
+  it.each([
+    { title: CLAUDE_IDLE_TITLE, agent: 'claude', status: 'idle', displayClear: false },
+    { title: CLAUDE_IDLE_TITLE, agent: 'claude', status: 'idle', displayClear: true },
+    { title: GEMINI_PERMISSION_TITLE, agent: 'gemini', status: 'permission', displayClear: false },
+    { title: GEMINI_PERMISSION_TITLE, agent: 'gemini', status: 'permission', displayClear: true }
+  ])(
+    'verifies the inherited $status title on the PTY path with display clear=$displayClear',
+    async (scenario) => {
+      const { runtime } = createHeadlessRuntime({
+        serializeProviderBuffer: async () => providerSnapshot({ lastTitle: scenario.title })
+      })
+      await runtime.listTerminals()
+      await vi.waitFor(() => expect(runtime.record()?.lastOscTitle).toBe(scenario.title))
+      runtime.syncWindowGraph(1, PANE_GRAPH)
+      const pty = runtime.record()!
+      const leaf = runtime.primaryLeaf()!
+      expect(leaf.lastOscTitle).toBe(scenario.title)
+      // A pane can echo a restored title after the display-only clear, without a live OSC title.
+      leaf.paneTitle = scenario.title
+      leaf.paneTitleUpdatedAt = (pty.lastOscTitleAt ?? 0) + 2
+      const clear = scenario.displayClear
+        ? {
+            title: 'Terminal',
+            status: null,
+            observedAt: leaf.paneTitleUpdatedAt - 1,
+            observedAtEpochMs: Date.now()
+          }
+        : null
 
-    let foreground = 'claude'
-    const getForegroundProcess = async () => foreground
-    const common = {
-      getLiveLeaf: (): never => {
-        throw new Error('terminal_handle_stale')
-      },
-      getPrimaryLeaf: () => leaf,
-      getTrackedPty: () => pty,
-      getTabTitle: () => null
+      let foreground: string | null = scenario.agent
+      const getForegroundProcess = async () => foreground
+      const common = {
+        getLiveLeaf: (): never => {
+          throw new Error('terminal_handle_stale')
+        },
+        getPrimaryLeaf: () => leaf,
+        getTrackedPty: () => pty,
+        getTabTitle: () => null,
+        getTitleDisplayClear: () => clear
+      }
+      const presence = new RuntimeTerminalAgentPresence({
+        ...common,
+        getLivePty: () => pty,
+        getForegroundProcess
+      })
+      const status = new RuntimeTerminalAgentStatusQuery({
+        ...common,
+        getController: () => ({ write: () => true, kill: () => true, getForegroundProcess }),
+        getLivePty: () => ({ pty }),
+        getExplicitStatus: () => null,
+        getLifecycleStatus: () => undefined,
+        isRunning: (handle) => presence.isRunning(handle)
+      })
+
+      await expect(status.getStatus('h')).resolves.toEqual({
+        handle: 'h',
+        isRunningAgent: true,
+        status: scenario.status
+      })
+      foreground = null
+      await expect(status.getStatus('h')).resolves.toEqual({
+        handle: 'h',
+        isRunningAgent: true,
+        status: scenario.status === 'permission' ? null : 'idle'
+      })
+      foreground = 'bash'
+      await expect(presence.isRunning('h')).resolves.toBe(false)
+      await expect(status.getStatus('h')).resolves.toEqual({
+        handle: 'h',
+        isRunningAgent: false,
+        status: null
+      })
     }
-    const presence = new RuntimeTerminalAgentPresence({
-      ...common,
-      getLivePty: () => pty,
-      getForegroundProcess
-    })
-    const status = new RuntimeTerminalAgentStatusQuery({
-      ...common,
-      getController: () => ({ write: () => true, kill: () => true, getForegroundProcess }),
-      getLivePty: () => ({ pty }),
-      getExplicitStatus: () => null,
-      getLifecycleStatus: () => undefined,
-      isRunning: (handle) => presence.isRunning(handle)
-    })
-
-    await expect(status.getStatus('h')).resolves.toEqual({
-      handle: 'h',
-      isRunningAgent: true,
-      status: 'idle'
-    })
-    foreground = 'bash'
-    await expect(presence.isRunning('h')).resolves.toBe(false)
-    await expect(status.getStatus('h')).resolves.toEqual({
-      handle: 'h',
-      isRunningAgent: false,
-      status: null
-    })
-  })
+  )
 
   it('verifies a restored permission title against the foreground before reporting a prompt', async () => {
     let foreground = 'gemini'

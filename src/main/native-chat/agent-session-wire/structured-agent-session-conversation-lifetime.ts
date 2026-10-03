@@ -15,11 +15,12 @@ import type { StructuredAgentSessionConversations } from './structured-agent-ses
 import {
   abandonQueuedStructuredAgentSessionMessages,
   closeStructuredAgentSessionConversationUnderSerialize,
+  finishOwedStructuredAgentSessionWindDownUnderSerialize,
   stopStructuredAgentSessionAgentUnderSerialize,
   type StructuredAgentSessionCloseCause,
-  type StructuredAgentSessionLifetimeContext
+  type StructuredAgentSessionLifetimeContext,
+  type StructuredAgentSessionStopEnding
 } from './structured-agent-session-host-lifetime'
-import type { StructuredAgentSessionStopCause } from './structured-agent-session-adapter'
 import type { StructuredAgentSessionHostSession } from './structured-agent-session-host-types'
 import { StructuredAgentSessionIdleSweep } from './structured-agent-session-idle-sweep'
 import { AGENT_SESSION_NOT_ATTACHED } from './structured-agent-session-mutation-admission'
@@ -54,8 +55,10 @@ export function createStructuredAgentSessionConversationLifetime(host: {
     session.journal.whenImported().catch((error: unknown) => {
       throw readRefusals.refusal(sessionId, error)
     })
-  const stopAgent = (sessionId: string, cause: StructuredAgentSessionStopCause) =>
-    stopStructuredAgentSessionAgentUnderSerialize(host.context(), sessionId, { cause })
+  const stopAgent = (sessionId: string, ending: StructuredAgentSessionStopEnding) =>
+    stopStructuredAgentSessionAgentUnderSerialize(host.context(), sessionId, ending)
+  const finishOwedWindDown = (sessionId: string) =>
+    finishOwedStructuredAgentSessionWindDownUnderSerialize(host.context(), sessionId)
 
   const closeConversation = (sessionId: string): Promise<boolean> =>
     closeStructuredAgentSessionConversationUnderSerialize(
@@ -83,7 +86,8 @@ export function createStructuredAgentSessionConversationLifetime(host: {
     },
     providerHoldsDispatch: (sessionId) => deps().adapter.holdsDispatch?.(sessionId) === true,
     // The host puts an idle agent to rest: a turn it cuts short is news, not the user's Stop.
-    stopAgent: (sessionId) => stopAgent(sessionId, 'evict'),
+    stopAgent: (sessionId) => stopAgent(sessionId, { cause: 'evict', resting: true }),
+    finishOwedWindDown,
     // A host stop: the delivery loop waiting on this child writes the one error row and rejects
     // what is queued with it, both worded from the hostStopped fact.
     stopStartingAgent: (sessionId) =>

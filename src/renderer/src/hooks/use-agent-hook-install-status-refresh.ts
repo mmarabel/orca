@@ -1,7 +1,11 @@
 import { useEffect } from 'react'
 import { useAppStore } from '@/store'
+import {
+  canSkipAgentHookInstallStatusConsumerSync,
+  selectHasAgentHookInstallStatusConsumer
+} from '@/components/sidebar/worktree-hook-observability'
 
-// Hook config has no change notification, so refresh on mount/focus and while visible.
+// Hook config has no change notification; refresh only while a visible consumer needs it.
 export const AGENT_HOOK_STATUS_REFRESH_INTERVAL_MS = 30_000
 
 export function useAgentHookInstallStatusRefresh(): void {
@@ -11,6 +15,7 @@ export function useAgentHookInstallStatusRefresh(): void {
     let stopped = false
     let pollInFlight = false
     let timeoutId: number | null = null
+    let hasConsumer = selectHasAgentHookInstallStatusConsumer(useAppStore.getState())
 
     const clearPendingPoll = (): void => {
       if (timeoutId !== null) {
@@ -21,7 +26,7 @@ export function useAgentHookInstallStatusRefresh(): void {
 
     const scheduleNextPoll = (): void => {
       clearPendingPoll()
-      if (stopped || document.visibilityState !== 'visible') {
+      if (stopped || !hasConsumer || document.visibilityState !== 'visible') {
         return
       }
       timeoutId = window.setTimeout(() => {
@@ -32,7 +37,13 @@ export function useAgentHookInstallStatusRefresh(): void {
 
     const refresh = async (): Promise<void> => {
       const read = window.api?.agentHooks?.installStatuses
-      if (!read || stopped || pollInFlight || document.visibilityState !== 'visible') {
+      if (
+        !read ||
+        stopped ||
+        !hasConsumer ||
+        pollInFlight ||
+        document.visibilityState !== 'visible'
+      ) {
         return
       }
       pollInFlight = true
@@ -50,6 +61,22 @@ export function useAgentHookInstallStatusRefresh(): void {
       }
     }
 
+    const unsubscribe = useAppStore.subscribe((state, previousState) => {
+      // Snapshot/status/UI writes cannot change which execution-host consumers need polling.
+      if (canSkipAgentHookInstallStatusConsumerSync(state, previousState)) {
+        return
+      }
+      const nextHasConsumer = selectHasAgentHookInstallStatusConsumer(state)
+      if (nextHasConsumer === hasConsumer) {
+        return
+      }
+      hasConsumer = nextHasConsumer
+      if (hasConsumer) {
+        void refresh()
+      } else {
+        clearPendingPoll()
+      }
+    })
     void refresh()
 
     const onFocusOrVisible = (): void => {
@@ -65,6 +92,7 @@ export function useAgentHookInstallStatusRefresh(): void {
     return () => {
       stopped = true
       clearPendingPoll()
+      unsubscribe()
       window.removeEventListener('focus', onFocusOrVisible)
       document.removeEventListener('visibilitychange', onFocusOrVisible)
     }

@@ -3,7 +3,8 @@ import { getConnectionIdFromState } from '@/lib/connection-owner-resolution'
 import { getIndexedWorktreeById } from '@/store/worktree-repo-index'
 import {
   isWorktreeAgentStatusUnverifiable,
-  localHookConfigOwnsWorktree
+  localHookConfigOwnsWorktree,
+  type WorktreeAgentObservabilityInput
 } from '@/lib/agent-status-observability'
 import { resolveCodexPaneSelectionLaneKey } from '@/lib/codex-pane-selection-lane'
 import { isManagedAgentHookTarget } from '../../../../shared/managed-agent-hook-targets'
@@ -26,6 +27,11 @@ export type WorktreeHookObservabilityState = Pick<
   | 'worktreesByRepo'
 >
 
+type AgentHookInstallStatusConsumerState = Omit<
+  WorktreeHookObservabilityState,
+  'agentHookInstallStateByTarget'
+>
+
 type HookEvidence = {
   hasPermission: boolean
   hasLiveWorking: boolean
@@ -37,8 +43,49 @@ export function selectWorktreeHooksUnverifiable(
   worktreeId: string,
   evidence: HookEvidence
 ): boolean {
-  if (!state.settings || state.settings.agentStatusHooksEnabled === false) {
+  const consumers = getWorktreeHookConsumers(state, worktreeId)
+  if (!consumers) {
     return false
+  }
+  return isWorktreeAgentStatusUnverifiable({
+    ...consumers,
+    installStateByTarget: state.agentHookInstallStateByTarget,
+    hasActiveHookEvidence: evidence.hasPermission || evidence.hasLiveWorking
+  })
+}
+
+export function canSkipAgentHookInstallStatusConsumerSync(
+  state: AgentHookInstallStatusConsumerState,
+  previousState: AgentHookInstallStatusConsumerState
+): boolean {
+  return (
+    state.activeRepoId === previousState.activeRepoId &&
+    state.activeWorktreeId === previousState.activeWorktreeId &&
+    state.folderWorkspaces === previousState.folderWorkspaces &&
+    state.projectGroups === previousState.projectGroups &&
+    state.projects === previousState.projects &&
+    state.ptyIdsByTabId === previousState.ptyIdsByTabId &&
+    state.repos === previousState.repos &&
+    state.settings === previousState.settings &&
+    state.tabsByWorktree === previousState.tabsByWorktree &&
+    state.worktreesByRepo === previousState.worktreesByRepo
+  )
+}
+
+export function selectHasAgentHookInstallStatusConsumer(
+  state: AgentHookInstallStatusConsumerState
+): boolean {
+  return Object.keys(state.tabsByWorktree).some(
+    (worktreeId) => getWorktreeHookConsumers(state, worktreeId) !== null
+  )
+}
+
+function getWorktreeHookConsumers(
+  state: AgentHookInstallStatusConsumerState,
+  worktreeId: string
+): Pick<WorktreeAgentObservabilityInput, 'liveAgents' | 'connectionId' | 'worktreePath'> | null {
+  if (!state.settings || state.settings.agentStatusHooksEnabled === false) {
+    return null
   }
   const disabledAgents = new Set(normalizeDisabledTuiAgents(state.settings.disabledTuiAgents))
   const workspaceScope = parseWorkspaceKey(worktreeId)
@@ -53,7 +100,7 @@ export function selectWorktreeHooksUnverifiable(
         )?.path
   const connectionId = getConnectionIdFromState(state, worktreeId)
   if (!localHookConfigOwnsWorktree(connectionId, worktreePath)) {
-    return false
+    return null
   }
   const liveAgents: (TuiAgent | undefined)[] = []
   for (const tab of state.tabsByWorktree[worktreeId] ?? []) {
@@ -65,21 +112,12 @@ export function selectWorktreeHooksUnverifiable(
       liveAgents.push(tab.launchAgent)
     }
   }
-  if (liveAgents.length === 0) {
-    return false
-  }
-  return isWorktreeAgentStatusUnverifiable({
-    liveAgents,
-    installStateByTarget: state.agentHookInstallStateByTarget,
-    connectionId,
-    worktreePath,
-    hasActiveHookEvidence: evidence.hasPermission || evidence.hasLiveWorking
-  })
+  return liveAgents.length > 0 ? { liveAgents, connectionId, worktreePath } : null
 }
 
 function paneUsesNativeHookConfig(
-  state: WorktreeHookObservabilityState,
-  tab: WorktreeHookObservabilityState['tabsByWorktree'][string][number],
+  state: AgentHookInstallStatusConsumerState,
+  tab: AgentHookInstallStatusConsumerState['tabsByWorktree'][string][number],
   ptyId: string
 ): boolean {
   try {

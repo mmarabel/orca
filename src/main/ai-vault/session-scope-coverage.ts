@@ -1,10 +1,18 @@
 import type { AiVaultAgent } from '../../shared/ai-vault-types'
-import { CLAUDE_CWD_BUCKET_LAYOUT, PI_CWD_BUCKET_LAYOUT } from './session-cwd-bucket-layouts'
+import {
+  CLAUDE_CWD_BUCKET_LAYOUT,
+  PI_CWD_BUCKET_LAYOUT,
+  CODEBUDDY_CWD_BUCKET_LAYOUT
+} from './session-cwd-bucket-layouts'
 import type { SessionFileDiscovery } from './session-scanner-types'
 
 // Agents whose on-disk layout names a directory per cwd, so a scope's older
 // sessions can be found without reading every transcript's header.
-export const CWD_BUCKET_LAYOUTS = [CLAUDE_CWD_BUCKET_LAYOUT, PI_CWD_BUCKET_LAYOUT]
+export const CWD_BUCKET_LAYOUTS = [
+  CLAUDE_CWD_BUCKET_LAYOUT,
+  PI_CWD_BUCKET_LAYOUT,
+  CODEBUDDY_CWD_BUCKET_LAYOUT
+]
 
 const CWD_BUCKET_AGENTS: ReadonlySet<AiVaultAgent> = new Set(
   CWD_BUCKET_LAYOUTS.map((layout) => layout.agent)

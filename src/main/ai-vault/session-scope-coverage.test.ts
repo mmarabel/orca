@@ -22,7 +22,7 @@ describe('isAiVaultScopeFullyScanned', () => {
     expect(
       isAiVaultScopeFullyScanned({
         scopePaths,
-        discoveries: [discovery('claude', 40), discovery('pi', 3)],
+        discoveries: [discovery('claude', 40), discovery('pi', 3), discovery('codebuddy', 2)],
         scopePassBounded: false
       })
     ).toBe(true)

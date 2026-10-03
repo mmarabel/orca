@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RuntimeMobileSessionTabsResult } from '../../../shared/runtime-session-contracts'
 import type { StructuredAgentSessionLaunchIntent } from '@/lib/launch-structured-agent-session'
+import { RuntimeRpcCallError } from '@/runtime/runtime-rpc-result'
 
 type CallParams = {
   envelope?: { expectedRuntimeFence?: number | null }
@@ -73,10 +74,10 @@ import {
 } from './structured-agent-session-launch-options'
 import { resetStructuredAgentLaunchPersistenceForTests } from './structured-agent-session-launch-persistence'
 import {
-  markStructuredAgentSessionLaunchPublished,
   resetStructuredAgentLaunchRegistryForTests,
   subscribeStructuredAgentLaunchStatus
 } from './structured-agent-session-launch-registry'
+import { markStructuredAgentSessionLaunchPublished } from './structured-agent-session-launch-publication'
 
 const WORKTREE_ID = 'wt-1'
 const SESSION_ID = 'session-1'
@@ -84,6 +85,8 @@ const SESSION_ID = 'session-1'
 function launchIntent(seedOptions?: Record<string, string>): StructuredAgentSessionLaunchIntent {
   return {
     worktreeId: WORKTREE_ID,
+    executionHostId: 'local',
+    target: { kind: 'local' },
     sessionId: SESSION_ID,
     agent: 'codex',
     params: {
@@ -193,7 +196,7 @@ describe('picks made while a chat launches', () => {
     await settle()
 
     // The host published the tab, but the launch is not published until its picks land.
-    markStructuredAgentSessionLaunchPublished(WORKTREE_ID, SESSION_ID)
+    markStructuredAgentSessionLaunchPublished(WORKTREE_ID, SESSION_ID, 'local')
     expect(lifecycle()).toBe('pending')
     expect(mutations()).toEqual([
       { method: 'agentSession.setOption', fence: 7, key: 'model', value: 'gpt-picked' }
@@ -243,12 +246,16 @@ describe('picks made while a chat launches', () => {
     await settle()
     setOptionReplies[0]!.resolve({
       ok: false,
-      refusal: { code: 'agent_session_option_invalid', message: 'Model gpt-missing is unavailable' }
+      refusal: {
+        code: 'agent_session_operation_capacity',
+        message: 'Model gpt-missing is unavailable'
+      }
     })
 
+    // The picker gets the refusal as a fact; the host's diagnostic is not kept.
     await expect(pick).resolves.toEqual({
       kind: 'refused',
-      message: 'Model gpt-missing is unavailable'
+      failure: { kind: 'refused', code: 'agent_session_operation_capacity' }
     })
     await expect(launch.promptDeliveryResult).resolves.toEqual({
       delivered: true,
@@ -258,6 +265,41 @@ describe('picks made while a chat launches', () => {
       'agentSession.setOption',
       'agentSession.send'
     ])
+  })
+
+  it('reports a refusal the host threw as its fact, never the bare code it carries as a message', async () => {
+    mocks.launch.mockResolvedValue({ sessionId: SESSION_ID, fence: 1 })
+    startStructuredAgentLaunch(WORKTREE_ID, 'codex')
+    const pick = holdStructuredAgentSessionLaunchOption(SESSION_ID, 'model', 'gpt-missing')
+    await settle()
+    setOptionReplies[0]!.resolve(
+      Promise.reject(
+        new RuntimeRpcCallError({
+          id: 'request-1',
+          ok: false,
+          error: {
+            code: 'runtime_error',
+            message: 'agent_session_journal_unreadable',
+            data: {
+              refusal: {
+                code: 'agent_session_journal_unreadable',
+                details: { reason: 'journalUnavailable' }
+              }
+            }
+          },
+          _meta: { runtimeId: 'runtime-1' }
+        })
+      )
+    )
+
+    await expect(pick).resolves.toEqual({
+      kind: 'refused',
+      failure: {
+        kind: 'refused',
+        code: 'agent_session_journal_unreadable',
+        details: { reason: 'journalUnavailable' }
+      }
+    })
   })
 
   it('keeps picks held through a failed start and applies them to the retry', async () => {

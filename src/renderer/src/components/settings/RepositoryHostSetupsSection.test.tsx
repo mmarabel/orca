@@ -25,12 +25,7 @@ const browseDir = vi.fn(async ({ dirPath }: { dirPath: string }) => ({
 }))
 
 function makeRepo(overrides: Partial<Repo> & Pick<Repo, 'id' | 'displayName' | 'path'>): Repo {
-  return {
-    badgeColor: '#737373',
-    addedAt: 100,
-    kind: 'git',
-    ...overrides
-  }
+  return { badgeColor: '#737373', addedAt: 100, kind: 'git', ...overrides }
 }
 
 function makeProject({ id, ...overrides }: Partial<Project> & Pick<Project, 'id'>): Project {
@@ -90,13 +85,18 @@ afterEach(() => {
   useAppStore.setState(useAppStore.getInitialState(), true)
 })
 
-function renderSection(repo: Repo, selectedProjectSetupId?: string): void {
+function renderSection(
+  repo: Repo,
+  selectedProjectSetupId?: string,
+  settingsSelectionKey?: string
+): void {
   act(() => {
     root.render(
       <TooltipProvider>
         <RepositoryHostSetupsSection
           repo={repo}
           selectedProjectSetupId={selectedProjectSetupId}
+          settingsSelectionKey={settingsSelectionKey}
           forceVisible
           searchQuery=""
           searchEntries={[]}
@@ -500,7 +500,7 @@ describe('RepositoryHostSetupsSection', () => {
     expect(openSettingsTarget).not.toHaveBeenCalled()
   })
 
-  it('clones the project onto another known host from settings', async () => {
+  it('prefills and clones the project while keeping the split settings entry selected', async () => {
     const openSettingsPage = vi.fn()
     const openSettingsTarget = vi.fn()
     const setSettingsProjectHostSelection = vi.fn()
@@ -550,7 +550,7 @@ describe('RepositoryHostSetupsSection', () => {
       setupProjectClone
     })
 
-    renderSection(localRepo)
+    renderSection(localRepo, undefined, 'github:stablyai/orca::setup:local-repo')
     clickButton('Add to another host')
     clickButton('Clone from URL')
 
@@ -601,7 +601,7 @@ describe('RepositoryHostSetupsSection', () => {
       displayName: 'Orca'
     })
     expect(setSettingsProjectHostSelection).toHaveBeenCalledWith(
-      'github:stablyai/orca',
+      'github:stablyai/orca::setup:local-repo',
       'ssh:openclaw%202'
     )
     expect(openSettingsPage).not.toHaveBeenCalled()

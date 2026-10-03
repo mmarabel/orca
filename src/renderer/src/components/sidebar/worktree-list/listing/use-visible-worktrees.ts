@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '@/store'
+import { getAllWorktreesFromState } from '@/store/selectors'
 import { getAgentStatusEpochNow } from '@/lib/agent-status-epoch-clock'
 import {
   getWorktreeIdsWithLiveAgent,
@@ -82,6 +83,10 @@ export function useVisibleSidebarWorktrees(args: {
     getStructuredChatWorktreeIds(showSleepingWorkspaces, s.unifiedTabsByWorktree)
   )
 
+  const candidateWorktreeIds = useMemo(
+    () => getAllWorktreesFromState({ worktreesByRepo }).map((worktree) => worktree.id),
+    [worktreesByRepo]
+  )
   const retentionStateRef = useRef(createSleepingSweepRetentionState())
   const [sweepGraceTick, setSweepGraceTick] = useState(0)
 
@@ -92,12 +97,16 @@ export function useVisibleSidebarWorktrees(args: {
     void agentStatusEpoch
     void sweepGraceTick
     if (showSleepingWorkspaces) {
-      retentionStateRef.current = createSleepingSweepRetentionState()
       return {
         worktreeIdsWithLiveAgent: EMPTY_WORKTREE_ID_SET,
         sleepingSweepExemptWorktreeIds: undefined,
-        nextExpiryInMs: null
+        nextExpiryInMs: null,
+        retentionState: createSleepingSweepRetentionState()
       }
+    }
+    const retentionState = {
+      seenActiveIds: new Set(retentionStateRef.current.seenActiveIds),
+      inactiveSinceById: new Map(retentionStateRef.current.inactiveSinceById)
     }
     const worktreeIdsWithLiveAgent = getWorktreeIdsWithLiveAgent(
       useAppStore.getState().agentStatusByPaneKey,
@@ -107,8 +116,8 @@ export function useVisibleSidebarWorktrees(args: {
     // Why: a PTY rebind empties ptyIdsByTabId for a commit, which would sweep an
     // open remote workspace out and back in one frame (#15996).
     const { retainedIds, nextExpiryInMs } = updateSleepingSweepRetention({
-      state: retentionStateRef.current,
-      candidateWorktreeIds: sortedIds,
+      state: retentionState,
+      candidateWorktreeIds,
       isActive: (worktreeId) =>
         hasActiveWorkspaceActivity(
           worktreeId,
@@ -124,7 +133,8 @@ export function useVisibleSidebarWorktrees(args: {
     return {
       worktreeIdsWithLiveAgent,
       sleepingSweepExemptWorktreeIds: retainedIds,
-      nextExpiryInMs
+      nextExpiryInMs,
+      retentionState
     }
   }, [
     agentStatusEpoch,
@@ -135,8 +145,13 @@ export function useVisibleSidebarWorktrees(args: {
     ptyIdsByTabId,
     browserTabsByWorktree,
     worktreeIdsWithStructuredChat,
-    sortedIds
+    candidateWorktreeIds
   ])
+
+  // Why after commit: abandoned renders must not start, prune or reset grace windows.
+  useEffect(() => {
+    retentionStateRef.current = sweepInputs.retentionState
+  }, [sweepInputs.retentionState])
 
   // Why: without a wake the last grace window would hold its row until some
   // unrelated store change happened to recompute the sweep.

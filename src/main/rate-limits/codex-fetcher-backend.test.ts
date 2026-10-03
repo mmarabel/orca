@@ -288,12 +288,35 @@ describe('Codex backend rate-limit requests', () => {
         ok: true,
         json: async () => ({ available_count: 0, credits: [] })
       } as Response)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 'reset' })))
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ code: 'reset' })))
     setMainHttpClient({ fetch: clientFetch, proxySession: () => null })
 
     try {
       await fetchCodexRateLimits({ codexHomePath: wslHome })
 
-      expect(clientFetch).toHaveBeenCalled()
+      await expect(
+        consumeCodexRateLimitResetCredit({
+          codexHomePath: wslHome,
+          idempotencyKey: 'redeem-proxy-123'
+        })
+      ).resolves.toBe('reset')
+
+      expect(clientFetch).toHaveBeenCalledTimes(3)
+      expect(clientFetch).toHaveBeenNthCalledWith(
+        3,
+        'https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ redeem_request_id: 'redeem-proxy-123' }),
+          signal: expect.any(AbortSignal),
+          headers: expect.objectContaining({
+            Authorization: 'Bearer access-token',
+            'ChatGPT-Account-Id': 'account-id',
+            'Content-Type': 'application/json'
+          })
+        })
+      )
       expect(vi.mocked(fetch)).not.toHaveBeenCalled()
     } finally {
       setMainHttpClient(null)

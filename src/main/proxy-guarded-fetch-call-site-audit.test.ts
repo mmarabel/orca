@@ -22,7 +22,9 @@ const AUDITED_NON_NET_FETCH_CALLS = new Map<string, number>([
   // (main/host/electron-http-client.ts) or to the global-fetch-audited Node fallback.
   ['main/jira/authenticated-request.ts', 1],
   // Same port, reached through the proxy-aware wrapper the Cloud and Relay clients use.
-  ['main/network/http-client.ts', 1]
+  ['main/network/http-client.ts', 1],
+  // The same injected HttpClient, and the updater's deps.fetch that it is passed as.
+  ['main/runtime/agent-state-rules/agent-state-rules-live-update.ts', 2]
 ])
 
 // `globalThis.fetch` / `global.fetch` belong to global-fetch-call-site-audit.test.ts.

@@ -21,6 +21,7 @@ const AUDITED_GLOBAL_FETCH_LINES = new Map<string, number>([
   ['main/bitbucket/user-request.ts', 1],
   ['main/gitea/client.ts', 1],
   ['main/rate-limits/codex-fetcher.ts', 3],
+  ['main/rate-limits/zcode-usage-fetcher.ts', 1],
   ['main/runtime/push/push-gateway-client.ts', 1],
   ['main/runtime/relay/relay-region-catalog-fetch.ts', 1],
   // Measurement reuses the audited catalog/probe consumers, which consume or cancel every body.

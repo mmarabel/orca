@@ -7,8 +7,9 @@ import {
 } from '../../shared/keybindings'
 import type { UpdateCheckOptions } from '../../shared/update-status-types'
 import { translateMain } from '../i18n/main-i18n'
+import { createAppMenuPasteItem } from './app-menu-paste-item'
 import { createAppMenuSelectionItem } from './app-menu-selection-item'
-import { resolveEditMenuTarget } from './edit-menu-focus-target'
+import { createAppWindowMenu } from './app-menu-window'
 
 export type AppearanceMenuState = {
   showTasksButton: boolean
@@ -114,8 +115,16 @@ function buildAndApplyMenu(options: RegisterAppMenuOptions): void {
     click: checkForUpdatesClick
   }
 
+  const settingsBindings = getEffectiveKeybindingsForAction(
+    'app.settings',
+    process.platform,
+    getKeybindings?.()
+  )
+  const settingsShortcut = settingsBindings.length
+    ? `\t${formatKeybindingList(settingsBindings, process.platform)}`
+    : ''
   const settingsItem: Electron.MenuItemConstructorOptions = {
-    label: `${translateMain('menu.settings', 'Settings')}\t${shortcutLabel('app.settings')}`,
+    label: `${translateMain('menu.settings', 'Settings')}${settingsShortcut}`,
     click: () => onOpenSettings()
   }
 
@@ -184,31 +193,10 @@ function buildAndApplyMenu(options: RegisterAppMenuOptions): void {
         label: translateMain('menu.copy', 'Copy'),
         isMac
       }),
-      {
+      createAppMenuPasteItem({
         label: translateMain('menu.paste', 'Paste'),
-        accelerator: 'CmdOrCtrl+V',
-        click: () => {
-          // Why: a focused terminal/native-chat pane is not a native editable
-          // control, so raw Electron paste cannot know which Orca surface owns it.
-          const focusedWindow = BrowserWindow.getFocusedWindow()
-          if (focusedWindow) {
-            // Why: DevTools or a guest view can own the caret while this window is "focused".
-            const editTarget = resolveEditMenuTarget(focusedWindow)
-            if (editTarget) {
-              editTarget.paste()
-              return
-            }
-            focusedWindow.webContents.send('ui:appMenuPaste')
-            return
-          }
-
-          // Why: a macOS native panel (open/save, Go to Folder) leaves no focused
-          // BrowserWindow, so overriding the paste role would strand Cmd+V as a no-op.
-          if (isMac) {
-            Menu.sendActionToFirstResponder('paste:')
-          }
-        }
-      },
+        isMac
+      }),
       createAppMenuSelectionItem({
         action: 'select-all',
         label: translateMain('menu.selectAll', 'Select All'),
@@ -317,10 +305,7 @@ function buildAndApplyMenu(options: RegisterAppMenuOptions): void {
     ]
   }
 
-  const windowMenu: Electron.MenuItemConstructorOptions = {
-    label: translateMain('menu.window', 'Window'),
-    submenu: [{ role: 'minimize' }, { role: 'zoom' }]
-  }
+  const windowMenu = createAppWindowMenu(translateMain('menu.window', 'Window'), isMac)
 
   const helpMenu: Electron.MenuItemConstructorOptions = {
     label: translateMain('menu.help', 'Help'),

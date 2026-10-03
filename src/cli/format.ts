@@ -1,3 +1,4 @@
+import type { CliStatusCaller } from '../shared/orchestration-caller-status'
 import type { CliStatusResult } from '../shared/runtime-types'
 import { prepareComputerCliJsonResult } from './computer-format'
 import type { RuntimeRpcSuccess } from './runtime-client'
@@ -136,7 +137,8 @@ export function formatCliStatus(status: CliStatusResult): string {
     `runtimeReachable: ${status.runtime.reachable}`,
     `runtimeConnectionState: ${status.runtime.connectionState ?? 'unknown'}`,
     `runtimeId: ${status.runtime.runtimeId ?? 'none'}`,
-    `graphState: ${status.graph.state}`
+    `graphState: ${status.graph.state}`,
+    ...(status.caller === undefined ? [] : [`orcaSessionId: ${formatStatusCaller(status.caller)}`])
   ]
   if (status.daemon) {
     lines.push(
@@ -145,6 +147,13 @@ export function formatCliStatus(status: CliStatusResult): string {
     )
   }
   return lines.join('\n')
+}
+
+function formatStatusCaller(caller: CliStatusCaller): string {
+  if ('refusal' in caller) {
+    return `none (refused: ${caller.refusal.code})`
+  }
+  return `${caller.orcaSessionId}${caller.live ? '' : ' (not live)'}`
 }
 
 export function formatStatus(status: CliStatusResult): string {

@@ -6,7 +6,7 @@ import {
 
 const UNREACHABLE = 'Could not connect to the remote Orca runtime.'
 const LAN_TAIL =
-  "If this device is not on the server's network it cannot reach it — re-pair with an address it can reach, such as the server's Tailscale address (100.x or a *.ts.net name); see https://tailscale.com/download. Otherwise check that the server is awake and not firewalling the port."
+  "If this device has no route to that address, re-pair with an address it can reach, such as the server's Tailscale address (100.x or a *.ts.net name); see https://tailscale.com/download. If a route exists, check that the server is awake and not firewalling the port."
 
 describe('isTailscaleEndpoint', () => {
   it('matches MagicDNS hostnames', () => {
@@ -94,7 +94,7 @@ describe('withRemoteRuntimeTailscaleHint', () => {
   it('names a LAN endpoint and does not blame Tailscale', () => {
     const result = withRemoteRuntimeTailscaleHint(UNREACHABLE, 'ws://192.168.1.20:6768')
     expect(result).toBe(
-      "Could not connect to the remote Orca runtime at ws://192.168.1.20:6768. That is a local-network address. If this device is not on the server's network it cannot reach it — re-pair with an address it can reach, such as the server's Tailscale address (100.x or a *.ts.net name); see https://tailscale.com/download. Otherwise check that the server is awake and not firewalling the port."
+      "Could not connect to the remote Orca runtime at ws://192.168.1.20:6768. That is a local-network address. If this device has no route to that address, re-pair with an address it can reach, such as the server's Tailscale address (100.x or a *.ts.net name); see https://tailscale.com/download. If a route exists, check that the server is awake and not firewalling the port."
     )
     expect(result).not.toContain('connect both devices to Tailscale')
     expect(withRemoteRuntimeTailscaleHint(UNREACHABLE, 'ws://[fe80::1]:6768')).toContain(
@@ -102,14 +102,16 @@ describe('withRemoteRuntimeTailscaleHint', () => {
     )
   })
 
-  // Why: the LAN hint must not assert a cause the client cannot check. A routed VPN reaches
-  // 192.168.x.x, and a same-network failure is usually a sleeping or firewalled host — and a
-  // user who is not on a tailnet at all still needs the download pointer.
-  it('keeps the LAN hint conditional and keeps the Tailscale download link', () => {
+  // A routed VPN can reach a private address without joining the server's network.
+  it('bases LAN re-pairing advice on routing and keeps the Tailscale download link', () => {
     const result = withRemoteRuntimeTailscaleHint(UNREACHABLE, 'ws://10.0.0.8:6768')
-    expect(result).toContain("If this device is not on the server's network it cannot reach it")
+    expect(result).toContain('If this device has no route to that address, re-pair')
     expect(result).toContain('https://tailscale.com/download')
-    expect(result).toContain('check that the server is awake and not firewalling the port')
+    expect(result).toContain(
+      'If a route exists, check that the server is awake and not firewalling the port'
+    )
+    expect(result).not.toContain("not on the server's network")
+    expect(result).not.toContain('cannot reach it')
     expect(result).not.toContain('only works from')
   })
 

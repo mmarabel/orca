@@ -67,6 +67,13 @@ describe('Tailscale hint on remote runtime connection failure', () => {
     if (response.ok === false) {
       expect(response.error.message).toContain('at ws://192.168.1.20:9')
       expect(response.error.message).toContain('local-network address')
+      expect(response.error.message).toContain(
+        'If this device has no route to that address, re-pair'
+      )
+      expect(response.error.message).toContain(
+        'If a route exists, check that the server is awake and not firewalling the port'
+      )
+      expect(response.error.message).not.toContain("not on the server's network")
       expect(response.error.message).not.toContain('connect both devices to Tailscale')
     }
   })

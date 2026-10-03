@@ -69,11 +69,8 @@ export function isTailscaleEndpoint(endpoint: string | null | undefined): boolea
 const TAILNET_ENDPOINT_HINT =
   "The server may be offline on your tailnet, or its Tailscale Funnel reverted to tailnet-only. Confirm it's reachable; re-pair only when adding a new device, since already-paired devices reconnect with their saved token."
 
-// Why: a LAN address is unreachable from another network no matter how much Tailscale is
-// installed — but it is also the ordinary address for a device on the same network, so state
-// the condition rather than asserting a cause the client cannot verify, and keep the install
-// pointer the other hint carries for a user who is not on a tailnet at all.
-const LAN_ENDPOINT_HINT_BODY = `is a local-network address. If this device is not on the server's network it cannot reach it — re-pair with an address it can reach, such as the server's Tailscale address (100.x or a *.ts.net name); see ${TAILSCALE_DOWNLOAD_URL}. Otherwise check that the server is awake and not firewalling the port.`
+// A routed VPN can reach a LAN address; the client cannot infer routing from network membership.
+const LAN_ENDPOINT_HINT_BODY = `is a local-network address. If this device has no route to that address, re-pair with an address it can reach, such as the server's Tailscale address (100.x or a *.ts.net name); see ${TAILSCALE_DOWNLOAD_URL}. If a route exists, check that the server is awake and not firewalling the port.`
 
 const OTHER_NETWORK_HINT = `If the server is on another network, connect both devices to Tailscale and pair using its Tailscale address (100.x or a *.ts.net name). See ${TAILSCALE_DOWNLOAD_URL}.`
 

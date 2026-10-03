@@ -3,8 +3,7 @@ import { dispatchClaudeCommand } from './claude-structured-command-dispatch'
 import type {
   AgentSessionAcquisition,
   StructuredAgentSessionAcquireInput,
-  StructuredAgentSessionAdapter,
-  StructuredAgentSessionStopCause
+  StructuredAgentSessionAdapter
 } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import { stopClaudeBackgroundTasks } from './claude-structured-control-actions'
 import { dispatchClaudeTurn } from './claude-structured-dispatch'
@@ -37,7 +36,7 @@ import {
 } from './claude-structured-session-exit-lifecycle'
 import type { AgentSessionBackgroundTaskState } from '../../shared/agent-session-wire'
 import { resolveClaudeProviderHistoryWindow } from './claude-structured-history-window'
-import { drainClaudeChildWork } from './claude-child-work-evidence'
+import { claudePromptCardWritten, drainClaudeChildWork } from './claude-child-work-evidence'
 import {
   answerClaudeStructuredPrompt,
   cancelClaudeStructuredTurn,
@@ -153,6 +152,10 @@ export class ClaudeStructuredSessionAdapter implements StructuredAgentSessionAda
     } else if (event.type === 'message') {
       session?.childWork.observe(event.message)
       session?.backgroundTasks.observe(event.message, event.startsTurn === true)
+    } else if (event.type === 'prompt-cancelled') {
+      // A withdrawn request frees its child before its card closes: the journal may take that
+      // write, and publish it, as it is submitted.
+      this.publishChildWork(event.sessionId, session)
     }
     if (event.type === 'message' && session?.commands.observe(event.message)) {
       session.events?.publish()
@@ -160,13 +163,15 @@ export class ClaudeStructuredSessionAdapter implements StructuredAgentSessionAda
     session?.translator?.handle(event)
     this.deps.onEvent?.(event)
     this.publishChildWork(event.sessionId, session, event.type === 'message' ? event.message : null)
+    // A subagent's card holds it waiting only once its row is written: its wait goes out after.
+    void claudePromptCardWritten(session, event)?.then(() => this.publishChildWork(event.sessionId))
   }
 
   /** After the journal handled the frame, which republished the parent's own row: the host never
    *  holds a child record ahead of the rows that frame wrote, and never before its parent. */
   private publishChildWork(
     sessionId: string,
-    session: ClaudeSession | null | undefined,
+    session: ClaudeSession | null | undefined = this.sessions.get(sessionId),
     message: Record<string, unknown> | null = null
   ): void {
     const evidence = drainClaudeChildWork(session, message, this.deps.now?.() ?? Date.now())
@@ -198,8 +203,23 @@ export class ClaudeStructuredSessionAdapter implements StructuredAgentSessionAda
   stopEndsSession = (): boolean => true
   awaitStoppedRequestEnd = claudeStoppedRequestEndWait(this.sessions)
   routePromptCancel = claudePromptCancelRoute
-  dismissPrompt: StructuredAgentSessionAdapter['dismissPrompt'] = (request) =>
-    dismissClaudeStructuredPrompt({ request, sessions: this.sessions })
+  dismissPrompt: NonNullable<StructuredAgentSessionAdapter['dismissPrompt']> = (request) =>
+    this.freeingAsker(request, (freeing) =>
+      dismissClaudeStructuredPrompt({ request: freeing, sessions: this.sessions })
+    )
+  /** An answered or dismissed request frees the child it blocked before the host records the card,
+   *  so no row reads the child waiting beside a closed card; no provider frame says so first. */
+  private freeingAsker = <R extends { sessionId: string; commit: () => Promise<void> }>(
+    request: R,
+    settle: (request: R) => Promise<void>
+  ): Promise<void> => {
+    const free = () => this.publishChildWork(request.sessionId)
+    const commit = async (): Promise<void> => {
+      free()
+      await request.commit()
+    }
+    return settle({ ...request, commit }).finally(free)
+  }
   stopBackgroundTasks: NonNullable<StructuredAgentSessionAdapter['stopBackgroundTasks']> = async (
     input
   ) => {
@@ -241,7 +261,9 @@ export class ClaudeStructuredSessionAdapter implements StructuredAgentSessionAda
     return session ? claudeHoldsDispatch(session) : false
   }
   answerPrompt: StructuredAgentSessionAdapter['answerPrompt'] = (request) =>
-    answerClaudeStructuredPrompt({ request, sessions: this.sessions })
+    this.freeingAsker(request, (freeing) =>
+      answerClaudeStructuredPrompt({ request: freeing, sessions: this.sessions })
+    )
   setOption: StructuredAgentSessionAdapter['setOption'] = (input) =>
     setClaudeStructuredSessionOption(
       this.session(input.sessionId),
@@ -287,30 +309,21 @@ export class ClaudeStructuredSessionAdapter implements StructuredAgentSessionAda
       ...(this.deps.onEvent ? { onEvent: this.deps.onEvent } : {})
     })
 
-  closeSession = (sessionId: string, cause?: StructuredAgentSessionStopCause): Promise<boolean> =>
+  closeSession = (sessionId: string): Promise<boolean> =>
     // After the close, not before: releasing an exit still settling settles it on the way.
-    this.closeSessionProcess(sessionId, cause).finally(() =>
-      this.settledExitErrors.delete(sessionId)
-    )
+    this.closeSessionProcess(sessionId).finally(() => this.settledExitErrors.delete(sessionId))
 
-  private closeSessionProcess(
-    sessionId: string,
-    cause: StructuredAgentSessionStopCause | undefined
-  ): Promise<boolean> {
+  private closeSessionProcess(sessionId: string): Promise<boolean> {
     // An exit seen first settles as that exit, whoever asked for the close after it.
     if (this.exits.has(sessionId)) {
       return this.releaseAcquisition({ sessionId })
     }
-    return this.afterClose(sessionId, () => this.closeProviderSession(sessionId, cause))
+    return this.afterClose(sessionId, () => this.closeProviderSession(sessionId))
   }
 
-  private closeProviderSession = (
-    sessionId: string,
-    stopCause?: StructuredAgentSessionStopCause
-  ): Promise<boolean> =>
+  private closeProviderSession = (sessionId: string): Promise<boolean> =>
     closeClaudeSession({
       sessionId,
-      ...(stopCause ? { stopCause } : {}),
       sessions: this.sessions,
       acquisitions: this.acquisitions,
       ...(this.deps.persistHandle ? { persistHandle: this.deps.persistHandle } : {}),

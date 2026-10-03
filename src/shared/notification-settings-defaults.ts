@@ -9,6 +9,7 @@ export function getDefaultNotificationSettings(): NotificationSettings {
     showChildWorktreeUnread: true,
     customSoundId: 'system',
     customSoundPath: null,
-    customSoundVolume: 100
+    customSoundVolume: 100,
+    mutedNotificationSourceIds: []
   }
 }

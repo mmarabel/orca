@@ -4,6 +4,7 @@ import type {
 } from '../../../shared/worktree/launch-types'
 import type { ExecutionHostId } from '../../../shared/execution-host'
 import { shouldAutoCreateInitialTerminal } from '@/components/terminal/initial-terminal'
+import { isTerminalWorkspaceEmptiedOnPurpose } from '../../../shared/closed-terminal-tab-tombstones'
 import {
   createSequencedSetupAgentCommands,
   withSequencedSetupEnv
@@ -31,6 +32,8 @@ import {
   type IssueCommandLaunch
 } from '@/lib/worktree-setup-issue-command-queue'
 import { applyDefaultTerminalTabs } from '@/lib/worktree-default-terminal-tabs'
+import { openDefaultAgentChatInEmptyWorkspace } from '@/lib/empty-workspace-default-agent-chat'
+import { isEmptyWorkspaceDefaultSurfacePending } from '@/lib/empty-workspace-default-surface-claims'
 
 function getSetupRunnerCommandPlatformForLaunch(setup: WorktreeSetupLaunch): 'windows' | 'posix' {
   return getSetupRunnerCommandPlatformForPath(
@@ -39,15 +42,22 @@ function getSetupRunnerCommandPlatformForLaunch(setup: WorktreeSetupLaunch): 'wi
   )
 }
 
+export type GatedEmptyWorkspaceReseedIntent = {
+  callerProvidesSurface: boolean
+  seedUserDefaultSurface: boolean
+  executionHostId?: ExecutionHostId
+}
+
 /** Re-seed after an empty gate unless its activation owns the surface or no longer owns the host. */
 export function reseedGatedEmptyWorkspace(
   workspaceKey: string,
-  callerProvidesSurface: boolean,
-  executionHostId?: ExecutionHostId
+  intent: GatedEmptyWorkspaceReseedIntent
 ): void {
+  const { callerProvidesSurface, seedUserDefaultSurface, executionHostId } = intent
   const state = useAppStore.getState()
   if (
     callerProvidesSurface === true ||
+    isEmptyWorkspaceDefaultSurfacePending(workspaceKey) ||
     state.activeWorktreeId !== workspaceKey ||
     (executionHostId !== undefined && state.activeWorkspaceExecutionHostId !== executionHostId)
   ) {
@@ -61,7 +71,8 @@ export function reseedGatedEmptyWorkspace(
     undefined,
     undefined,
     {
-      reseedEmptiedWorkspace: true
+      reseedEmptiedWorkspace: true,
+      ...(seedUserDefaultSurface ? { seedUserDefaultSurface: true } : {})
     }
   )
 }
@@ -179,7 +190,7 @@ export function ensureWorktreeHasInitialTerminal(
   // terminal is added; and closeTabPreservingPty (use-terminal-pane-lifecycle.ts) skips both
   // deactivation hooks for pane moves and retirement, where re-seeding is the wanted outcome.
   const shouldHonourClosedTerminalTombstone =
-    Object.hasOwn(store.tabsByWorktree, worktreeId) && opts?.reseedEmptiedWorkspace !== true
+    isTerminalWorkspaceEmptiedOnPurpose(store, worktreeId) && opts?.reseedEmptiedWorkspace !== true
   // Why: an execution host that has not answered is not a host with no terminals; seeding into that
   // gap is what adds a tab per launch (STA-4658). Explicit launch work below is a request to create
   // a terminal now, so it stays ungated.
@@ -219,6 +230,16 @@ export function ensureWorktreeHasInitialTerminal(
   )
   if (templatedTabId) {
     return templatedTabId
+  }
+  if (
+    opts?.seedUserDefaultSurface === true &&
+    !hasExplicitLaunchWork &&
+    opts.activateCreatedTabs !== false
+  ) {
+    const defaultChat = openDefaultAgentChatInEmptyWorkspace(worktreeId)
+    if (defaultChat) {
+      return defaultChat.primaryTabId
+    }
   }
 
   // Why: tag this activation-created tab so its PTY spawn doesn't count as activity and reshuffle the Recent sort.

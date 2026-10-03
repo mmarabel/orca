@@ -1,3 +1,4 @@
+import { isTmuxInnerSubject } from '../../../shared/tmux-agent-hook-owner'
 import type {
   AgentStatusClearIpcPayload,
   AgentStatusIpcPayload
@@ -53,8 +54,8 @@ export abstract class AgentHookServerListeners extends AgentHookServerState {
         order: getLegacyStatusListingOrder(this.state, paneKey) ?? UNORDERED_STATUS_ROW
       })
     }
-    for (const parent of this.canonicalStatusStore.getSnapshot().parents) {
-      if (!parent.status) {
+    for (const parent of this.canonicalStatusStore.getParents()) {
+      if (!parent.status || isTmuxInnerSubject(parent.subject)) {
         continue
       }
       rows.push({

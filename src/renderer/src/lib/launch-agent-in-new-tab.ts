@@ -24,7 +24,7 @@ import type { LaunchSource } from '../../../shared/telemetry-events'
 import { resolveAgentLaunchExecutionContext } from '@/lib/launch-agent-execution-context'
 import { resolveInitialNativeChatSessionOptions } from '@/components/native-chat/native-chat-launch-session-options'
 import { seedNativeChatAppliedSessionOptions } from '@/components/native-chat/native-chat-session-option-cache'
-import { launchAgentInStructuredNewTab } from '@/lib/launch-agent-in-new-tab-structured'
+import { launchStructuredAgentFromNewTab } from '@/lib/launch-agent-in-new-tab-structured-route'
 import type { StructuredAgentLaunchSettlement } from '@/lib/structured-agent-launch-settlement'
 import { workspaceKindForWorktreeId } from '@/lib/agent-launch-route-input'
 import {
@@ -53,14 +53,15 @@ export type LaunchAgentInNewTabArgs = {
   /** Called after the prompt is actually delivered to the agent input path. */
   onPromptDelivered?: () => void
   /**
-   * Whether the new terminal tab takes the global selection. The floating workspace passes `false`
-   * and selects within its own group instead, so launching there does not move the main window's
-   * active tab. Terminal surface only — the structured and host-published routes own their own
-   * activation.
+   * Called before `onPromptDelivered` when the paste was written without ever observing the
+   * agent's composer, so the launch cannot claim the prompt arrived. Fires only on the
+   * terminal route, whose readiness signal the client watches itself.
    */
-  activate?: boolean
+  onPromptDeliveryUnconfirmed?: () => void
   /** Keeps a preflighted route authoritative across workspace creation. */
   agentSessionLaunchPlan?: AgentSessionLaunchPlan
+  /** The launch seeds a workspace being opened, so its PTY spawn must not reshuffle Recent. */
+  pendingActivationSpawn?: boolean
   /** Lets a workspace reveal itself before the selected surface opens. */
   beforeSurfaceOpen?: (
     surface:
@@ -113,9 +114,10 @@ function launchAgentInNewTabInternal(args: LaunchAgentInNewTabArgs): LaunchAgent
     quickCommandLabel,
     launchPlatform,
     onPromptDelivered,
+    onPromptDeliveryUnconfirmed,
     agentSessionLaunchPlan,
-    beforeSurfaceOpen,
-    activate
+    pendingActivationSpawn,
+    beforeSurfaceOpen
   } = args
   const store = useAppStore.getState()
   const { worktreeSshConnectionId, resolvedLaunchPlatform, isRemote, queuedShell } =
@@ -166,6 +168,36 @@ function launchAgentInNewTabInternal(args: LaunchAgentInNewTabArgs): LaunchAgent
     return null
   }
 
+  // Why first: a structured chat is created on whichever runtime owns the workspace, a paired
+  // server included, so only a non-structured route falls through to the host-published terminal.
+  const plan =
+    agentSessionLaunchPlan ??
+    planAgentSessionLaunch(store, {
+      agent,
+      workspace: { kind: workspaceKind, worktreeId },
+      prompt: trimmedPrompt,
+      promptDelivery: viewModePromptDelivery,
+      tuiCustomization: { cwd: initialCwd },
+      initialSessionOptions: startupPlan.sessionOptions,
+      onPromptDelivered
+    })
+  if (plan?.route === 'structured-native-chat') {
+    const structured = launchStructuredAgentFromNewTab({
+      plan,
+      worktreeId,
+      ...(groupId ? { groupId } : {}),
+      ...(beforeSurfaceOpen ? { beforeSurfaceOpen } : {}),
+      // A paired server's "no" opens this same launch as a terminal, with the caller's arguments.
+      openTerminal: (terminalPlan) =>
+        launchAgentInNewTabInternal({
+          ...args,
+          beforeSurfaceOpen: undefined,
+          agentSessionLaunchPlan: terminalPlan
+        })
+    })
+    return structured && { ...structured, startupPlan }
+  }
+
   const runtimeEnvironmentId = getRuntimeEnvironmentIdForWorktree(store, worktreeId)
   if (isWebRuntimeSessionActive(runtimeEnvironmentId)) {
     if (beforeSurfaceOpen?.({ kind: 'host-published' }) === false) {
@@ -198,46 +230,6 @@ function launchAgentInNewTabInternal(args: LaunchAgentInNewTabArgs): LaunchAgent
     }
   }
 
-  const plan =
-    agentSessionLaunchPlan ??
-    planAgentSessionLaunch(store, {
-      agent,
-      workspace: { kind: workspaceKind, worktreeId },
-      prompt: trimmedPrompt,
-      promptDelivery: viewModePromptDelivery,
-      tuiCustomization: { cwd: initialCwd },
-      initialSessionOptions: startupPlan.sessionOptions,
-      onPromptDelivered
-    })
-  if (plan?.route === 'structured-native-chat') {
-    const structured = launchAgentInStructuredNewTab({
-      plan,
-      ...(beforeSurfaceOpen
-        ? {
-            beforeOpen: (sessionId: string) =>
-              beforeSurfaceOpen({ kind: 'local-agent-session', sessionId })
-          }
-        : {}),
-      ...(groupId ? { targetGroupId: groupId } : {})
-    })
-    if (!structured) {
-      return null
-    }
-    return {
-      surface: {
-        kind: 'local-agent-session',
-        tabId: structured.tabId,
-        sessionId: structured.sessionId
-      },
-      startupPlan,
-      pasteDraftAfterLaunch: false,
-      structuredSettlement: structured.structuredSettlement,
-      ...(structured.promptDeliveryResult
-        ? { promptDeliveryResult: structured.promptDeliveryResult }
-        : {})
-    }
-  }
-
   if (beforeSurfaceOpen?.({ kind: 'local-terminal' }) === false) {
     return null
   }
@@ -246,7 +238,7 @@ function launchAgentInNewTabInternal(args: LaunchAgentInNewTabArgs): LaunchAgent
   const tab = store.createTab(worktreeId, groupId, undefined, {
     launchAgent: agent,
     quickCommandLabel,
-    ...(activate === false ? { activate: false } : {}),
+    ...(pendingActivationSpawn ? { pendingActivationSpawn: true } : {}),
     ...initialViewModeProps
   })
   seedNativeChatAppliedSessionOptions(tab.id, agent, startupPlan.sessionOptions)
@@ -293,7 +285,8 @@ function launchAgentInNewTabInternal(args: LaunchAgentInNewTabArgs): LaunchAgent
       agent,
       submit: submitPastedPrompt,
       forcePaste: true,
-      onTimeout: timeoutNotice.onTimeout
+      onTimeout: timeoutNotice.onTimeout,
+      ...(onPromptDeliveryUnconfirmed ? { onUnconfirmedDelivery: onPromptDeliveryUnconfirmed } : {})
     }).then((delivered) => {
       if (delivered) {
         if (agent === 'command-code' && submitPastedPrompt) {
@@ -317,9 +310,8 @@ function launchAgentInNewTabInternal(args: LaunchAgentInNewTabArgs): LaunchAgent
   }
 
   // Why: without setActiveTabType('terminal') an activated launch can stay hidden behind an editor.
-  if (activate !== false) {
-    store.setActiveTabType('terminal')
-  }
+  // Scoped to the launch's worktree so a floating or background launch leaves the main window's tab alone.
+  store.setActiveTabType('terminal', worktreeId)
 
   // Why: persist tab-bar order so reconcileTabOrder doesn't fall back to terminals-first and jump the new tab to index 0.
   persistAgentLaunchTabOrder(worktreeId, tab.id)

@@ -412,7 +412,7 @@ describe('OrcaRuntimeService', () => {
     await vi.waitFor(() => expect(spawn).toHaveBeenCalledOnce())
 
     setSession(getDefaultWorkspaceSession())
-    runtimeStore.persistPtyBinding.mockReturnValue(false)
+    runtimeStore.persistPtyBinding.mockResolvedValue(false)
     resolveSpawn({ id: 'rejected-split-pty' })
 
     await expect(split).rejects.toThrow('terminal_split_source_not_found')

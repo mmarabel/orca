@@ -52,20 +52,29 @@ export function getUnreadBadgeCount({
     return unreadWorktreeIds.size
   }
 
-  for (const [worktreeId, tabs] of Object.entries(tabsByWorktree)) {
+  const worktreeIds = new Set([
+    ...Object.keys(tabsByWorktree),
+    ...Object.keys(unifiedTabsByWorktree ?? {})
+  ])
+  for (const worktreeId of worktreeIds) {
     const owners = new Map<string, UnreadBadgeOwnedTab | null>()
     for (const owner of unifiedTabsByWorktree?.[worktreeId] ?? []) {
       if (owner.worktreeId === worktreeId) {
         owners.set(owner.id, owners.has(owner.id) ? null : owner)
       }
     }
-    for (const tab of tabs) {
-      if (!Object.hasOwn(unreadTerminalTabs, tab.id)) {
+    // Structured-chat tabs have no backing terminal-tab record.
+    const tabIds = new Set([
+      ...(tabsByWorktree[worktreeId] ?? []).map((tab) => tab.id),
+      ...owners.keys()
+    ])
+    for (const tabId of tabIds) {
+      if (!Object.hasOwn(unreadTerminalTabs, tabId)) {
         continue
       }
-      unreadTabIds.delete(tab.id)
-      const host = owners.get(tab.id)?.executionHostId
-      // A loaded same-id row does not prove which host owns a terminal tab.
+      unreadTabIds.delete(tabId)
+      const host = owners.get(tabId)?.executionHostId
+      // A loaded same-id row does not prove which host owns a tab.
       const hidden =
         host &&
         hiddenWorktreesById

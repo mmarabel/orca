@@ -81,14 +81,46 @@ it('filters terminal-only child unread through the actual store and restores it 
   expect(select(useAppStore.getState())).toBe(1)
 })
 
-it('recounts when the actual store hydrates ownership before a same-id remote row', () => {
+it('hides structured-chat child unread and restores it without clearing the marker', () => {
   const tab = seedUnreadChild()
-  const select = createUnreadBadgeCountSelector()
-  expect(select(useAppStore.getState())).toBe(0)
   useAppStore.setState({
-    unifiedTabsByWorktree: {
-      child: [{ ...tab, executionHostId: 'ssh:remote' }]
-    }
+    tabsByWorktree: {},
+    unifiedTabsByWorktree: { child: [{ ...tab, contentType: 'agent-session' }] },
+    unreadTerminalTabs: {}
   })
+  useAppStore.getState().markTerminalTabUnread(tab.id, 'agent-completion')
+  const unread = useAppStore.getState().unreadTerminalTabs
+  const select = createUnreadBadgeCountSelector()
+  expect(unread[tab.id]).toBe('agent-completion')
+  expect(select(useAppStore.getState())).toBe(0)
+  useAppStore.setState({ settings: createGlobalSettingsFixture() })
   expect(select(useAppStore.getState())).toBe(1)
+  useAppStore.setState({
+    settings: createGlobalSettingsFixture({
+      notifications: { ...getDefaultNotificationSettings(), showChildWorktreeUnread: false }
+    })
+  })
+  expect(select(useAppStore.getState())).toBe(0)
+  expect(useAppStore.getState().unreadTerminalTabs).toBe(unread)
 })
+
+it.each(['terminal', 'agent-session'] as const)(
+  'recounts %s ownership hydration before a same-id remote row',
+  (contentType) => {
+    const tab = { ...seedUnreadChild(), contentType }
+    useAppStore.setState({
+      ...(contentType === 'agent-session' ? { tabsByWorktree: {} } : {}),
+      unifiedTabsByWorktree: {}
+    })
+    const select = createUnreadBadgeCountSelector()
+    expect(select(useAppStore.getState())).toBe(1)
+    useAppStore.setState({ unifiedTabsByWorktree: { child: [tab] } })
+    expect(select(useAppStore.getState())).toBe(0)
+    useAppStore.setState({
+      unifiedTabsByWorktree: {
+        child: [{ ...tab, executionHostId: 'ssh:remote' }]
+      }
+    })
+    expect(select(useAppStore.getState())).toBe(1)
+  }
+)

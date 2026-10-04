@@ -13,17 +13,20 @@ function tab(id: string): TerminalTab {
   return { id } as TerminalTab
 }
 
-function hiddenChildSources(): UnreadBadgeCountSources {
+function createHiddenChildSources(includeTerminalTabs: boolean): UnreadBadgeCountSources {
   const child = { id: 'same-id', hostId: 'local', isUnread: false } as const
   return {
     worktreesByRepo: { repo: [child] },
-    tabsByWorktree: { 'same-id': [{ id: 'tab-1' }] },
+    tabsByWorktree: includeTerminalTabs ? { 'same-id': [{ id: 'tab-1' }] } : {},
     unreadTerminalTabs: { 'tab-1': true },
     hiddenChildUnreadIdentities: new Set([getWorktreeHostIdentity(child)])
   }
 }
 
-describe('getUnreadBadgeCount', () => {
+describe.each([true, false])('child unread with terminal records: %s', (includeTerminalTabs) => {
+  const hiddenChildSources = (): UnreadBadgeCountSources =>
+    createHiddenChildSources(includeTerminalTabs)
+
   it('counts unread tabs until their execution-host ownership is known', () => {
     expect(getUnreadBadgeCount(hiddenChildSources())).toBe(1)
   })
@@ -78,9 +81,16 @@ describe('getUnreadBadgeCount', () => {
         visible: [{ id: 'tab-1', worktreeId: 'visible', executionHostId: 'ssh:remote' }]
       }
       const visibleTabs = [{ id: 'tab-1' }]
-      sources.tabsByWorktree = childFirst
-        ? { ...sources.tabsByWorktree, visible: visibleTabs }
-        : { visible: visibleTabs, ...sources.tabsByWorktree }
+      if (includeTerminalTabs) {
+        sources.tabsByWorktree = childFirst
+          ? { ...sources.tabsByWorktree, visible: visibleTabs }
+          : { visible: visibleTabs, ...sources.tabsByWorktree }
+      } else if (!childFirst) {
+        sources.unifiedTabsByWorktree = {
+          visible: sources.unifiedTabsByWorktree.visible,
+          'same-id': sources.unifiedTabsByWorktree['same-id']
+        }
+      }
       expect(getUnreadBadgeCount(sources)).toBe(1)
     }
   )
@@ -88,6 +98,26 @@ describe('getUnreadBadgeCount', () => {
   it('counts unmatched unread entries during hydration', () => {
     const sources = hiddenChildSources()
     sources.tabsByWorktree = {}
+    expect(getUnreadBadgeCount(sources)).toBe(1)
+  })
+})
+
+describe('getUnreadBadgeCount', () => {
+  it('dedupes unified-only unread tabs against terminal tabs and worktree unread', () => {
+    const sources: UnreadBadgeCountSources = {
+      worktreesByRepo: { repo: [{ id: 'parent', isUnread: false }] },
+      tabsByWorktree: { parent: [{ id: 'terminal' }] },
+      unifiedTabsByWorktree: {
+        parent: ['terminal', 'chat-1', 'chat-2'].map((id) => ({
+          id,
+          worktreeId: 'parent',
+          executionHostId: 'local'
+        }))
+      },
+      unreadTerminalTabs: { terminal: true, 'chat-1': true, 'chat-2': true }
+    }
+    expect(getUnreadBadgeCount(sources)).toBe(1)
+    sources.worktreesByRepo = { repo: [{ id: 'parent', isUnread: true }] }
     expect(getUnreadBadgeCount(sources)).toBe(1)
   })
 

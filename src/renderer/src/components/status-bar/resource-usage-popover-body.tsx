@@ -3,6 +3,7 @@ import { ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
 import type { MemorySnapshot } from '../../../../shared/process-stats-types'
+import type { ExecutionHostId } from '../../../../shared/execution-host'
 import type { UnifiedProjectGroup, UnifiedSessionRow } from './resource-usage-merge-types'
 import type { SortOption } from './resource-usage-resource-tree'
 import { ResourceTree } from './resource-usage-resource-tree'
@@ -50,9 +51,9 @@ export function renderResourceUsagePopoverBody({
   collapsedWorktrees: Set<string>
   activeWorktreeId: string | null
   toggleWorktree: (worktreeId: string) => void
-  navigateToWorktree: (worktreeId: string) => void
+  navigateToWorktree: (worktreeId: string, sampledHostId?: ExecutionHostId) => void
   navigateToTab: (tabId: string, paneKey: string | null) => void
-  deleteWorktree: (worktreeId: string) => void
+  deleteWorktree: (worktreeId: string, sampledHostId?: ExecutionHostId) => void
   handleKillSession: (session: UnifiedSessionRow) => void
   appCollapsed: boolean
   setAppCollapsed: Dispatch<SetStateAction<boolean>>

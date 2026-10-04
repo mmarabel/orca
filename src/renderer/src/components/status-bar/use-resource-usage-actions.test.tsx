@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => ({
   activateAndRevealWorkspace: vi.fn(),
   activateAndRevealWorktree: vi.fn(),
   getKnownWorktreeById: vi.fn(),
+  runWorktreeDelete: vi.fn(),
+  activeWorktreeId: 'focused-remote',
+  activeWorkspaceExecutionHostId: 'runtime:focused' as const,
   folderWorkspaces: Array<{
     id: string
     projectGroupId: string
@@ -35,12 +38,14 @@ vi.mock('../../store', () => ({
       projectGroups: [],
       repos: [],
       runtimeEnvironments: [],
-      runtimeEnvironmentCatalogHydrated: true
+      runtimeEnvironmentCatalogHydrated: true,
+      activeWorktreeId: mocks.activeWorktreeId,
+      activeWorkspaceExecutionHostId: mocks.activeWorkspaceExecutionHostId
     })
   }
 }))
 vi.mock('../../store/selectors', () => ({ getAllWorktreesFromState: () => mocks.worktrees }))
-vi.mock('../sidebar/delete-worktree-flow', () => ({ runWorktreeDelete: vi.fn() }))
+vi.mock('../sidebar/delete-worktree-flow', () => ({ runWorktreeDelete: mocks.runWorktreeDelete }))
 
 import { useResourceUsageActions } from './use-resource-usage-actions'
 
@@ -80,6 +85,8 @@ beforeEach(() => {
   mocks.activateAndRevealWorkspace.mockReset()
   mocks.activateAndRevealWorktree.mockReset()
   mocks.getKnownWorktreeById.mockReset()
+  mocks.runWorktreeDelete.mockReset()
+  mocks.activeWorktreeId = 'focused-remote'
   mocks.folderWorkspaces = [
     {
       id: 'notes',
@@ -102,6 +109,68 @@ beforeEach(() => {
   )
 })
 afterEach(cleanup)
+
+describe('Resource Manager sampled workspace actions', () => {
+  it.each(['ssh:box', 'runtime:paired'] as const)(
+    'qualifies sampled local navigation and deletion despite a %s twin and remote focus',
+    (hostId) => {
+      mocks.worktrees = [
+        { id: 'repo::/same', repoId: 'repo', hostId },
+        { id: 'repo::/same', repoId: 'repo', hostId: 'local' }
+      ]
+      mocks.activeWorktreeId = 'repo::/same'
+      const actions = renderActions('local')
+
+      actions.navigateToWorktree('repo::/same', 'local')
+      actions.deleteWorktree('repo::/same', 'local')
+
+      expect(mocks.activateAndRevealWorktree).toHaveBeenCalledWith('repo::/same', {
+        executionHostId: 'local'
+      })
+      expect(mocks.runWorktreeDelete).toHaveBeenCalledWith('repo::/same', {
+        expectedHostId: 'local'
+      })
+    }
+  )
+
+  it('passes the sampled local host explicitly for an unstamped local target', () => {
+    mocks.worktrees = [{ id: 'repo::/same', repoId: 'repo' }]
+    renderActions().deleteWorktree('repo::/same', 'local')
+    expect(mocks.runWorktreeDelete).toHaveBeenCalledWith('repo::/same', { expectedHostId: 'local' })
+  })
+
+  it('refuses sampled deletion when two targets exist on the sampled host', () => {
+    mocks.worktrees = [
+      { id: 'repo::/same', repoId: 'repo', hostId: 'local' },
+      { id: 'repo::/same', repoId: 'repo', hostId: 'local' }
+    ]
+    renderActions().deleteWorktree('repo::/same', 'local')
+    expect(mocks.runWorktreeDelete).not.toHaveBeenCalled()
+  })
+
+  it('refuses unqualified deletion of unsampled twins', () => {
+    mocks.worktrees = [
+      { id: 'repo::/same', repoId: 'repo', hostId: 'local' },
+      { id: 'repo::/same', repoId: 'repo', hostId: 'ssh:box' }
+    ]
+    renderActions().deleteWorktree('repo::/same')
+    expect(mocks.runWorktreeDelete).not.toHaveBeenCalled()
+  })
+
+  it('refuses deletion and local navigation fallback from a remote view', () => {
+    mocks.worktrees = [{ id: 'repo::/same', repoId: 'repo', hostId: 'local' }]
+    const actions = renderActions('runtime:paired')
+    actions.navigateToWorktree('repo::/same')
+    actions.deleteWorktree('repo::/same')
+    expect(mocks.activateAndRevealWorktree).not.toHaveBeenCalled()
+    expect(mocks.runWorktreeDelete).not.toHaveBeenCalled()
+  })
+
+  it('refuses a sample qualifier that contradicts the selected collector', () => {
+    renderActions('runtime:paired').navigateToWorktree('repo::/notes', 'local')
+    expect(mocks.activateAndRevealWorktree).not.toHaveBeenCalled()
+  })
+})
 
 describe('Resource Manager row navigation', () => {
   it('activates a folder workspace row through the workspace dispatcher', () => {

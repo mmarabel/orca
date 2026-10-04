@@ -6,6 +6,7 @@ import type { Worktree } from '../../../../shared/worktree/types'
 import { mergeSnapshotAndSessions, UNATTRIBUTED_REPO_ID } from './mergeSnapshotAndSessions'
 import { requiresKillConfirmation } from './resource-session-kill-confirmation'
 import type { DaemonSession, MergeContext } from './resource-usage-merge-types'
+import { makePaneKey } from '../../../../shared/stable-pane-id'
 
 function emptyAppMemory() {
   return {
@@ -603,6 +604,36 @@ describe('mergeSnapshotAndSessions — remote host scope', () => {
     const ctx = baseCtx({ repoRuntimeScopedById: new Map([['hetzner-repo', true]]) })
     expect(mergeSnapshotAndSessions(makeSnapshot([remoteWorktree]), [], ctx)).toEqual([])
   })
+
+  it.each(['local', 'remote'] as const)(
+    'keeps colliding local binding evidence confined to a %s sample',
+    (hostScope) => {
+      const session = {
+        ...remoteWorktree.sessions[0],
+        paneKey: makePaneKey('local-tab', '123e4567-e89b-42d3-a456-426614174000')
+      }
+      const out = mergeSnapshotAndSessions(
+        makeSnapshot([{ ...remoteWorktree, sessions: [session] }]),
+        [
+          { id: session.sessionId, cwd: '/local', title: 'Local daemon', agentOwnership: 'present' }
+        ],
+        baseCtx({
+          hostScope,
+          tabsByWorktree: { [remoteWorktree.worktreeId]: [makeTab('local-tab', 'Local title')] },
+          ptyIdsByTabId: { 'local-tab': [session.sessionId] }
+        })
+      )
+      expect(out[0].worktrees[0]).toMatchObject({ cpu: 12, memory: 900e6 })
+      expect(out[0].worktrees[0].sessions[0]).toMatchObject({
+        label: hostScope === 'local' ? 'Local title' : 'pid 44',
+        bound: hostScope === 'local',
+        tabId: hostScope === 'local' ? 'local-tab' : null,
+        agentOwnership: hostScope === 'local' ? 'present' : 'unknown',
+        cpu: 12,
+        memory: 900e6
+      })
+    }
+  )
 
   it('marks every remote row remote without a repo connectionId', () => {
     const out = mergeSnapshotAndSessions(makeSnapshot([remoteWorktree]), [], remoteCtx())

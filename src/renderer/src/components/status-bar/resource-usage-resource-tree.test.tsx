@@ -3,7 +3,11 @@
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { UnifiedProjectGroup, UnifiedWorktreeRow } from './resource-usage-merge-types'
+import type {
+  UnifiedProjectGroup,
+  UnifiedSessionRow,
+  UnifiedWorktreeRow
+} from './resource-usage-merge-types'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -40,7 +44,7 @@ const mocks = vi.hoisted(() => ({
     removedRuntimeEnvironmentIds: new Set<string>(),
     restoredRuntimeHostIdByWorkspaceSessionKey: {},
     activeWorktreeId: null,
-    activeWorkspaceExecutionHostId: null
+    activeWorkspaceExecutionHostId: 'runtime:paired'
   }
 }))
 
@@ -86,6 +90,8 @@ function row(worktreeId: string, worktreeName: string, repoId: string): UnifiedW
   }
 }
 
+const originalWorktrees = mocks.state.worktreesByRepo
+
 const repos: UnifiedProjectGroup[] = [
   {
     repoId: 'resources',
@@ -107,7 +113,96 @@ describe('Resource Manager local collector rows', () => {
   afterEach(() => {
     act(() => root.unmount())
     container.remove()
+    mocks.state.worktreesByRepo = originalWorktrees
   })
+
+  it.each(['ssh:box', 'runtime:paired'])(
+    'renders local sampled metadata and qualified actions with a %s twin',
+    (hostId) => {
+      mocks.state.worktreesByRepo = {
+        repo: [
+          {
+            id: 'repo::/same',
+            repoId: 'repo',
+            hostId,
+            displayName: 'Remote twin',
+            isMainWorktree: false
+          },
+          {
+            id: 'repo::/same',
+            repoId: 'repo',
+            hostId: 'local',
+            displayName: 'Saved local',
+            isMainWorktree: false
+          }
+        ]
+      }
+      const sessions: UnifiedSessionRow[] = [true, false].map((hasLocalSamples) => ({
+        sessionId: hasLocalSamples ? 'sampled' : 'ssh-session',
+        paneKey: null,
+        pid: 1,
+        label: 'Terminal',
+        bound: false,
+        agentOwnership: hasLocalSamples ? 'unknown' : 'present',
+        tabId: null,
+        cpu: hasLocalSamples ? 1 : null,
+        memory: hasLocalSamples ? 100 : null,
+        hasLocalSamples
+      }))
+      const sampled = {
+        ...row('repo::/same', 'Snapshot name', 'repo'),
+        hasLocalSamples: true,
+        sessions
+      }
+      const navigateToWorktree = vi.fn()
+      const onDelete = vi.fn()
+      const onKillSession = vi.fn()
+      container = document.createElement('div')
+      document.body.appendChild(container)
+      root = createRoot(container)
+      act(() =>
+        root.render(
+          <ResourceTree
+            repos={[{ ...repos[0], worktrees: [sampled] }]}
+            activeHostId="local"
+            sortOption="name"
+            collapsedRepos={new Set()}
+            toggleRepo={() => {}}
+            collapsedWorktrees={new Set()}
+            activeWorktreeId={null}
+            toggleWorktree={() => {}}
+            navigateToWorktree={navigateToWorktree}
+            navigateToTab={() => {}}
+            onDelete={onDelete}
+            onKillSession={onKillSession}
+            readOnly={false}
+          />
+        )
+      )
+      const resume = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Resume workspace Saved local"]'
+      )
+      const remove = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Delete workspace Saved local"]'
+      )
+      expect(resume).not.toBeNull()
+      expect(remove).not.toBeNull()
+      act(() => {
+        resume?.click()
+        remove?.click()
+      })
+      expect(navigateToWorktree).toHaveBeenCalledWith('repo::/same', 'local')
+      expect(onDelete).toHaveBeenCalledWith('repo::/same', 'local')
+      expect(onKillSession).not.toHaveBeenCalled()
+      act(() =>
+        container
+          .querySelector<HTMLButtonElement>('button[aria-label="Kill session ssh-session"]')
+          ?.click()
+      )
+      expect(onKillSession).toHaveBeenCalledWith(sessions[1])
+      expect(sessions[1]).toMatchObject({ hasLocalSamples: false, agentOwnership: 'present' })
+    }
+  )
 
   it('renders SSH git and folder resume controls with owner catalog metadata', () => {
     const navigateToWorktree = vi.fn()
@@ -148,7 +243,7 @@ describe('Resource Manager local collector rows', () => {
       gitButton?.click()
       folderButton?.click()
     })
-    expect(navigateToWorktree).toHaveBeenNthCalledWith(1, 'repo::/ssh')
-    expect(navigateToWorktree).toHaveBeenNthCalledWith(2, 'folder:ssh-folder')
+    expect(navigateToWorktree).toHaveBeenNthCalledWith(1, 'repo::/ssh', undefined)
+    expect(navigateToWorktree).toHaveBeenNthCalledWith(2, 'folder:ssh-folder', undefined)
   })
 })

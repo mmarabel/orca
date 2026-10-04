@@ -4,6 +4,7 @@ import { translate } from '@/i18n/i18n'
 import { useAppStore } from '../../store'
 import { findKnownWorktreeById } from '../../store/slices/worktrees/listing/detected-worktree-meta'
 import type { Worktree } from '../../../../shared/worktree/types'
+import { parseExecutionHostId, type ExecutionHostId } from '../../../../shared/execution-host'
 import type {
   Metric,
   UnifiedProjectGroup,
@@ -81,9 +82,9 @@ export function ResourceTree({
   collapsedWorktrees: Set<string>
   activeWorktreeId: string | null
   toggleWorktree: (worktreeId: string) => void
-  navigateToWorktree: (worktreeId: string) => void
+  navigateToWorktree: (worktreeId: string, sampledHostId?: ExecutionHostId) => void
   navigateToTab: (tabId: string, paneKey: string | null) => void
-  onDelete: (worktreeId: string) => void
+  onDelete: (worktreeId: string, sampledHostId?: ExecutionHostId) => void
   onKillSession: (session: UnifiedSessionRow) => void
   readOnly: boolean
 }): React.JSX.Element {
@@ -125,7 +126,8 @@ export function ResourceTree({
         const executionHostId = resolveResourceManagerWorkspaceExecutionHostId(
           ownerState,
           worktree.worktreeId,
-          activeHostId
+          activeHostId,
+          worktree.hasLocalSamples ? parseExecutionHostId(activeHostId)?.id : undefined
         )
         if (!executionHostId) {
           continue
@@ -170,6 +172,7 @@ export function ResourceTree({
     // Why: the id-keyed map cannot distinguish twins; resolve display/action
     // metadata through the same host-qualified catalog boundary as navigation.
     const storeRecord = storeRecordById.get(wt.worktreeId) ?? null
+    const sampledHostId = wt.hasLocalSamples ? parseExecutionHostId(activeHostId)?.id : undefined
     return (
       <WorktreeRow
         key={wt.worktreeId}
@@ -178,8 +181,8 @@ export function ResourceTree({
         activeWorktreeId={activeWorktreeId}
         isCollapsed={collapsedWorktrees.has(wt.worktreeId)}
         onToggle={() => toggleWorktree(wt.worktreeId)}
-        onNavigate={() => navigateToWorktree(wt.worktreeId)}
-        onDelete={() => onDelete(wt.worktreeId)}
+        onNavigate={() => navigateToWorktree(wt.worktreeId, sampledHostId)}
+        onDelete={() => onDelete(wt.worktreeId, sampledHostId)}
         onKillSession={onKillSession}
         navigateToTab={navigateToTab}
         readOnly={readOnly}

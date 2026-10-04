@@ -6,6 +6,7 @@ import type { AppState } from '../../store/types'
 import { getAllWorktreesFromState } from '../../store/selectors'
 import { runWorktreeDelete } from '../sidebar/delete-worktree-flow'
 import { ORPHAN_WORKTREE_ID } from '../../../../shared/constants'
+import { LOCAL_EXECUTION_HOST_ID, type ExecutionHostId } from '../../../../shared/execution-host'
 import { parseWorkspaceKey } from '../../../../shared/workspace-scope'
 import { UNATTRIBUTED_REPO_ID } from './mergeSnapshotAndSessions'
 import type { DaemonSession, UnifiedSessionRow } from './resource-usage-merge-types'
@@ -93,7 +94,7 @@ export function useResourceUsageActions({
 
   // Why: keep popover open on worktree navigation so users can browse; onFocusOutside suppresses the bound-row focus transfer.
   const navigateToWorktree = useCallback(
-    (worktreeId: string): void => {
+    (worktreeId: string, sampledHostId?: ExecutionHostId): void => {
       if (worktreeId === ORPHAN_WORKTREE_ID || worktreeId.startsWith(`${UNATTRIBUTED_REPO_ID}::`)) {
         return
       }
@@ -101,7 +102,8 @@ export function useResourceUsageActions({
       const executionHostId = resolveResourceManagerWorkspaceExecutionHostId(
         state,
         worktreeId,
-        activeHostId
+        activeHostId,
+        sampledHostId
       )
       if (!executionHostId) {
         return
@@ -134,18 +136,25 @@ export function useResourceUsageActions({
   )
 
   const deleteWorktree = useCallback(
-    (worktreeId: string): void => {
+    (worktreeId: string, sampledHostId?: ExecutionHostId): void => {
+      if (
+        activeHostId !== LOCAL_EXECUTION_HOST_ID ||
+        (sampledHostId !== undefined && sampledHostId !== LOCAL_EXECUTION_HOST_ID)
+      ) {
+        return
+      }
       const target = resolveResourceManagerWorktreeTarget(
         worktreeId,
-        getAllWorktreesFromState(useAppStore.getState())
+        getAllWorktreesFromState(useAppStore.getState()),
+        sampledHostId
       )
       if (!target) {
         return
       }
       setOpen(false)
-      runWorktreeDelete(worktreeId, { expectedHostId: target.hostId })
+      runWorktreeDelete(worktreeId, { expectedHostId: sampledHostId ?? target.hostId })
     },
-    [setOpen]
+    [activeHostId, setOpen]
   )
 
   const handleOpenWorkspaceCleanup = useCallback((): void => {

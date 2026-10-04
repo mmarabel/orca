@@ -148,19 +148,21 @@ export function mergeSnapshotAndSessions(
   const repos = new Map<string, UnifiedProjectGroup>()
   const worktreeRowsByRepo = new Map<string, Map<string, UnifiedWorktreeRow>>()
   const seenSessionIds = new Set<string>()
+  const remoteScope = ctx.hostScope === 'remote'
   // Why: pre-build O(1) lookup indices once per merge. This includes live
   // ptyIdsByTabId plus deferred-reattach wake hints, so restored inactive
   // sessions do not appear as Resource Manager orphans before their pane mounts.
-  const index = buildResourceSessionBindingIndex(ctx)
+  // Remote IDs can collide with local IDs; this inventory cannot establish remote bindings.
+  const index = buildResourceSessionBindingIndex(
+    remoteScope ? { tabsByWorktree: {}, ptyIdsByTabId: {}, workspaceSessionReady: false } : ctx
+  )
   const boundPtyIds = index.boundPtyIds
   // Why: the daemon list is the only place agent ownership is reported. Snapshot-derived rows
   // describe the same sessions by id, so carry it across rather than inventing an answer; a
   // session the daemon never listed is 'unknown', not 'absent'.
   const ownershipBySessionId = new Map(
-    daemonSessions.map((session) => [session.id, session.agentOwnership])
+    (remoteScope ? [] : daemonSessions).map((session) => [session.id, session.agentOwnership])
   )
-
-  const remoteScope = ctx.hostScope === 'remote'
 
   function ensureRepo(repoId: string, repoName: string): UnifiedProjectGroup {
     const existing = repos.get(repoId)

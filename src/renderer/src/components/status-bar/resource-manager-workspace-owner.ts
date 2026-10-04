@@ -11,13 +11,18 @@ import {
 export function resolveResourceManagerWorkspaceExecutionHostId(
   state: WorktreeOperationRouteState,
   worktreeId: string,
-  collectorHostId: string
+  collectorHostId: string,
+  sampledHostId?: ExecutionHostId
 ): ExecutionHostId | null {
   const collectorHost = parseExecutionHostId(collectorHostId)
   if (!collectorHost) {
     return null
   }
-  if (collectorHost.kind !== 'local') {
+  if (sampledHostId !== undefined && sampledHostId !== collectorHost.id) {
+    return null
+  }
+  // Snapshot rows come from the collector's local-only PTY registry, not its SSH inventory.
+  if (sampledHostId !== undefined || collectorHost.kind !== 'local') {
     return collectorHost.id
   }
   const resolution = resolveWorktreeOperationRouteResult(state, worktreeId)

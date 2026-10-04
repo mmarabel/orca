@@ -821,6 +821,17 @@ html.native-shell .app-layout {
   background: var(--tab-group-split-divider-strong);
 }
 
+/* Extreme custom colors can match their strong mix, so thickness also signals interaction. */
+.tab-group-split-resize-handle.is-vertical:hover::after,
+.tab-group-split-resize-handle.is-vertical.is-dragging::after {
+  width: 4px;
+}
+
+.tab-group-split-resize-handle.is-horizontal:hover::after,
+.tab-group-split-resize-handle.is-horizontal.is-dragging::after {
+  height: 4px;
+}
+
 /* ── Titlebar ────────────────────────────────────────── */
 
 /* Why: Radix portals (dropdowns, popovers, dialogs, sheets) render at the

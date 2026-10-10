@@ -5,6 +5,20 @@ export function areWorktreesEqual(current: Worktree[] | undefined, next: Worktre
   return catalogRowsEqual(current, next)
 }
 
+function withoutSortOrder({
+  sortOrder: _sortOrder,
+  ...rest
+}: Worktree): Omit<Worktree, 'sortOrder'> {
+  return rest
+}
+
+export function areWorktreesEqualIgnoringSortOrder(
+  current: Worktree[] | undefined,
+  next: Worktree[]
+): boolean {
+  return catalogRowsEqual(current?.map(withoutSortOrder), next.map(withoutSortOrder))
+}
+
 export function areDetectedWorktreeResultsEqual(
   current: DetectedWorktreeListResult | undefined,
   next: DetectedWorktreeListResult

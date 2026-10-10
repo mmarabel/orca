@@ -4,7 +4,11 @@ import type { AppState } from '../../../types'
 import type { WorktreeSlice } from '../../worktree-helpers'
 import type { Worktree } from '../../../../../../shared/worktree/types'
 import { routeListingBranchSwitchesThroughGitIdentity } from '../../worktree-listing-branch-switch'
-import { areDetectedWorktreeResultsEqual, areWorktreesEqual } from './worktree-catalog-visibility'
+import {
+  areDetectedWorktreeResultsEqual,
+  areWorktreesEqual,
+  areWorktreesEqualIgnoringSortOrder
+} from './worktree-catalog-visibility'
 import { mergeDetectedWorktreesForHost } from './detected-worktree-host-merge'
 import {
   getRemovedWorktreeIdsAfterAuthoritativeScan,
@@ -224,6 +228,14 @@ export function mergeFetchedWorktrees(
       authoritativelySeenIds = args.refresh.result.worktrees.map((worktree) => worktree.id)
     }
     const worktreesChanged = !areWorktreesEqual(s.worktreesByRepo[args.repoId], mergedWorktrees)
+    // Why: each Smart save rewrites every row's sortOrder on the host, and live Smart ranking ignores
+    // it, so re-sorting on that echo alone would schedule the next save (#27268).
+    const sortRelevantChange =
+      worktreesChanged &&
+      !(
+        s.sortBy === 'smart' &&
+        areWorktreesEqualIgnoringSortOrder(s.worktreesByRepo[args.repoId], mergedWorktrees)
+      )
     const detectedChanged = !areDetectedWorktreeResultsEqual(
       s.detectedWorktreesByRepo[args.repoId],
       mergedDetected
@@ -250,7 +262,7 @@ export function mergeFetchedWorktrees(
               ...s.worktreesByRepo,
               [args.repoId]: mergedWorktrees
             },
-            sortEpoch: s.sortEpoch + 1
+            ...(sortRelevantChange ? { sortEpoch: s.sortEpoch + 1 } : {})
           }
         : {}),
       ...(detectedChanged

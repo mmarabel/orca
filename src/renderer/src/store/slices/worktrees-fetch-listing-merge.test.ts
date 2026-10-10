@@ -578,6 +578,52 @@ describe('fetchWorktrees', () => {
     expect(store.getState().sortEpoch).toBe(8)
   })
 
+  // Why: a Smart save rewrites every sortOrder on the host; re-sorting on that echo schedules the next save.
+  it.each([
+    ['smart', 7],
+    ['manual', 8],
+    ['recent', 8]
+  ] as const)(
+    'stores a sortOrder-only change and re-sorts only outside Smart (sortBy=%s)',
+    async (sortBy, expectedEpoch) => {
+      const store = createTestStore()
+      const row = { id: 'repo1::/path/wt1', repoId: 'repo1', path: '/path/wt1' }
+      const existing = makeWorktree({ ...row, sortOrder: 100 })
+      const refreshed = makeWorktree({ ...row, sortOrder: 200 })
+
+      mockApi.worktrees.list.mockResolvedValue([refreshed])
+      store.setState({
+        worktreesByRepo: { repo1: [existing] },
+        sortEpoch: 7,
+        sortBy
+      })
+
+      await store.getState().fetchWorktrees('repo1')
+
+      expect(store.getState().worktreesByRepo.repo1).toEqual([refreshed])
+      expect(store.getState().sortEpoch).toBe(expectedEpoch)
+    }
+  )
+
+  it('re-sorts Smart when a refresh changes more than sortOrder', async () => {
+    const store = createTestStore()
+    const row = { id: 'repo1::/path/wt1', repoId: 'repo1', path: '/path/wt1' }
+    const existing = makeWorktree({ ...row, sortOrder: 100, lastActivityAt: 1 })
+    const refreshed = makeWorktree({ ...row, sortOrder: 200, lastActivityAt: 2 })
+
+    mockApi.worktrees.list.mockResolvedValue([refreshed])
+    store.setState({
+      worktreesByRepo: { repo1: [existing] },
+      sortEpoch: 7,
+      sortBy: 'smart'
+    })
+
+    await store.getState().fetchWorktrees('repo1')
+
+    expect(store.getState().worktreesByRepo.repo1).toEqual([refreshed])
+    expect(store.getState().sortEpoch).toBe(8)
+  })
+
   it('keeps the last known worktree list when a refresh transiently returns empty', async () => {
     const store = createTestStore()
     const existing = makeWorktree({ id: 'repo1::/path/wt1', repoId: 'repo1', path: '/path/wt1' })

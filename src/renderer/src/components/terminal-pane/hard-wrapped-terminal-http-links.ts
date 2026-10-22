@@ -30,9 +30,7 @@ function hasFrameAtColumn(translated: TranslatedLine, frameColumn: number): bool
   return frameIndex !== -1 && VERTICAL_LAYOUT_FRAME_PATTERN.test(translated.text[frameIndex] ?? '')
 }
 
-// Why: a TUI overlay paints its frame over whatever it covers, so rows share
-// only the run from the frame to the URL; further left is the screen underneath
-// and differs per row. Anchor on the frame's cell column, not the row prefix.
+// Overlay rows share the frame column and inner padding; the uncovered gutter can differ.
 function findOverlayFragmentStart(
   translated: TranslatedLine,
   frameColumn: number,
@@ -101,7 +99,6 @@ function buildCandidateFromStart(
         ? translatedStart
         : (translatedLines.get(rowY) ?? translateLineWithColumns(line))
     translatedLines.set(rowY, translated)
-    // Why: an unchanged row prefix is the plain framed wrap, joined as before the overlay anchor.
     const fragmentStart =
       rowY === startY || translated.text.slice(0, schemeIndex) === rowPrefix
         ? schemeIndex

@@ -106,6 +106,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          check-latest: true
 
       - id: google-auth
         uses: google-github-actions/auth@v2
@@ -134,9 +135,9 @@ jobs:
             --drain-grace-ms "${DRAIN_GRACE_MS}" --confirmation "${CONFIRMATION}" \
             | tee "${RUNNER_TEMP}/relay-rehome-control.json"
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/setup@v2
         if: ${{ inputs.mode == 'enable' }}
-        with: { package_json_file: cloud/package.json }
+        with: { package-json-file: cloud/package.json, install: false }
 
       - run: pnpm install --frozen-lockfile
         if: ${{ inputs.mode == 'enable' }}
@@ -173,6 +174,8 @@ jobs:
           test "${COUNT}" = 0
 
       - uses: google-github-actions/setup-gcloud@v2
+        with:
+          skip_install: true
 
       - uses: ./.github/actions/cloud-sql-rollout-lease
         with:

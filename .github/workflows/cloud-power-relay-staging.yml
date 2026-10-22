@@ -61,6 +61,8 @@ jobs:
           id_token_include_email: true
 
       - uses: google-github-actions/setup-gcloud@v2
+        with:
+          skip_install: true
 
       - uses: ./.github/actions/cloud-sql-rollout-lease
         with:
@@ -74,6 +76,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          check-latest: true
 
       - name: Require explicit manual mutation confirmation
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode != 'status' }}

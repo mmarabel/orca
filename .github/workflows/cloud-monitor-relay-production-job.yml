@@ -57,13 +57,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/setup@v2
         with:
-          package_json_file: cloud/package.json
+          package-json-file: cloud/package.json
+          install: false
 
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          check-latest: true
 
       - run: pnpm install --frozen-lockfile
 
@@ -102,6 +104,8 @@ jobs:
           id_token_include_email: true
 
       - uses: google-github-actions/setup-gcloud@v2
+        with:
+          skip_install: true
 
       - name: Verify exact-audience admin identity
         env:

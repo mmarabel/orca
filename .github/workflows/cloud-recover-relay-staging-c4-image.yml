@@ -86,6 +86,8 @@ jobs:
           service_account: ${{ vars.STAGING_GCP_RELAY_CAPACITY_SERVICE_ACCOUNT }}
 
       - uses: google-github-actions/setup-gcloud@v2
+        with:
+          skip_install: true
 
       - uses: ./.github/actions/cloud-sql-rollout-lease
         with:
@@ -100,6 +102,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          check-latest: true
 
       - name: Initialize the exact staging backend
         run: node dev/scripts/infra.mjs init --env staging

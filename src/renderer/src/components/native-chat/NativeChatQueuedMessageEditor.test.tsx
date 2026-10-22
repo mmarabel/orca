@@ -14,6 +14,7 @@ import { projectQueuedMessageCards } from './structured-agent-session-queued-car
 import type { AgentSessionQueuedMessage } from '../../../../shared/agent-session-wire'
 import type { StructuredAgentSessionWrite } from './use-structured-agent-session-mutate'
 import type * as NativeChatAttachmentUpload from './native-chat-attachment-upload'
+import type * as I18n from '@/i18n/i18n'
 import {
   handOffQueuedEdit,
   queuedEditImageFields,
@@ -34,7 +35,6 @@ import type { NativeChatComposerHandle } from './native-chat-composer-types'
 import { routeNativeChatRootKeyToInput } from './native-chat-root-key-routing'
 import * as OsFileDropOwner from '@/hooks/use-os-file-drop-owner'
 import { replaceRuntimeEnvironmentRevisions } from '@/runtime/runtime-environment-revision'
-import type * as I18nModule from '@/i18n/i18n'
 
 const externalAttachments = ExternalAttachments.useNativeChatExternalAttachments
 let chips: Parameters<typeof externalAttachments>[0]['pendingChips']
@@ -45,7 +45,7 @@ beforeEach(() => {
   })
 })
 vi.mock('@/i18n/i18n', async (original) => ({
-  ...(await original<typeof I18nModule>()),
+  ...(await original<typeof I18n>()),
   translate: (_key: string, fallback: string, values?: Record<string, string>) =>
     fallback.replace(/\{\{(\w+)\}\}/g, (_match, name: string) => values?.[name] ?? '')
 }))

@@ -4,6 +4,12 @@ import type { PaneManager } from '@/lib/pane-manager/pane-manager'
 import { createFilePathLinkProvider, getTerminalFileOpenHint } from './terminal-link-handlers'
 import type { TerminalPathExistsCache } from './terminal-path-exists-cache'
 
+import type {
+  installFilePathLinkClickFallback,
+  openFilePathLinkAtBufferPosition
+} from './terminal-link-handlers'
+import type { installHttpLinkClickFallback } from './terminal-url-link-hit-testing'
+
 export function makeExistsCache(
   entries: Iterable<[string, boolean]> = []
 ): TerminalPathExistsCache {
@@ -11,11 +17,6 @@ export function makeExistsCache(
     [...entries].map(([key, exists]) => [key, { exists, checkedAt: Date.now(), sequence: 0 }])
   )
 }
-import type {
-  installFilePathLinkClickFallback,
-  openFilePathLinkAtBufferPosition
-} from './terminal-link-handlers'
-import type { installHttpLinkClickFallback } from './terminal-url-link-hit-testing'
 
 export type TestBufferLine = {
   isWrapped: boolean

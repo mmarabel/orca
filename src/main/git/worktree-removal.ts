@@ -2,7 +2,6 @@ import { lstat } from 'node:fs/promises'
 import type { RemoveWorktreeResult } from '../../shared/worktree/create-types'
 import { assertWorktreeUnlockedForRemoval } from '../../shared/worktree/removal'
 import { windowsLongPathGitArgs } from '../../shared/windows-long-path-git-args'
-import { isSubmoduleWorktreeRemovalRefusal } from '../../shared/worktree/submodule-removal'
 import { removeHostTree } from '../host-tree-removal'
 import { withSpan } from '../observability/tracer'
 import { parseWslPath } from '../wsl'
@@ -13,7 +12,6 @@ import { invalidateWslLinkedWorktreeGitRouting } from './wsl-linked-worktree-git
 import type { RemoveWorktreeOptions } from './worktree-operation-options'
 import { getErrorCode, gitExecOptions, normalizeLocalBranchRef } from './worktree-operation-options'
 import { areWorktreePathsEqual } from './worktree-path-comparison'
-import { assertWorktreeCleanForRemoval } from './worktree-removal-preflight'
 import { withRepoRefMaintenancePaused } from './local-repo-ref-maintenance'
 import { bumpWorktreeScanGeneration, listWorktrees } from './worktree-scan-cache'
 import { invalidateSparseCheckoutState } from './worktree-sparse-checkout-cache'
@@ -32,6 +30,7 @@ export async function removeWorktree(
   // forceBranchDelete: for failed-creation rollback (fresh branch, no user work); user deletes leave it false so unmerged commits survive.
   options: RemoveWorktreeOptions = {}
 ): Promise<RemoveWorktreeResult> {
+  options = removalWorkerOptions(options)
   try {
     // Removal deletes branches, and a ref deletion needs the packed-refs lock a
     // running idle pack holds while it rewrites. Waits that window out; the
@@ -82,19 +81,7 @@ async function performRemoveWorktree(
   }
   args.push(worktreePath)
   await runUnderWorktreeDeleteLimit(async () => {
-    try {
-      await gitExecFileAsync(args, execOptions)
-    } catch (error) {
-      if (force || !isSubmoduleWorktreeRemovalRefusal(error)) {
-        throw error
-      }
-      // Why: Git refuses non-force removal of a worktree with an initialised submodule even when clean; re-prove cleanliness, then --force.
-      await assertWorktreeCleanForRemoval(worktreePath, false, options)
-      await gitExecFileAsync(
-        [...longPathArgs, 'worktree', 'remove', '--force', worktreePath],
-        execOptions
-      )
-    }
+    await gitExecFileAsync(args, execOptions)
     await removeCheckoutLeftByGit(worktreePath, options)
   })
 
@@ -114,10 +101,10 @@ function deleteBranchOfRemovedWorktree(
   branchHead: string,
   options: RemoveWorktreeOptions
 ): Promise<RemoveWorktreeResult> {
-  // Why its own span: branch cleanup can reach the network (`fetch --prune`), so a stall here reads as
+  // Why its own span: branch cleanup can reach the network, so a stall here reads as
   // `git worktree remove` being slow unless it is timed separately.
   // Why serialized per repo: concurrent removals in one repo race `packed-refs.lock` and the
-  // remote-tracking ref locks of `fetch --prune` (#2259); the checkout deletes above need not wait.
+  // remote-tracking ref locks of `fetch` (#2259); the checkout deletes above need not wait.
   return runKeyedSerializedOperation(branchCleanupQueueByRepo, repoPath, () =>
     withSpan('worktree.remove.branch_delete', () =>
       deleteBranchAfterWorktreeRemoval(repoPath, branchName, branchHead, options)
@@ -126,20 +113,37 @@ function deleteBranchOfRemovedWorktree(
 }
 
 /**
- * Finishes a removal whose checkout Git no longer registers (it finished deleting, or an earlier
- * run did): leftover files, stale admin records, then the branch. Already-gone parts are done.
+ * Finishes a removal whose checkout Git no longer registers and is gone from disk: stale admin
+ * records, then the branch. Deletes no files: Orca removes a checkout only through Git.
+ * `assertCheckoutGone` refuses while anything is still at the path.
  */
 export async function finishUnregisteredWorktreeRemoval(
   repoPath: string,
   worktreePath: string,
   branch: { name: string; head: string } | null,
+  assertCheckoutGone: () => Promise<void>,
   options: RemoveWorktreeOptions = {}
 ): Promise<RemoveWorktreeResult> {
+  options = removalWorkerOptions(options)
+  await assertCheckoutGone()
+  await gitExecFileAsync(['worktree', 'prune'], gitExecOptions(repoPath, options)).catch(
+    (error: unknown) => console.warn(`[git] worktree prune failed in ${repoPath}`, error)
+  )
+  return deleteBranchOfUnregisteredWorktree(repoPath, worktreePath, branch, options)
+}
+
+/**
+ * The branch step of a removal once Git no longer registers the checkout, whatever is left on disk:
+ * merged only, as `removeWorktree` does. Prunes nothing and deletes no files.
+ */
+export async function deleteBranchOfUnregisteredWorktree(
+  repoPath: string,
+  worktreePath: string,
+  branch: { name: string; head: string } | null,
+  options: RemoveWorktreeOptions = {}
+): Promise<RemoveWorktreeResult> {
+  options = removalWorkerOptions(options)
   try {
-    await runUnderWorktreeDeleteLimit(() => removeCheckoutLeftByGit(worktreePath, options))
-    await gitExecFileAsync(['worktree', 'prune'], gitExecOptions(repoPath, options)).catch(
-      (error: unknown) => console.warn(`[git] worktree prune failed in ${repoPath}`, error)
-    )
     if (!branch?.name || !(await localBranchExists(repoPath, branch.name, options))) {
       return {}
     }
@@ -150,6 +154,11 @@ export async function finishUnregisteredWorktreeRemoval(
     invalidateSparseCheckoutState(repoPath, worktreePath)
     bumpWorktreeScanGeneration(repoPath)
   }
+}
+
+function removalWorkerOptions(options: RemoveWorktreeOptions): RemoveWorktreeOptions {
+  // uv_spawn can block even for async Git; keep native process creation off Electron's UI loop.
+  return process.platform === 'darwin' ? { ...options, spawnOnWorkerThread: true } : options
 }
 
 async function localBranchExists(

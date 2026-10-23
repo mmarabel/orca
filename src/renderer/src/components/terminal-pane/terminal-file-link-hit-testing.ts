@@ -1,18 +1,12 @@
-import type { IBufferLine, IBufferRange } from '@xterm/xterm'
-import { extractTerminalFileLinkCandidates, resolveTerminalFileLink } from '@/lib/terminal-links'
-import { isRemoteRuntimeFileOperation } from '@/runtime/runtime-file-client'
+import { dedupeLogicalLines } from './terminal-link-logical-line-deduplication'
 import {
-  getTerminalFileContext,
-  mapTerminalFilePath,
-  openDetectedFilePath,
-  terminalLinkWslDistro
-} from './terminal-file-open-routing'
-import {
-  getTerminalPathExistsCacheKey,
-  readTerminalPathExistsCache,
+  readTerminalPathExistence,
   type TerminalPathExistsCache
 } from './terminal-path-exists-cache'
-import { resolveKnownWorktreeRootPathLink } from './terminal-worktree-path-link'
+import type { IBufferLine, IBufferRange } from '@xterm/xterm'
+import { extractTerminalFileLinkCandidates } from '@/lib/terminal-links'
+import { openDetectedFilePath } from './terminal-file-open-routing'
+import { resolveFileLinkTarget } from './terminal-file-link-target'
 import {
   buildHardWrappedPathLogicalLineCandidates,
   buildWrappedLogicalLine,
@@ -27,8 +21,10 @@ type FileLinkHitTestDeps = {
   worktreePath: string
   runtimeEnvironmentId?: string | null
   wslDistro?: string | null
+  terminalHandle?: string | null
   pathExistsCache?: TerminalPathExistsCache
   openWithSystemDefault?: boolean
+  sourceTabId?: string | null
 }
 
 export function openFilePathLinkAtBufferPosition(
@@ -52,45 +48,30 @@ export function openFilePathLinkAtBufferPosition(
       isKnownWorktreeRoot: boolean
     }[] = []
     for (const parsed of extractTerminalFileLinkCandidates(logicalLine.text)) {
-      const resolved = deps.startupCwd
-        ? resolveTerminalFileLink(parsed, deps.startupCwd, deps.terminalHomePath)
-        : null
-      if (!resolved) {
+      const target = resolveFileLinkTarget(parsed, {
+        cwd: deps.startupCwd,
+        homePath: deps.terminalHomePath,
+        worktreeId: deps.worktreeId,
+        worktreePath: deps.worktreePath,
+        runtimeEnvironmentId: deps.runtimeEnvironmentId,
+        wslDistro: deps.wslDistro
+      })
+      if (!target) {
         continue
       }
       const range = rangeForParsedFileLink(logicalLine, parsed.startIndex, parsed.endIndex)
       if (!range || !rangeContainsBufferPosition(range, position, terminalColumns)) {
         continue
       }
-      const fileContext = getTerminalFileContext(
-        deps.worktreeId,
-        deps.worktreePath,
-        deps.runtimeEnvironmentId
-      )
-      const mappedPath = mapTerminalFilePath(
-        resolved.absolutePath,
-        deps.worktreePath,
-        terminalLinkWslDistro(deps.wslDistro, deps.runtimeEnvironmentId)
-      )
-      const cacheKey = getTerminalPathExistsCacheKey({
-        absolutePath: mappedPath,
-        connectionId: fileContext.connectionId,
-        isRemoteRuntimePath: isRemoteRuntimeFileOperation(fileContext, mappedPath),
-        runtimeEnvironmentId: deps.runtimeEnvironmentId
-      })
-      const isKnownWorktreeRoot = Boolean(resolveKnownWorktreeRootPathLink(mappedPath))
-      if (/[\\/]$/.test(parsed.pathText) && !isKnownWorktreeRoot) {
-        continue
-      }
       matches.push({
-        absolutePath: mappedPath,
-        line: resolved.line,
-        column: resolved.column,
+        absolutePath: target.absolutePath,
+        line: target.line,
+        column: target.column,
         pathText: parsed.pathText,
         cachedExists: deps.pathExistsCache
-          ? readTerminalPathExistsCache(deps.pathExistsCache, cacheKey)
+          ? readTerminalPathExistence(deps.pathExistsCache, target.cacheKey)
           : undefined,
-        isKnownWorktreeRoot
+        isKnownWorktreeRoot: target.isKnownWorktreeRoot
       })
     }
 
@@ -124,17 +105,6 @@ export function buildCandidateLogicalLinesForBufferPosition(
     ? [...hardWrappedCandidates, softWrappedLogicalLine]
     : hardWrappedCandidates
   return dedupeLogicalLines(candidates)
-}
-
-export function dedupeLogicalLines(logicalLines: WrappedLogicalLine[]): WrappedLogicalLine[] {
-  const seen = new Set<string>()
-  return logicalLines.filter((logicalLine) => {
-    if (seen.has(logicalLine.fingerprint)) {
-      return false
-    }
-    seen.add(logicalLine.fingerprint)
-    return true
-  })
 }
 
 function rangeContainsBufferPosition(

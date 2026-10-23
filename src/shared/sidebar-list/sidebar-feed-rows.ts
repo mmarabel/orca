@@ -109,6 +109,7 @@ export type SidebarFeedPlan = {
   hostScoped: boolean
 }
 
+// Each row carries its own edge (sidebar-feed-worktrees.ts); an id-keyed map would keep one host's.
 const NO_LINEAGE_MAP: Record<string, WorktreeLineage> = {}
 
 /** Filters, groups and nests the feed's workspaces in `rankedIdentities` order; collapse comes after. */
@@ -141,8 +142,6 @@ export function planSidebarFeedRows(
       worktreesByRepo[worktree.repoId] = [worktree]
     }
   }
-  // Each row carries its own edge (sidebar-feed-worktrees.ts); an id-keyed map would keep one host's.
-  const lineageById = NO_LINEAGE_MAP
   const retained = new Set(domains.retention?.retainedIds)
   const rankByIdentity = new Map(rankedIdentities.map((identity, rank) => [identity, rank]))
   const factsOf = (worktree: Worktree) => byIdentity.get(getWorktreeHostIdentity(worktree))?.facts
@@ -182,7 +181,7 @@ export function planSidebarFeedRows(
         return !retained.has(identity) && (!activity || isIdleWorkspaceActivity(activity))
       }
     },
-    worktreeLineageById: lineageById,
+    worktreeLineageById: NO_LINEAGE_MAP,
     filterRepoIds: view.filters.filterRepoIds,
     preserveLineageParentOrder: view.sortBy === 'manual',
     forcedVisibleWorktreeIds: extras.forcedVisibleWorktreeIds
@@ -236,7 +235,7 @@ export function planSidebarFeedRows(
     repoOrder,
     workspaceStatuses: view.workspaceStatuses,
     projectOrderBy: view.projectOrderBy,
-    lineageById,
+    lineageById: NO_LINEAGE_MAP,
     worktreeMap,
     nestLineage: true,
     projectGroups: visibleProjectGroups,
@@ -255,7 +254,7 @@ export function planSidebarFeedRows(
     visibleWorktrees,
     plan,
     worktreeMap,
-    lineageById,
+    lineageById: NO_LINEAGE_MAP,
     placeholderRepoIds,
     visibleProjectGroups,
     visibleFolderWorkspaces,

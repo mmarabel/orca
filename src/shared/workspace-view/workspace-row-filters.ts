@@ -66,6 +66,7 @@ export type WorkspaceRowFactReader<Row> = {
   isCliCreated: (row: Row) => boolean
   isDetachedHead: (row: Row) => boolean
   isMainWorktree: (row: Row) => boolean
+  isUnread: (row: Row) => boolean
   isSleeping: (row: Row) => boolean
 }
 
@@ -78,9 +79,10 @@ export type WorkspaceRowFactReader<Row> = {
  */
 export function isSleepingSweepExempt(
   isMainWorktree: boolean,
-  alwaysShowDefaultBranchWorkspace: boolean | undefined
+  alwaysShowDefaultBranchWorkspace: boolean | undefined,
+  isUnread = false
 ): boolean {
-  return alwaysShowDefaultBranchWorkspace !== false && isMainWorktree
+  return isUnread || (alwaysShowDefaultBranchWorkspace !== false && isMainWorktree)
 }
 
 /** Whether a row survives the Workspace options filters; the sets are built once per call. */
@@ -126,7 +128,11 @@ function buildWorkspaceRowPredicate<Row>(
     // Why the explicit hide above still wins: the exemption only shields a row from the sweep.
     return (
       !filters.hideSleepingWorkspaces ||
-      isSleepingSweepExempt(read.isMainWorktree(row), filters.alwaysShowDefaultBranchWorkspace) ||
+      isSleepingSweepExempt(
+        read.isMainWorktree(row),
+        filters.alwaysShowDefaultBranchWorkspace,
+        read.isUnread(row)
+      ) ||
       !read.isSleeping(row)
     )
   }

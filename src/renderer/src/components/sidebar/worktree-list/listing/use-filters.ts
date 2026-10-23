@@ -108,7 +108,11 @@ const REVEAL_WORKSPACE: Record<keyof WorkspaceRowFilters, (context: RevealContex
       getAgentStatusEpochNow(state.agentStatusEpoch)
     )
     if (
-      !isSleepingSweepExempt(worktree.isMainWorktree, state.alwaysShowDefaultBranchWorkspace) &&
+      !isSleepingSweepExempt(
+        worktree.isMainWorktree,
+        state.alwaysShowDefaultBranchWorkspace,
+        worktree.isUnread
+      ) &&
       isInactiveWorkspace(
         worktree.id,
         tabsByWorktree,

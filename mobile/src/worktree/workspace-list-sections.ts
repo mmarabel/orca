@@ -142,6 +142,7 @@ function phoneRowFacts(
     isDetachedHead: (w) => w.detachedHead === true,
     // Why the guess: #8873's exemption must fail open on hosts that predate isMainWorktree.
     isMainWorktree: (w) => w.isMainWorktree ?? guessDefaultBranchWorkspace(w),
+    isUnread: (w) => w.unread,
     isSleeping: (w) => !isWorktreeActive(w)
   }
 }

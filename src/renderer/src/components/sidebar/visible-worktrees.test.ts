@@ -185,6 +185,23 @@ describe('computeVisibleWorktreeIds', () => {
     expect(result).toEqual([])
   })
 
+  it('keeps an unread sleeping worktree until it is read', () => {
+    const unread = { ...makeWorktree('unread'), isUnread: true }
+    const read = makeWorktree('read')
+    const options = visibleOptions({ showSleepingWorkspaces: false })
+
+    expect(
+      computeVisibleWorktreeIds({ repo1: [unread, read] }, [unread.id, read.id], options)
+    ).toEqual([unread.id])
+    expect(
+      computeVisibleWorktreeIds(
+        { repo1: [{ ...unread, isUnread: false }, read] },
+        [unread.id, read.id],
+        options
+      )
+    ).toEqual([])
+  })
+
   it('hides automation-created workspaces when the automation filter is enabled', () => {
     const manual = makeWorktree('manual')
     const automationCreated = {

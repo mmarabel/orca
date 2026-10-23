@@ -153,6 +153,24 @@ describe('buildSidebarFeedRows keeps same-id workspaces on two hosts apart', () 
   })
   const busy = { ...IDLE_WORKSPACE_ACTIVITY, browser: true }
 
+  it('keeps an unread sleeping workspace without retaining its read twin', () => {
+    const rows = (isUnread: boolean) =>
+      buildWorkspaceRows({
+        worktrees: [
+          worktree('r::/w/same', { hostId: 'local', isUnread }),
+          worktree('r::/w/same', { hostId: 'ssh:box' })
+        ],
+        folderWorkspaces: [],
+        repos,
+        lineageById: {}
+      })
+    const build = (isUnread: boolean) =>
+      buildSidebarFeedRows(domains({ workspaces: rows(isUnread) }), catalog(repos), hideSleeping)
+
+    expect(outline(build(true).sectionRows)).toEqual(['local|r::/w/same@0'])
+    expect(outline(build(false).sectionRows)).toEqual([])
+  })
+
   it('keeps one host’s activity off its same-id twin', () => {
     const activity = new Map([[composeWorktreeHostIdentity('ssh:box', 'r::/w/same'), busy]])
     const built = buildSidebarFeedRows(

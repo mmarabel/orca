@@ -16,7 +16,7 @@ import {
 type Row = { id: string; folder?: boolean; facts?: Partial<Record<string, boolean>> }
 
 const read: WorkspaceRowFactReader<Row> = {
-  isArchived: () => false,
+  isArchived: (row) => row.facts?.archived === true,
   isFolderWorkspace: (row) => row.folder === true,
   repoId: () => 'repo',
   hostId: () => 'local',
@@ -26,6 +26,7 @@ const read: WorkspaceRowFactReader<Row> = {
   isCliCreated: (row) => row.facts?.cli === true,
   isDetachedHead: (row) => row.facts?.detached === true,
   isMainWorktree: (row) => row.facts?.main === true,
+  isUnread: (row) => row.facts?.unread === true,
   isSleeping: (row) => row.facts?.sleeping !== false
 }
 
@@ -42,6 +43,38 @@ const everyFilterOn: WorkspaceRowFilters = {
 }
 
 describe('filterWorkspaceRows', () => {
+  it('keeps unread sleeping rows until read, without bypassing other filters', () => {
+    const unread: Row = { id: 'unread', facts: { unread: true } }
+    const readRow: Row = { id: 'read' }
+    const filters = { ...NO_WORKSPACE_ROW_FILTERS, hideSleepingWorkspaces: true }
+
+    expect(filterWorkspaceRows([unread, readRow], filters, read)).toEqual([unread])
+    expect(filterWorkspaceRows([{ ...unread, facts: { unread: false } }], filters, read)).toEqual(
+      []
+    )
+    expect(filterWorkspaceRows([unread, readRow], NO_WORKSPACE_ROW_FILTERS, read)).toEqual([
+      unread,
+      readRow
+    ])
+    for (const hiddenFact of ['archived', 'otherClient', 'automation']) {
+      expect(
+        filterWorkspaceRows(
+          [{ ...unread, facts: { unread: true, [hiddenFact]: true } }],
+          {
+            ...filters,
+            hideWorkspacesFromOtherDevices: true,
+            hideAutomationGeneratedWorkspaces: true
+          },
+          read
+        )
+      ).toEqual([])
+    }
+    expect(filterWorkspaceRows([unread], { ...filters, filterRepoIds: ['other'] }, read)).toEqual(
+      []
+    )
+    expect(filterWorkspaceRows([unread], { ...filters, visibleHostIds: [] }, read)).toEqual([])
+  })
+
   it('keeps a folder workspace through every filter but the host and other-client ones', () => {
     expect(filterWorkspaceRows([{ id: 'f', folder: true }], everyFilterOn, read)).toHaveLength(1)
     expect(

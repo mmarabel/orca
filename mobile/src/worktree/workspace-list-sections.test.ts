@@ -60,6 +60,17 @@ function withoutSectionListKeys(sections: ReturnType<typeof buildSections>) {
 }
 
 describe('filterWorktrees', () => {
+  it('keeps unread sleeping rows from current and older hosts until read', () => {
+    for (const hasHostSidebarActivity of [undefined, false]) {
+      const unread = worktree({ worktreeId: 'unread', unread: true, hasHostSidebarActivity })
+      const read = worktree({ worktreeId: 'read', hasHostSidebarActivity })
+      const filters = { ...NO_WORKSPACE_ROW_FILTERS, hideSleepingWorkspaces: true }
+
+      expect(filterWorktrees([unread, read], filters, '')).toEqual([unread])
+      expect(filterWorktrees([{ ...unread, unread: false }, read], filters, '')).toEqual([])
+    }
+  })
+
   it('hides archived worktrees', () => {
     const visible = worktree({ worktreeId: 'visible' })
     const archived = worktree({ worktreeId: 'archived', isArchived: true })

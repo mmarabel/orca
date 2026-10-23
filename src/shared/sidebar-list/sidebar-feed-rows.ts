@@ -175,6 +175,7 @@ export function planSidebarFeedRows(
       isCliCreated: (worktree) => factsOf(worktree)?.cliCreated === true,
       isDetachedHead: (worktree) => factsOf(worktree)?.detachedHead === true,
       isMainWorktree: (worktree) => worktree.isMainWorktree,
+      isUnread: (worktree) => worktree.isUnread,
       isSleeping: (worktree) => {
         const identity = getWorktreeHostIdentity(worktree)
         const activity = domains.activity.get(identity)

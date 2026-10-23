@@ -64,6 +64,7 @@ const FIXTURES: Fixture[] = [
   fixture('main-detached', { isMainWorktree: true, branch: '' }),
   fixture('provisioned', { isMainWorktree: true, ephemeralVmCheckoutMode: 'provisioned-root' }),
   fixture('awake', { sleeping: false }),
+  fixture('unread-sleeping', { isUnread: true }),
   fixture('automation', {
     sleeping: false,
     automationProvenance: {
@@ -103,6 +104,7 @@ const DESKTOP_FACTS: WorkspaceRowFactReader<Fixture> = {
   isCliCreated: isCliCreatedWorkspace,
   isDetachedHead: isDetachedHeadWorkspace,
   isMainWorktree: (w) => w.isMainWorktree,
+  isUnread: (w) => w.isUnread,
   isSleeping: (w) => w.sleeping
 }
 
@@ -124,7 +126,7 @@ function served(w: Fixture): Worktree {
     ...getWorkspaceRowKindFacts(w, repoMap.get(w.repoId)),
     liveTerminalCount: 0,
     hasAttachedPty: false,
-    unread: false,
+    unread: w.isUnread,
     isPinned: false,
     linkedPR: null
   }

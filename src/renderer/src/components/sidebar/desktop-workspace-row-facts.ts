@@ -46,6 +46,7 @@ export function buildDesktopWorkspaceRowFactReader(
     isCliCreated: isCliCreatedWorkspace,
     isDetachedHead: isDetachedHeadWorkspace,
     isMainWorktree: (worktree) => worktree.isMainWorktree,
+    isUnread: (worktree) => worktree.isUnread,
     isSleeping: (worktree) =>
       inputs.sleepingSweepExemptWorktreeIds?.has(worktree.id) !== true &&
       isInactiveWorkspace(

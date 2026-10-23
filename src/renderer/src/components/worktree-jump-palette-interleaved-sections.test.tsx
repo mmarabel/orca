@@ -353,6 +353,27 @@ describe('WorktreeJumpPalette interleaved primary sections', () => {
     useAppStore.setState(initialAppState, true)
   })
 
+  it('keeps an unread sleeping workspace in the empty-query list until read', async () => {
+    const unread = { ...makeWorktree('unread', 'pending-notification'), isUnread: true }
+    const read = makeWorktree('read', 'already-read')
+    await renderPalette({
+      worktreesByRepo: { 'repo-1': [unread, read] },
+      showSleepingWorkspaces: false
+    })
+
+    expect(testContainer.textContent).toContain('pending-notification')
+    expect(testContainer.textContent).not.toContain('already-read')
+
+    await act(async () => {
+      useAppStore.setState({
+        worktreesByRepo: { 'repo-1': [{ ...unread, isUnread: false }, read] }
+      })
+    })
+    await flushEffects()
+
+    expect(testContainer.textContent).not.toContain('pending-notification')
+  })
+
   it('keeps every interleaved row under its own section header', async () => {
     await renderPalette(makeInterleavedQueryState())
 

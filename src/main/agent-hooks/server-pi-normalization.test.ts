@@ -479,11 +479,6 @@ describe('a Pi compaction that tails a finished reply', () => {
       lastAssistantMessage: 'Summary ready.',
       turnCompletedAt: turn_completed_at
     })
-    await post({ hook_event_name: 'compaction_end', turn_completed_at, is_idle: false })
-    expect(server.getStatusSnapshot()[0]).toMatchObject({
-      state: 'working',
-      turnCompletedAt: turn_completed_at
-    })
     await post({ hook_event_name: 'agent_end', turn_completed_at })
     expect(server.getStatusSnapshot()[0]).toMatchObject({
       state: 'done',
@@ -494,20 +489,5 @@ describe('a Pi compaction that tails a finished reply', () => {
     await post({ hook_event_name: 'before_agent_start', prompt: 'summarize' })
     expect(server.getStatusSnapshot()[0]?.state).toBe('working')
     expect(server.getStatusSnapshot()[0]?.turnCompletedAt).toBeUndefined()
-  })
-
-  it('settles an idle compaction as done', async () => {
-    await post({ hook_event_name: 'before_agent_start', prompt: 'summarize' })
-    await post({ hook_event_name: 'agent_end', turn_completed_at })
-    await post({ hook_event_name: 'compaction_start', turn_completed_at })
-    expect(server.getStatusSnapshot()[0]).toMatchObject({
-      state: 'working',
-      turnCompletedAt: turn_completed_at
-    })
-    await post({ hook_event_name: 'compaction_end', turn_completed_at, is_idle: true })
-    expect(server.getStatusSnapshot()[0]).toMatchObject({
-      state: 'done',
-      turnCompletedAt: turn_completed_at
-    })
   })
 })

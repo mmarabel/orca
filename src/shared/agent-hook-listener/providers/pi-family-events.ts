@@ -73,9 +73,8 @@ export function normalizePiCompatibleEvent(
   const isPiUiPrompt =
     agentType === 'pi' && (eventName === 'ui_prompt_start' || hookPayload.ui_prompt_active === true)
   const isPiUiPromptEnd = agentType === 'pi' && eventName === 'ui_prompt_end'
-  // Why: Pi posts these only for a compaction that tails a finished reply.
+  // Why: Pi posts this only for a compaction between a finished reply and its settle.
   const isPiCompactionStart = agentType === 'pi' && eventName === 'compaction_start'
-  const isPiCompactionEnd = agentType === 'pi' && eventName === 'compaction_end'
 
   let stateName =
     isPiCompatibleAsk || isOmpApprovalRequest || isOmpPlanReview
@@ -96,7 +95,7 @@ export function normalizePiCompatibleEvent(
   if (isPiUiPrompt) {
     // Why: waiting uses the same orange question icon as Claude/Codex input prompts.
     stateName = 'waiting'
-  } else if (isPiUiPromptEnd || isPiCompactionEnd || isOmpPlanReviewEnd) {
+  } else if (isPiUiPromptEnd || isOmpPlanReviewEnd) {
     stateName = hookPayload.is_idle === true ? 'done' : 'working'
   }
 
@@ -129,7 +128,7 @@ export function normalizePiCompatibleEvent(
     lastAssistantMessage: snapshot.lastAssistantMessage,
     lastAssistantMessageIsToolOutput: snapshot.lastAssistantMessageIsToolOutput,
     subagents,
-    // Why: the reply's finish time on its compaction and settle rows, so it is announced once.
+    // Why: a compaction row and its settle carry one finish time, so the reply is announced once.
     turnCompletedAt: hookPayload.turn_completed_at,
     // Why: the extension ends a run whose session was replaced; that is not a completed turn.
     ...(eventName === 'agent_end' && hookPayload.session_boundary === true

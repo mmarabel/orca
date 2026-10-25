@@ -29,7 +29,7 @@ async function step(
   harness: AgentStatusExtensionHarness,
   name: string,
   event?: unknown,
-  context?: { isIdle: () => boolean }
+  context?: { isIdle: () => boolean; hasPendingMessages?: () => boolean }
 ): Promise<void> {
   await harness.callHook(name, event, context)
   await vi.advanceTimersByTimeAsync(0)
@@ -47,40 +47,14 @@ describe('Pi compaction after a finished reply', () => {
     await step(harness, 'session_compact', {})
     await step(harness, 'agent_settled', undefined, idle)
 
-    const [start, end, settled] = tail(harness)
+    const [start, settled] = tail(harness)
     expect(start).toEqual({
       hook_event_name: 'compaction_start',
       turn_completed_at: expect.any(Number)
     })
-    expect(end).toEqual({
-      hook_event_name: 'compaction_end',
-      turn_completed_at: start?.turn_completed_at,
-      is_idle: false
-    })
     expect(settled).toEqual({
       hook_event_name: 'agent_end',
       turn_completed_at: start?.turn_completed_at
-    })
-  })
-
-  it('restates the settled completion on an idle compaction and ends it idle', async () => {
-    const harness = createAgentStatusExtensionHarness({ kind: 'pi' })
-    await step(harness, 'agent_start')
-    await step(harness, 'agent_end', reply('stop'), busy)
-    await step(harness, 'agent_settled', undefined, idle)
-    await step(harness, 'session_before_compact', { reason: 'manual', willRetry: false })
-    await step(harness, 'session_compact_failed', { reason: 'manual', aborted: true })
-
-    const [settled, start, end] = tail(harness)
-    expect(settled).toEqual({ hook_event_name: 'agent_end', turn_completed_at: expect.any(Number) })
-    expect(start).toEqual({
-      hook_event_name: 'compaction_start',
-      turn_completed_at: settled?.turn_completed_at
-    })
-    expect(end).toEqual({
-      hook_event_name: 'compaction_end',
-      turn_completed_at: settled?.turn_completed_at,
-      is_idle: true
     })
   })
 
@@ -96,42 +70,26 @@ describe('Pi compaction after a finished reply', () => {
       name: 'an aborted reply',
       run: async (harness: AgentStatusExtensionHarness) => {
         await step(harness, 'agent_end', reply('aborted'), busy)
-        await step(harness, 'agent_settled', undefined, idle)
-        await step(harness, 'session_before_compact', { reason: 'manual', willRetry: false })
-      }
-    },
-    {
-      name: 'an idle compaction that the next prompt overtakes',
-      run: async (harness: AgentStatusExtensionHarness) => {
-        await step(harness, 'agent_end', reply('stop'), busy)
-        await step(harness, 'agent_settled', undefined, idle)
-        await step(harness, 'input', { text: 'next', source: 'interactive' })
-        await step(harness, 'session_before_compact', { reason: 'manual', willRetry: false })
-      }
-    },
-    {
-      name: 'an extension-started run compacting before it starts',
-      run: async (harness: AgentStatusExtensionHarness) => {
-        await step(harness, 'agent_end', reply('stop'), busy)
-        await step(harness, 'agent_settled', undefined, idle)
         await step(harness, 'session_before_compact', { reason: 'threshold', willRetry: false })
       }
     },
     {
-      name: 'a compaction inside the next run',
+      name: 'a reply with queued messages that continue the run',
       run: async (harness: AgentStatusExtensionHarness) => {
         await step(harness, 'agent_end', reply('stop'), busy)
-        await step(harness, 'agent_settled', undefined, idle)
-        await step(harness, 'agent_start')
-        await step(harness, 'session_before_compact', { reason: 'manual', willRetry: false })
+        await step(
+          harness,
+          'session_before_compact',
+          { reason: 'threshold', willRetry: false },
+          { isIdle: () => false, hasPendingMessages: () => true }
+        )
       }
     },
     {
-      name: 'a session other than the one that replied',
+      name: 'a /compact after the reply settled',
       run: async (harness: AgentStatusExtensionHarness) => {
         await step(harness, 'agent_end', reply('stop'), busy)
         await step(harness, 'agent_settled', undefined, idle)
-        await step(harness, 'session_start', { reason: 'new' })
         await step(harness, 'session_before_compact', { reason: 'manual', willRetry: false })
       }
     },
@@ -149,8 +107,6 @@ describe('Pi compaction after a finished reply', () => {
     await run(harness)
     await step(harness, 'session_compact', {})
 
-    const names = tail(harness).map((post) => post.hook_event_name)
-    expect(names).not.toContain('compaction_start')
-    expect(names).not.toContain('compaction_end')
+    expect(tail(harness).map((post) => post.hook_event_name)).not.toContain('compaction_start')
   })
 })

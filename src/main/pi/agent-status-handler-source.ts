@@ -250,9 +250,12 @@ export function getPiAgentStatusHandlerSourceLines(kind: PiAgentKind): string[] 
     // and so starts clean on a pane that has not run a turn yet — that pane is idle, not busy.
     ...(kind === 'pi' ? ['    piTurnInFlight = false'] : []),
     // Why: a run that ends because its session did has not completed; the host records it quietly.
-    kind === 'pi'
-      ? "    post('agent_end', final ? { session_boundary: true } : completedReplyFields(), final)"
-      : "    post('agent_end', final ? { session_boundary: true } : {}, final)",
+    ...(kind === 'pi'
+      ? [
+          '    const replyFields = takeCompletedReplyFields()',
+          "    post('agent_end', final ? { session_boundary: true } : replyFields, final)"
+        ]
+      : ["    post('agent_end', final ? { session_boundary: true } : {}, final)"]),
     '    return true',
     '  }',
     '',

@@ -14,7 +14,8 @@ vi.mock('../../store', () => ({
 vi.mock('../dictation/dictation-control-events', () => ({ dispatchDictationControl: vi.fn() }))
 
 vi.mock('@/i18n/i18n', () => ({
-  translate: (_key: string, fallback: string) => fallback
+  translate: (_key: string, fallback: string, values?: Record<string, string>) =>
+    fallback.replace(/\{\{(\w+)\}\}/g, (match, key: string) => values?.[key] ?? match)
 }))
 
 vi.mock('@/components/ui/button', () => ({
@@ -50,7 +51,88 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
+const sessionOptions = { sessionOptionsSurface: null, sessionOptionsSnapshot: [] }
+
 describe('NativeChatComposerActions', () => {
+  it('keeps the Send button and circle when it becomes Stop and disables the whole target', () => {
+    const props = {
+      ...sessionOptions,
+      attachDisabled: false,
+      dictationDisabled: false,
+      sendDisabled: false,
+      isWorking: false,
+      isDictating: false,
+      isDictationHoldMode: false,
+      onAttach: vi.fn(),
+      onDictationToggle: vi.fn(),
+      onDictationHoldStart: vi.fn(),
+      onDictationHoldEnd: vi.fn(),
+      onSend: vi.fn(),
+      onStop: vi.fn()
+    }
+    const { rerender } = render(<NativeChatComposerActions {...props} />)
+    const send = screen.getByRole('button', { name: 'Send' })
+    const hitArea = send.querySelector('span[aria-hidden]')
+    if (!hitArea) {
+      throw new Error('Missing painted action circle')
+    }
+    fireEvent.click(hitArea)
+    expect(props.onSend).toHaveBeenCalledOnce()
+
+    rerender(<NativeChatComposerActions {...props} isWorking />)
+    const stop = screen.getByRole('button', { name: 'Stop the agent' })
+    expect(stop).toBe(send)
+    expect(stop.querySelector('span[aria-hidden]')).toBe(hitArea)
+    fireEvent.click(hitArea)
+    expect(props.onStop).toHaveBeenCalledOnce()
+
+    rerender(<NativeChatComposerActions {...props} isWorking isStopping />)
+    fireEvent.click(hitArea)
+    expect(props.onStop).toHaveBeenCalledOnce()
+  })
+
+  it('preserves enabled, disabled and hold-to-dictate actions', () => {
+    const props = {
+      ...sessionOptions,
+      attachDisabled: false,
+      dictationDisabled: false,
+      sendDisabled: false,
+      isWorking: false,
+      isDictating: false,
+      isDictationHoldMode: false,
+      onAttach: vi.fn(),
+      onDictationToggle: vi.fn(),
+      onDictationHoldStart: vi.fn(),
+      onDictationHoldEnd: vi.fn(),
+      onSend: vi.fn()
+    }
+    const { rerender } = render(<NativeChatComposerActions {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Attach file' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Start dictation' }))
+    expect(props.onAttach).toHaveBeenCalledOnce()
+    expect(props.onDictationToggle).toHaveBeenCalledOnce()
+
+    rerender(<NativeChatComposerActions {...props} isDictationHoldMode />)
+    const mic = screen.getByRole('button', { name: 'Start dictation' })
+    fireEvent.pointerDown(mic)
+    fireEvent.pointerUp(mic)
+    fireEvent.pointerCancel(mic)
+    expect(props.onDictationHoldStart).toHaveBeenCalledOnce()
+    expect(props.onDictationHoldEnd).toHaveBeenCalledTimes(2)
+
+    rerender(
+      <NativeChatComposerActions {...props} attachDisabled dictationDisabled isDictationHoldMode />
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Attach file' }))
+    fireEvent.click(mic)
+    fireEvent.pointerDown(mic)
+    fireEvent.pointerUp(mic)
+    expect(props.onAttach).toHaveBeenCalledOnce()
+    expect(props.onDictationToggle).toHaveBeenCalledOnce()
+    expect(props.onDictationHoldStart).toHaveBeenCalledOnce()
+    expect(props.onDictationHoldEnd).toHaveBeenCalledTimes(2)
+  })
+
   it.each(['starting', 'listening'])('blocks new dictation but preserves %s Stop', (state) => {
     const input = document.createElement('textarea')
     const focus = vi.spyOn(input, 'focus')
@@ -82,6 +164,7 @@ describe('NativeChatComposerActions', () => {
     const props = {
       attachDisabled: false,
       dictationDisabled: false,
+      ...sessionOptions,
       isWorking: true,
       isDictating: false,
       isDictationHoldMode: false,
@@ -89,12 +172,10 @@ describe('NativeChatComposerActions', () => {
       onDictationToggle: vi.fn(),
       onDictationHoldStart: vi.fn(),
       onDictationHoldEnd: vi.fn(),
-      onSend: vi.fn(),
-      sessionOptionsSurface: null,
-      sessionOptionsSnapshot: []
+      onSend: vi.fn()
     }
     const { rerender } = render(<NativeChatComposerActions {...props} sendDisabled={false} />)
-    expect(screen.getByRole('button', { name: 'Stop the agent' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Stop the agent' }).textContent).toBe('')
 
     rerender(<NativeChatComposerActions {...props} sendDisabled={false} isStopping />)
 
@@ -116,8 +197,7 @@ describe('NativeChatComposerActions', () => {
         onDictationHoldEnd={vi.fn()}
         onSend={vi.fn()}
         onStop={vi.fn()}
-        sessionOptionsSurface={null}
-        sessionOptionsSnapshot={[]}
+        {...sessionOptions}
       />
     )
 
@@ -145,8 +225,7 @@ describe('NativeChatComposerActions', () => {
         onDictationHoldEnd={vi.fn()}
         onSend={onSend}
         onStop={onStop}
-        sessionOptionsSurface={null}
-        sessionOptionsSnapshot={[]}
+        {...sessionOptions}
       />
     )
 
@@ -162,6 +241,7 @@ describe('NativeChatComposerActions', () => {
         attachDisabled={false}
         dictationDisabled={false}
         sendDisabled
+        {...sessionOptions}
         sendBlockedReason="An image couldn't be brought back. Remove it to send."
         isWorking={false}
         isDictating={false}
@@ -171,13 +251,11 @@ describe('NativeChatComposerActions', () => {
         onDictationHoldStart={vi.fn()}
         onDictationHoldEnd={vi.fn()}
         onSend={vi.fn()}
-        sessionOptionsSurface={null}
-        sessionOptionsSnapshot={[]}
       />
     )
 
     const send = screen.getByRole('button', {
-      name: "An image couldn't be brought back. Remove it to send."
+      name: "Send: An image couldn't be brought back. Remove it to send."
     })
     expect(send.hasAttribute('disabled')).toBe(true)
   })
@@ -186,6 +264,7 @@ describe('NativeChatComposerActions', () => {
     const props = {
       attachDisabled: false,
       dictationDisabled: false,
+      ...sessionOptions,
       sendDisabled: false,
       isWorking: false,
       isDictating: false,
@@ -194,9 +273,7 @@ describe('NativeChatComposerActions', () => {
       onDictationToggle: vi.fn(),
       onDictationHoldStart: vi.fn(),
       onDictationHoldEnd: vi.fn(),
-      onSend: vi.fn(),
-      sessionOptionsSurface: null,
-      sessionOptionsSnapshot: []
+      onSend: vi.fn()
     }
     const explanation = "This draft couldn't be saved yet. Orca keeps trying."
     const { rerender } = render(<NativeChatComposerActions {...props} />)
@@ -205,5 +282,6 @@ describe('NativeChatComposerActions', () => {
     rerender(<NativeChatComposerActions {...props} draftNotSaved />)
     expect(screen.getByRole('img', { name: explanation })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(false)
+    expect(screen.getByRole('button', { name: 'Send' }).textContent).toBe('')
   })
 })

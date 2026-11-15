@@ -21,6 +21,7 @@ import {
 import type { NativeChatOptionPickerRequest } from './native-chat-composer-types'
 import { runSessionOptionSurfaceCall } from './native-chat-session-option-surface-call'
 import { NativeChatModelCombobox } from './NativeChatModelCombobox'
+import { NativeChatModelFamilyIcon } from './NativeChatModelFamilyIcon'
 import { useNativeChatPickerFocusReturn } from './native-chat-picker-focus-return'
 import { NativeChatSessionOptionRows } from './NativeChatSessionOptionRows'
 import { NativeChatSessionOptionWriteGroup } from './NativeChatSessionOptionWriteGroup'
@@ -76,6 +77,7 @@ function pillAccessibleName(title: string, value: string): string {
 }
 
 function PickerTrigger(props: {
+  modelId: string | undefined
   modelLabel: string
   /** The options' values, shown after the model; empty when there are none to show. */
   optionsLabel: string
@@ -98,14 +100,21 @@ function PickerTrigger(props: {
             ref={props.triggerRef}
             type="button"
             variant="ghost"
-            size="xs"
+            size="sm"
             aria-label={props.accessibleName}
-            className="max-w-64"
+            className="min-w-0 max-w-full pointer-coarse:h-11"
             onKeyDown={props.onKeyDown}
           >
-            <span className="truncate text-chat-foreground">{props.modelLabel}</span>
-            {props.optionsLabel ? <span className="shrink-0">{props.optionsLabel}</span> : null}
-            <ChevronDown className="size-3" />
+            <NativeChatModelFamilyIcon modelId={props.modelId} />
+            <span className="truncate font-medium text-chat-foreground-strong">
+              {props.modelLabel}
+            </span>
+            {props.optionsLabel ? (
+              <span className="max-w-24 truncate font-normal text-chat-foreground-faint">
+                {props.optionsLabel}
+              </span>
+            ) : null}
+            <ChevronDown className="size-3 shrink-0" />
           </Button>
         </PopoverTrigger>
       </TooltipTrigger>
@@ -191,6 +200,11 @@ function SessionOptionPopover(props: {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PickerTrigger
+        modelId={
+          model.valueSource !== 'unknown' && model.kind.type === 'select'
+            ? model.kind.currentValue
+            : undefined
+        }
         modelLabel={modelLabel}
         optionsLabel={optionsLabel}
         accessibleName={

@@ -34,7 +34,11 @@ function ModeName(props: { mode: AgentChatPermissionMode; truncate?: boolean }):
   const body = (
     <>
       <Icon className="size-3.5 shrink-0" aria-hidden />
-      {props.truncate ? <span className="truncate">{label}</span> : <span>{label}</span>}
+      {props.truncate ? (
+        <span className="truncate font-normal">{label}</span>
+      ) : (
+        <span>{label}</span>
+      )}
     </>
   )
   return props.mode === 'full-access' ? (
@@ -70,16 +74,16 @@ function NativeChatPermissionModePickerInner({
             <Button
               type="button"
               variant="ghost"
-              size="xs"
+              size="sm"
               aria-label={translate(
                 'components.native-chat.composer.pillAccessibleName',
                 '{{value0}} {{value1}}',
                 { value0: title, value1: nativeChatPermissionModeLabel(current) }
               )}
-              className="max-w-40 min-w-0 shrink"
+              className="max-w-40 min-w-0 shrink pointer-coarse:h-11"
             >
               <ModeName mode={current} truncate />
-              <ChevronDown className="size-3" />
+              <ChevronDown className="size-3 shrink-0" />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>

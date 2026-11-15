@@ -5,8 +5,7 @@ import { cn } from '@/lib/utils'
 import { NativeChatCopyButton } from './NativeChatCopyButton'
 import type { NativeChatComposerNotice } from './native-chat-composer-notice'
 
-/** One card above the composer, one row per notice, errors first. The live region stays mounted so
- *  a screen reader hears the first notice too. */
+/** Errors stay first; long notices scroll without pushing the composer out of reach. */
 export function NativeChatComposerNotices({
   notices,
   className
@@ -15,16 +14,21 @@ export function NativeChatComposerNotices({
   className?: string
 }): React.JSX.Element {
   if (notices.length === 0) {
-    return <ul aria-live="polite" />
+    return <ul role="list" aria-live="polite" />
   }
   const ordered = [...notices].sort(
     (a, b) => Number(b.kind === 'error') - Number(a.kind === 'error')
   )
   return (
     <ul
+      role="list"
       aria-live="polite"
+      aria-label={translate('components.native-chat.notices.label', 'Message notices')}
+      tabIndex={0}
       className={cn(
-        'divide-y divide-border overflow-hidden rounded-md border border-border bg-card text-xs text-card-foreground',
+        'scrollbar-sleek max-h-[25dvh] divide-y divide-border overflow-x-hidden overflow-y-auto text-xs text-foreground',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+        'rounded-xl border border-border bg-card',
         ordered[0]?.kind === 'error' && 'border-destructive/30',
         className
       )}
@@ -67,7 +71,7 @@ function NoticeRow({ notice }: { notice: NativeChatComposerNotice }): React.JSX.
   const dismissLabel = translate('components.native-chat.notices.dismiss', 'Dismiss')
   return (
     <li data-notice-kind={notice.kind} className={cn(isError && 'bg-destructive/5')}>
-      <div className="flex items-start gap-2 px-2.5 py-1.5">
+      <div className="flex items-start gap-2 px-3 py-2">
         <Icon
           aria-hidden
           className={cn(
@@ -80,7 +84,7 @@ function NoticeRow({ notice }: { notice: NativeChatComposerNotice }): React.JSX.
         <p
           className={cn(
             'min-w-0 flex-1 select-text py-px leading-5',
-            notice.kind === 'host' ? 'truncate' : '[overflow-wrap:anywhere]',
+            '[overflow-wrap:anywhere]',
             'text-muted-foreground',
             isError && 'text-foreground',
             isHostWarning && 'text-destructive'
@@ -113,7 +117,7 @@ function NoticeRow({ notice }: { notice: NativeChatComposerNotice }): React.JSX.
         ) : null}
       </div>
       {notice.errorText ? (
-        <div className="relative mb-2 ml-8 mr-2.5 rounded-md border border-border bg-muted">
+        <div className="relative mb-2 ml-8.5 mr-3 rounded-md border border-border bg-muted">
           <pre className="scrollbar-sleek max-h-28 select-text overflow-auto whitespace-pre-wrap break-words py-1.5 pl-2 pr-8 font-mono text-2xs text-foreground">
             {notice.errorText}
           </pre>

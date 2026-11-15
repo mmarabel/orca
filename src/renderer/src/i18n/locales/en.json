@@ -18491,6 +18491,7 @@
         "cancelledBy": "Cancelled on {{device}}"
       },
       "notices": {
+        "label": "Message notices",
         "contextCleared": "Context cleared",
         "compaction": "Context compacted",
         "details": "Details",
@@ -18510,6 +18511,7 @@
       "composer": {
         "imageUnsupported": "Image paste is not supported for this agent.",
         "send": "Send",
+        "sendBlocked": "Send: {{reason}}",
         "noPty": "No live terminal — toggle back to reconnect.",
         "locked": "Input is held by another device.",
         "placeholder": "Ask anything, @ to mention files, / for commands",

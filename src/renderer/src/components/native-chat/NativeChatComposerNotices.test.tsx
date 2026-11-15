@@ -13,6 +13,40 @@ describe('NativeChatComposerNotices', () => {
     const { container } = render(<NativeChatComposerNotices notices={[]} />)
     expect(container.querySelectorAll('li')).toHaveLength(0)
     expect(container.querySelector('[aria-live="polite"]')).toBeInTheDocument()
+    expect(screen.getByRole('list')).not.toHaveAttribute('tabindex')
+  })
+
+  it('keeps the notice action and live region above the compact composer', () => {
+    const retry = vi.fn()
+    render(
+      <NativeChatComposerNotices
+        notices={[
+          {
+            key: 'send',
+            kind: 'error',
+            text: 'Your draft is still here.',
+            action: { label: 'Retry', onClick: retry }
+          }
+        ]}
+      />
+    )
+    expect(screen.getByRole('list')).toHaveAttribute('aria-live', 'polite')
+    expect(screen.getByRole('list')).toHaveClass('rounded-xl', 'border', 'bg-card')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(retry).toHaveBeenCalledOnce()
+  })
+
+  it('bounds long notices without removing content and permits keyboard scrolling', () => {
+    const text = 'Remote host with a long name is disconnected. '.repeat(20)
+    render(
+      <NativeChatComposerNotices notices={[{ key: 'host', kind: 'host', tone: 'warning', text }]} />
+    )
+    const notices = screen.getByRole('list', { name: 'Message notices' })
+    expect(notices).toHaveClass('max-h-[25dvh]', 'overflow-y-auto', 'focus-visible:ring-inset')
+    expect(notices).toHaveAttribute('tabindex', '0')
+    expect(notices.querySelector('p')?.textContent).toBe(text)
+    notices.focus()
+    expect(notices).toHaveFocus()
   })
 
   it('puts errors first and keeps every notice, so one never hides another', () => {

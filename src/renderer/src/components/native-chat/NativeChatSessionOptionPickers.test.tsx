@@ -289,6 +289,89 @@ describe('NativeChatSessionOptionPickers', () => {
     expect(pill('Model Opus 4.8, Session options Fast').textContent).toBe('Opus 4.8Fast')
   })
 
+  it('follows a multi-provider model pick and restores the glyph when the write fails', async () => {
+    let rejectPick: (error: Error) => void = () => {}
+    const setOption = vi.fn(
+      () =>
+        new Promise<never>((_resolve, reject) => {
+          rejectPick = reject
+        })
+    )
+    const descriptor = model({
+      transport: 'agent-session',
+      kind: {
+        type: 'select',
+        currentValue: 'cliproxy/claude-opus-5-5',
+        choices: [
+          { value: 'cliproxy/claude-opus-5-5', label: 'Opus 5.5' },
+          { value: 'openai-codex/gpt-6.1-terra', label: 'GPT-6.1 Terra' }
+        ]
+      }
+    })
+    render(
+      <NativeChatSessionOptionPickers
+        surface={{ ...surface, setOption }}
+        snapshot={[descriptor, effort]}
+        isWorking={false}
+      />
+    )
+    expect(
+      pill('Model Opus 5.5, Effort High').querySelector('[data-model-family="claude"]')
+    ).not.toBeNull()
+    fireEvent.click(screen.getByRole('option', { name: 'GPT-6.1 Terra' }))
+    expect(
+      pill('Model GPT-6.1 Terra, Effort High').querySelector('[data-model-family="openai"]')
+    ).not.toBeNull()
+    await act(async () => rejectPick(new Error('Model change refused')))
+    await waitFor(() =>
+      expect(
+        pill('Model Opus 5.5, Effort High').querySelector('[data-model-family="claude"]')
+      ).not.toBeNull()
+    )
+  })
+
+  it('keeps unknown provenance and custom model IDs unbranded', () => {
+    const { rerender } = render(
+      <NativeChatSessionOptionPickers
+        surface={surface}
+        snapshot={[model({ valueSource: 'unknown' })]}
+        isWorking={false}
+      />
+    )
+    expect(pill('Model').querySelector('[data-model-family]')).toBeNull()
+    rerender(
+      <NativeChatSessionOptionPickers
+        surface={surface}
+        snapshot={[
+          model({
+            kind: {
+              type: 'select',
+              currentValue: 'custom',
+              choices: [{ value: 'custom', label: 'Claude-like custom model' }]
+            }
+          })
+        ]}
+        isWorking={false}
+      />
+    )
+    expect(pill('Model Claude-like custom model').querySelector('[data-model-family]')).toBeNull()
+  })
+
+  it('distinguishes the model name from reasoning without changing the accessible name', () => {
+    render(
+      <NativeChatSessionOptionPickers
+        surface={surface}
+        snapshot={[model(), effort]}
+        isWorking={false}
+      />
+    )
+    const trigger = pill('Model Opus 4.8, Effort High')
+    expect(within(trigger).getByText('Opus 4.8').className).toContain('font-medium')
+    expect(within(trigger).getByText('High').className).toContain('font-normal')
+    expect(within(trigger).getByText('High').className).toContain('text-chat-foreground-faint')
+    expect(trigger.querySelector('[data-model-family]')?.getAttribute('aria-hidden')).toBe('true')
+  })
+
   it('disables the pill while the agent is working', () => {
     render(
       <NativeChatSessionOptionPickers surface={surface} snapshot={[model(), effort]} isWorking />

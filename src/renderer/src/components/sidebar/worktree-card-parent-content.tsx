@@ -69,7 +69,7 @@ export function WorktreeCardParentContent({
 
   const identityContent = (
     <div
-      className="group/worktree-card flex w-full min-w-0 flex-col gap-1.5"
+      className="group/worktree-card flex w-full min-w-0 flex-col gap-0.5"
       data-worktree-card-hover-trigger=""
     >
       <WorktreeCardHeader card={card} presentation={presentation} />

@@ -158,6 +158,29 @@ describe('WorktreeCard host badge toggle', () => {
   )
 
   it.each(['detailed', 'compact', 'new'])(
+    'keeps unread titles distinct without dimming read titles in %s cards',
+    async (style) => {
+      worktreeCardProperties = ['status']
+      settings = {
+        compactWorktreeCards: style === 'compact',
+        experimentalNewWorktreeCardStyle: style === 'new'
+      }
+      for (const isUnread of [false, true]) {
+        const markup = await renderCardMarkup({ worktree: makeWorktree({ isUnread }) })
+        const title = markup.match(/<span[^>]*data-worktree-title-inline-rename=""[^>]*>/)?.[0]
+        expect(title).toContain(isUnread ? 'font-bold' : 'font-medium')
+        expect(title).not.toMatch(/font-(normal|semibold)/)
+        expect(title).toContain('text-foreground')
+        expect(title).not.toContain('text-foreground/80')
+        if (isUnread) {
+          expect(markup).toContain('Unread:')
+        }
+      }
+    },
+    WORKTREE_CARD_IMPORT_TIMEOUT_MS
+  )
+
+  it.each(['detailed', 'compact', 'new'])(
     'renders planned owner text once in %s cards',
     async (style) => {
       settings = {

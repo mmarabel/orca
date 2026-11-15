@@ -61,7 +61,7 @@ export function WorktreeCardMetaRow({
         {showIdentityInNewCard ? (
           <TruncatedSidebarLabel
             text={identityDisplay!}
-            className="text-[11px] text-muted-foreground leading-none"
+            className="text-xs text-muted-foreground leading-4"
             tooltipEnabled={!hasHoverDetails}
           />
         ) : isFolder && !newCardStyle ? (
@@ -74,7 +74,7 @@ export function WorktreeCardMetaRow({
         ) : showBranch ? (
           <TruncatedSidebarLabel
             text={branch}
-            className="text-[11px] text-muted-foreground leading-none"
+            className="text-xs text-muted-foreground leading-4"
             // Why: whole-card details hover already shows full identity; a nested tooltip would compete for it.
             tooltipEnabled={!hasHoverDetails}
           />

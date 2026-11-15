@@ -60,8 +60,8 @@ export function NativeChatApprovalCard({
   const escape = onCancel ?? (isSubmitting ? undefined : onCollapse)
 
   return (
-    <div className="min-h-0 shrink overflow-hidden bg-chat-canvas">
-      <div className="mx-auto flex h-full min-h-0 max-h-full w-full max-w-(--chat-content-max-width) px-3 pt-2 pb-1 sm:px-4">
+    <div className="min-h-0 shrink overflow-hidden bg-chat-canvas px-3 pt-2 pb-4 sm:px-4">
+      <div className="mx-auto flex h-full min-h-0 max-h-full w-full max-w-(--chat-content-max-width)">
         <div
           ref={cardRef}
           data-native-chat-prompt-card-focus={shouldFocus || undefined}
@@ -76,9 +76,9 @@ export function NativeChatApprovalCard({
               escape()
             }
           }}
-          className="flex min-h-0 w-full flex-1 flex-col gap-2 overflow-hidden rounded-lg border border-input bg-card px-4 py-3 shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-xl border border-chat-composer-border bg-chat-composer-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <div className="flex shrink-0 items-start gap-2">
+          <div className="flex shrink-0 items-start gap-2 border-b border-chat-composer-border bg-muted/30 px-4 py-3">
             <ShieldQuestion className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0 flex-1">
               <p className="line-clamp-2 break-words text-sm font-semibold text-foreground">
@@ -106,7 +106,7 @@ export function NativeChatApprovalCard({
             <div
               data-native-chat-approval-content="true"
               tabIndex={0}
-              className="min-h-0 max-h-72 shrink space-y-2 overflow-auto text-sm text-muted-foreground scrollbar-sleek focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              className="min-h-0 max-h-72 shrink space-y-2 overflow-auto px-4 py-3 text-sm text-foreground scrollbar-sleek focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             >
               {approval.description ? (
                 <p className="whitespace-pre-wrap break-words">{approval.description}</p>
@@ -167,7 +167,10 @@ export function NativeChatApprovalCard({
               ) : null}
             </div>
           ) : null}
-          <div data-native-chat-approval-actions="true" className="flex shrink-0 flex-wrap gap-2">
+          <div
+            data-native-chat-approval-actions="true"
+            className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-chat-composer-border px-4 py-3"
+          >
             {approval.options.map((opt, i) => (
               <button
                 key={`${opt.label}-${i}`}

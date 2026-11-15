@@ -2,6 +2,7 @@ import { ArrowUp, CircleAlert, Mic, Plus, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { translate } from '@/i18n/i18n'
+import { cn } from '@/lib/utils'
 import type {
   SessionOptionDescriptor,
   SessionOptionsSurface
@@ -9,9 +10,9 @@ import type {
 import { NativeChatSessionOptionPickers } from './NativeChatSessionOptionPickers'
 import { NativeChatComposerPermissionPicker } from './NativeChatPermissionModePicker'
 import { NativeChatComposerGoalChip } from './NativeChatComposerGoalChip'
+import type { NativeChatOptionPickerRequest } from './native-chat-composer-types'
 import { NativeChatContextUsageRing } from './NativeChatContextUsageRing'
 import type { NativeChatContextUsageSummary } from './native-chat-context-usage-summary'
-import type { NativeChatOptionPickerRequest } from './native-chat-composer-types'
 
 export type NativeChatComposerActionsProps = {
   attachDisabled: boolean
@@ -36,12 +37,10 @@ export type NativeChatComposerActionsProps = {
   sessionOptionsSnapshot: SessionOptionDescriptor[]
   sessionOptionsPickerRequest?: NativeChatOptionPickerRequest | null
   focusComposer?: () => void
-  /** Present while the composer is in goal mode; the chip calls it to leave. */
   onExitGoalMode?: () => void
+  agent?: string
   /** Absent until the session has reported or the transcript can estimate. */
   contextUsage?: NativeChatContextUsageSummary | null
-  /** The chat's agent, whose permission modes the picker describes. */
-  agent?: string
 }
 
 export function NativeChatComposerActions({
@@ -63,10 +62,10 @@ export function NativeChatComposerActions({
   sessionOptionsSurface,
   sessionOptionsSnapshot,
   sessionOptionsPickerRequest,
-  onExitGoalMode,
-  contextUsage,
   focusComposer,
-  agent
+  onExitGoalMode,
+  agent,
+  contextUsage
 }: NativeChatComposerActionsProps): React.JSX.Element {
   const stops = isWorking
   const handleCriticalAction = (event: React.MouseEvent<HTMLButtonElement>): void => {
@@ -94,20 +93,35 @@ export function NativeChatComposerActions({
           ? isStopping
             ? translate('components.native-chat.status.stopping', 'Stopping…')
             : translate('components.native-chat.stop', 'Stop the agent')
-          : (sendReason ?? translate('components.native-chat.composer.send', 'Send'))
+          : sendReason
+            ? translate('components.native-chat.composer.sendBlocked', 'Send: {{reason}}', {
+                reason: sendReason
+              })
+            : translate('components.native-chat.composer.send', 'Send')
       }
       disabled={sendDisabled || (isWorking && isStopping)}
       onClick={handleCriticalAction}
-      variant={stops ? 'secondary' : 'default'}
-      size="icon"
-      className="size-8 rounded-full pointer-coarse:size-10"
+      variant="ghost"
+      size="icon-sm"
+      className="group pointer-coarse:size-11"
     >
-      {stops ? <Square className="size-3.5 fill-current" /> : <ArrowUp className="size-4" />}
+      {/* The painted circle stays compact without shrinking the button's hit or focus area. */}
+      <span
+        aria-hidden
+        className={cn(
+          'flex size-7 shrink-0 items-center justify-center rounded-full',
+          stops
+            ? 'bg-secondary text-secondary-foreground group-hover:bg-secondary/80'
+            : 'bg-primary text-primary-foreground group-hover:bg-primary/90'
+        )}
+      >
+        {stops ? <Square className="size-3.5 fill-current" /> : <ArrowUp className="size-4" />}
+      </span>
     </Button>
   )
 
   return (
-    <div className="flex w-full items-center justify-between gap-2 text-chat-foreground-faint">
+    <div className="flex w-full flex-wrap items-center justify-between gap-x-2 gap-y-1 text-chat-foreground-faint">
       <div className="flex min-w-0 items-center gap-0.5">
         <Tooltip>
           <TooltipTrigger asChild>
@@ -134,9 +148,7 @@ export function NativeChatComposerActions({
         />
         {onExitGoalMode ? <NativeChatComposerGoalChip onExit={onExitGoalMode} /> : null}
       </div>
-      <div className="ml-auto flex items-center gap-1.5">
-        {/* Why: keep the session picker beside the actions it affects; only the
-        context ring separates it from dictation. */}
+      <div className="ml-auto flex min-w-0 max-w-full items-center gap-1.5">
         <NativeChatSessionOptionPickers
           surface={sessionOptionsSurface}
           snapshot={sessionOptionsSnapshot}

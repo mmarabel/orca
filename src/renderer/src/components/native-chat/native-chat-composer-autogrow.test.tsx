@@ -107,7 +107,7 @@ describe('native chat composer autogrow', () => {
     expect(renderField('a\n'.repeat(20)).className).toContain('scrollbar-sleek')
   })
 
-  it('keeps the touch-target minimum heights', () => {
+  it('keeps the compact writing area and touch-target minimum heights', () => {
     const textarea = renderField('')
     expect(textarea.className).toContain('min-h-12')
     expect(textarea.className).toContain('pointer-coarse:min-h-14')

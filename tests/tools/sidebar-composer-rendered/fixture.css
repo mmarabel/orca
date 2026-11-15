@@ -1,0 +1,8 @@
+@import '../../../src/renderer/src/assets/main.css';
+@import '../../../src/renderer/src/components/native-chat/native-chat-appearance.css';
+@source './fixture.tsx';
+@source './permission-previews.tsx';
+@source './permission-context-row.tsx';
+@source '../../../src/renderer/src/components/sidebar';
+@source '../../../src/renderer/src/components/native-chat';
+@source '../../../src/renderer/src/components/ui';

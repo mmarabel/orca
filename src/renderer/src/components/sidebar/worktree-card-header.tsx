@@ -166,13 +166,12 @@ export function WorktreeCardHeader({
           </RepoIdentityChip>
         )}
 
-        {/* Why: unread alert lives in the left status lane; title-row contrast comes from weight and dimmed read titles. */}
+        {/* The task title leads; status and metadata keep their own lanes. */}
         <WorktreeTitleInlineRename
           displayName={visibleCardTitle}
           disabled={isDeleting || affiliateListMode}
           showUnreadEmphasis={showUnreadEmphasis}
-          dimReadTitle={newCardStyle}
-          className="text-[13px] leading-5"
+          className={cn('text-[13px] leading-5', showUnreadEmphasis ? 'font-bold' : 'font-medium')}
           editingClassName="flex-1"
           titleWrapper={titleWrapper}
           onEditingChange={affiliateListMode ? undefined : setTitleRenaming}

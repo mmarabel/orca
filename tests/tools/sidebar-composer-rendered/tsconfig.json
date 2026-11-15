@@ -1,0 +1,5 @@
+{
+  "extends": "../../../config/tsconfig.web.json",
+  "include": ["../../../src/renderer/src/env.d.ts", "./fixture.tsx", "./fixture-state.ts"],
+  "compilerOptions": { "composite": false }
+}

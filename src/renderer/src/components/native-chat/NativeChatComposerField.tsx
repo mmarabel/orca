@@ -235,6 +235,7 @@ export function NativeChatComposerField({
             />
           ) : null}
           <NativeChatComposerNotices
+            className="mb-1.5"
             notices={notices.map((notice) =>
               // A dismissed row takes its focused × with it; the message box gets focus back.
               notice.onDismiss
@@ -247,15 +248,10 @@ export function NativeChatComposerField({
                   }
                 : notice
             )}
-            className="mb-1.5"
           />
           <div
             className={cn(
-              // Why: always-on hairline (token-level border, not focus ring) —
-              // no focus/click border flash. The box is a container, not a
-              // focus target.
-              'rounded-xl border border-chat-composer-border p-1.5 shadow-xs',
-              'bg-chat-composer-surface',
+              'rounded-xl border border-chat-composer-border bg-chat-composer-surface p-1.5',
               // Why (#10481): the native caret blink invalidates paint up to the
               // nearest containment boundary; without this the whole transcript
               // re-rasterizes twice a second. Pickers are siblings and every menu
@@ -345,7 +341,7 @@ export function NativeChatComposerField({
                 'placeholder:text-chat-foreground-faint [&[contenteditable=false]]:cursor-not-allowed [&[contenteditable=false]]:opacity-50'
               )}
             />
-            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+            <div className="pt-0.5">
               <NativeChatComposerActions
                 attachDisabled={attachDisabled}
                 dictationDisabled={dictationDisabled}
@@ -364,11 +360,11 @@ export function NativeChatComposerField({
                 onStop={onStop}
                 sessionOptionsSurface={sessionOptionsSurface}
                 sessionOptionsSnapshot={sessionOptionsSnapshot}
-                contextUsage={contextUsage}
                 sessionOptionsPickerRequest={sessionOptionsPickerRequest}
                 focusComposer={focusComposer}
                 onExitGoalMode={goalMode?.active ? goalMode.exit : undefined}
                 {...(agent ? { agent } : {})}
+                contextUsage={contextUsage}
               />
             </div>
           </div>
